@@ -37,12 +37,35 @@ function fetch_user_accounts(int $userId): array
     return $stmt->fetchAll();
 }
 
+function fetch_tag_directory(int $userId): array
+{
+    $stmt = db()->prepare('SELECT id, display_name, target_urn FROM tag_directory WHERE user_id = ? ORDER BY display_name');
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
+}
+
 // display_name => target_urn, for resolving "@[Name]" tags inserted via
 // the "Tag a Page" toolbar button into real LinkedIn mentions at publish
-// time. See includes/linkedin_text.php.
+// time. See includes/linkedin_text.php. Connected accounts win on a
+// name collision with a manually-added tag_directory entry.
 function get_mention_candidates(int $userId): array
 {
     $stmt = db()->prepare('SELECT display_name, target_urn FROM linkedin_accounts WHERE user_id = ? AND status = "active"');
     $stmt->execute([$userId]);
-    return array_column($stmt->fetchAll(), 'target_urn', 'display_name');
+    $connected = array_column($stmt->fetchAll(), 'target_urn', 'display_name');
+
+    $directory = array_column(fetch_tag_directory($userId), 'target_urn', 'display_name');
+
+    return array_merge($directory, $connected);
+}
+
+// Combined, display-ready list for the "@ Tag" picker: connected
+// accounts plus manually-added tag_directory entries, in one shape.
+function fetch_mention_picker_list(int $userId): array
+{
+    $list = array_map(fn ($a) => ['name' => $a['display_name'], 'type' => $a['account_type']], fetch_user_accounts($userId));
+    foreach (fetch_tag_directory($userId) as $entry) {
+        $list[] = ['name' => $entry['display_name'], 'type' => 'tagged page'];
+    }
+    return $list;
 }

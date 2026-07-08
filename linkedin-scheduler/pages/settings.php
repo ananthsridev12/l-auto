@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/post_helpers.php';
 
 require_login();
 $userId = current_user_id();
@@ -15,6 +16,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'formats') {
         set_enabled_formats($userId, $_POST['formats'] ?? []);
         flash('success', 'Post formats updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'tag_add') {
+        $name = trim($_POST['tag_name'] ?? '');
+        $urn = normalize_organization_input($_POST['tag_org_id'] ?? '');
+        if ($name === '' || $urn === null) {
+            flash('error', 'Enter a name and a valid numeric LinkedIn organization ID.');
+            redirect('pages/settings.php');
+        }
+        $stmt = db()->prepare(
+            'INSERT INTO tag_directory (user_id, display_name, target_urn) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE target_urn = VALUES(target_urn)'
+        );
+        $stmt->execute([$userId, $name, $urn]);
+        flash('success', "\"{$name}\" added to your tag directory.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'tag_delete') {
+        $stmt = db()->prepare('DELETE FROM tag_directory WHERE id = ? AND user_id = ?');
+        $stmt->execute([(int) ($_POST['tag_id'] ?? 0), $userId]);
+        flash('success', 'Removed from tag directory.');
         redirect('pages/settings.php');
     }
 
@@ -38,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $enabledFormats = get_enabled_formats($userId);
+$tagDirectory = fetch_tag_directory($userId);
 
 $pageTitle  = 'Settings';
 $activePage = 'settings';
@@ -82,6 +107,42 @@ require __DIR__ . '/../includes/layout_top.php';
       </label>
     <?php endforeach; ?>
     <button type="submit" class="btn-primary">Save Formats</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Tag Directory</h2>
+  <p class="muted">LinkedIn only lets an app look up pages you administer — there's no way to search other companies by name. To tag a page you don't manage, find its numeric LinkedIn organization ID (visible in that page's public HTML source, e.g. as "urn:li:organization:12345") and add it here once. It'll then show up in the "@ Tag" button in the caption editor for every future post.</p>
+
+  <?php if ($tagDirectory): ?>
+    <?php foreach ($tagDirectory as $entry): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($entry['display_name']) ?></span>
+          <span class="muted"><?= h($entry['target_urn']) ?></span>
+        </div>
+        <form method="post" onsubmit="return confirm('Remove this from your tag directory?');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="tag_delete">
+          <input type="hidden" name="tag_id" value="<?= (int) $entry['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No custom tags added yet.</p>
+  <?php endif; ?>
+
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="tag_add">
+    <label>Display Name
+      <input type="text" name="tag_name" placeholder="e.g. Acme Corp" required>
+    </label>
+    <label>LinkedIn Organization ID <span class="muted">(number, URN, or /company/&lt;number&gt;/ URL)</span>
+      <input type="text" name="tag_org_id" placeholder="e.g. 12345 or urn:li:organization:12345" required>
+    </label>
+    <button type="submit" class="btn-secondary">Add to Directory</button>
   </form>
 </section>
 

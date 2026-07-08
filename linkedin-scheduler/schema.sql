@@ -33,6 +33,22 @@ CREATE TABLE IF NOT EXISTS linkedin_accounts (
   UNIQUE KEY uniq_user_target (user_id, target_urn)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- User-maintained directory of OTHER organizations' pages to tag (not
+-- owned/connected by this user — LinkedIn's org lookup API only works
+-- for pages you administer, so there's no way to search these
+-- programmatically; the user supplies the numeric org ID themselves).
+-- Merged into the "@ Tag" picker's candidate list alongside
+-- linkedin_accounts. See includes/post_helpers.php get_mention_candidates().
+CREATE TABLE IF NOT EXISTS tag_directory (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  user_id      INT NOT NULL,
+  display_name VARCHAR(255) NOT NULL,
+  target_urn   VARCHAR(255) NOT NULL,
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_user_name (user_id, display_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Tracks each CSV+ZIP bulk import run.
 CREATE TABLE IF NOT EXISTS import_batches (
   id                       INT AUTO_INCREMENT PRIMARY KEY,

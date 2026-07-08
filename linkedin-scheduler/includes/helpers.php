@@ -14,6 +14,27 @@ function h(?string $value): string
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
 
+// Accepts a bare numeric org ID ("12345"), a full URN
+// ("urn:li:organization:12345"), or a LinkedIn company URL that uses
+// the numeric ID form ("linkedin.com/company/12345/") — LinkedIn vanity
+// names (e.g. "/company/microsoft/") can't be resolved to an ID without
+// API access this app doesn't have, so those aren't accepted here.
+// Returns null if no valid numeric ID could be extracted.
+function normalize_organization_input(string $input): ?string
+{
+    $input = trim($input);
+    if (preg_match('/^\d+$/', $input)) {
+        return 'urn:li:organization:' . $input;
+    }
+    if (preg_match('/^urn:li:organization:(\d+)$/', $input, $m)) {
+        return 'urn:li:organization:' . $m[1];
+    }
+    if (preg_match('#linkedin\.com/company/(\d+)#', $input, $m)) {
+        return 'urn:li:organization:' . $m[1];
+    }
+    return null;
+}
+
 function get_enabled_formats(int $userId): array
 {
     $stmt = db()->prepare('SELECT enabled_formats FROM users WHERE id = ?');
