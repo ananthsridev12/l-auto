@@ -23,6 +23,7 @@ $__flashSuccess = flash('success');
     </div>
 
     <nav>
+      <a href="<?= h(app_path('pages/new_post.php')) ?>" class="<?= ($activePage ?? '') === 'new_post' ? 'active' : '' ?>">New Post</a>
       <a href="<?= h(app_path('pages/today.php')) ?>" class="<?= ($activePage ?? '') === 'today' ? 'active' : '' ?>">Today</a>
       <a href="<?= h(app_path('pages/calendar.php')) ?>" class="<?= ($activePage ?? '') === 'calendar' ? 'active' : '' ?>">Calendar</a>
       <a href="<?= h(app_path('pages/drafts.php')) ?>" class="<?= ($activePage ?? '') === 'drafts' ? 'active' : '' ?>">Drafts</a>
