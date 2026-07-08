@@ -122,8 +122,15 @@ function li_create_post(string $accessToken, string $actingUrn, string $commenta
 // Orchestrates the image/document/text branching used by both the
 // "Post Now" endpoint and the scheduled cron sweep, so the two never
 // drift out of sync on posting behavior.
-function li_publish_post(string $accessToken, string $actingUrn, string $format, string $caption, string $campaignId, array $slidePaths): string
+//
+// $title is what LinkedIn actually displays as the media title — most
+// visibly, the caption shown directly under a carousel's swipeable PDF
+// in the feed — so it should be the post's human-readable topic/title,
+// not the internal campaign ID. Falls back to $campaignId when blank.
+function li_publish_post(string $accessToken, string $actingUrn, string $format, string $caption, string $campaignId, array $slidePaths, string $title = ''): string
 {
+    $mediaTitle = $title !== '' ? $title : $campaignId;
+
     if (in_array($format, ['Text Post', 'Poll'], true) || empty($slidePaths)) {
         return li_create_post($accessToken, $actingUrn, $caption);
     }
@@ -131,18 +138,23 @@ function li_publish_post(string $accessToken, string $actingUrn, string $format,
     if ($format === 'Single Image' || count($slidePaths) === 1) {
         $imageUrn = li_upload_image($accessToken, $actingUrn, $slidePaths[0]);
         return li_create_post($accessToken, $actingUrn, $caption, [
-            'media' => ['title' => $campaignId, 'id' => $imageUrn],
+            'media' => ['title' => $mediaTitle, 'id' => $imageUrn],
         ]);
     }
 
     // Carousel: combine slides into a single PDF, upload as a document.
-    $pdfPath = sys_get_temp_dir() . '/' . $campaignId . '_' . bin2hex(random_bytes(4)) . '.pdf';
+    // The temp filename itself is never shown anywhere (LinkedIn only
+    // displays the "title" field set on the post below) but it's still
+    // named from the title for clarity in server-side debugging/logs.
+    $safeName = preg_replace('/[^A-Za-z0-9 _-]/', '', $mediaTitle);
+    $safeName = trim($safeName) !== '' ? trim($safeName) : $campaignId;
+    $pdfPath = sys_get_temp_dir() . '/' . $safeName . '_' . bin2hex(random_bytes(4)) . '.pdf';
     build_carousel_pdf($slidePaths, $pdfPath);
     try {
         $docUrn = li_upload_document($accessToken, $actingUrn, $pdfPath);
         sleep(3); // LinkedIn needs a moment to finish processing the uploaded document.
         return li_create_post($accessToken, $actingUrn, $caption, [
-            'media' => ['title' => $campaignId, 'id' => $docUrn],
+            'media' => ['title' => $mediaTitle, 'id' => $docUrn],
         ]);
     } finally {
         @unlink($pdfPath);

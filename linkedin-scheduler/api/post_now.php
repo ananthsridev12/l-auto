@@ -43,7 +43,8 @@ try {
         $post['format'],
         $post['caption'] ?? '',
         $post['campaign_id'] ?? '',
-        $slidePaths
+        $slidePaths,
+        $post['title'] ?? ''
     );
 
     $upd = db()->prepare('UPDATE posts SET status = "posted", posted_at = NOW(), li_post_urn = ?, error_message = NULL WHERE id = ?');
