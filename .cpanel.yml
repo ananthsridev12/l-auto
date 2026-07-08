@@ -1,0 +1,7 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home1/de2shrnx/postpilot.easi7.in/
+    - /bin/cp -R linkedin-scheduler/. $DEPLOYPATH
+    - /bin/mkdir -p $DEPLOYPATH/uploads
+    - test -f $DEPLOYPATH/config.php || /bin/cp $DEPLOYPATH/config.sample.php $DEPLOYPATH/config.php

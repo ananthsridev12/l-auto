@@ -1,6 +1,6 @@
-<Files "config.php">
+<FilesMatch "^config(\.sample)?\.php$">
     Require all denied
-</Files>
+</FilesMatch>
 
 <FilesMatch "\.(sql|md|log)$">
     Require all denied

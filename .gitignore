@@ -1,0 +1,8 @@
+# Real credentials — never commit. linkedin-scheduler/config.sample.php
+# is the tracked template; .cpanel.yml bootstraps config.php from it on
+# the server's first deploy only.
+linkedin-scheduler/config.php
+
+# User-uploaded slide images, written at runtime on the server.
+linkedin-scheduler/uploads/*
+!linkedin-scheduler/uploads/.htaccess

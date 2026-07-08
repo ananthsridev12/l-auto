@@ -1,13 +1,17 @@
 <?php
-// Copy this file's values in for your shared-hosting environment.
-// This file is denied from direct web access via .htaccess — do not remove that rule.
+// Template only — never edit this file with real credentials.
+// .cpanel.yml copies this to config.php on the FIRST deploy only, and
+// never touches config.php again on later deploys, so your real values
+// below are safe to fill in directly on the server (via cPanel File
+// Manager or SSH) after that first deploy. config.php is git-ignored
+// and denied from direct web access via .htaccess — do not remove either.
 
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'your_db_name');
 define('DB_USER', 'your_db_user');
 define('DB_PASS', 'your_db_password');
 
-define('APP_URL',    'https://yourdomain.com/linkedin-scheduler');
+define('APP_URL',    'https://postpilot.easi7.in');
 define('APP_SECRET', 'random-32-char-string-for-sessions');
 
 // One app-wide LinkedIn Developer App is used for every connected user
