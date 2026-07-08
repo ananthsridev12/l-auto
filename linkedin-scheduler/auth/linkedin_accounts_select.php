@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $names    = $_POST['org_name'] ?? [];
     foreach ($selected as $orgUrn) {
         $name = $names[$orgUrn] ?? $orgUrn;
-        li_upsert_account($userId, 'company', $orgUrn, $name, $name, $accessToken, $expiresAt, LI_SCOPES);
+        li_upsert_account($userId, 'company', $orgUrn, $name, $name, $accessToken, $expiresAt, LI_SCOPES_COMPANY);
     }
     unset($_SESSION['li_pending_token'], $_SESSION['li_pending_expires_at']);
     flash('success', count($selected) . ' LinkedIn Company Page(s) connected.');

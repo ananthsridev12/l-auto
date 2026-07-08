@@ -23,13 +23,13 @@ function li_http_get(string $url, array $headers): array
     return [$status, json_decode($body ?: '', true) ?? []];
 }
 
-function li_build_auth_url(string $state): string
+function li_build_auth_url(string $state, string $scope): string
 {
     $params = [
         'response_type' => 'code',
         'client_id'     => LI_CLIENT_ID,
         'redirect_uri'  => LI_REDIRECT_URI,
-        'scope'         => LI_SCOPES,
+        'scope'         => $scope,
         'state'         => $state,
     ];
     return LI_AUTH_URL . '?' . http_build_query($params);

@@ -63,6 +63,7 @@ require __DIR__ . '/../includes/layout_top.php';
     <h2>Company Pages</h2>
     <a class="btn-secondary" href="<?= h(app_path('auth/linkedin_start.php?type=company')) ?>">Add Company Page(s)</a>
   </div>
+  <p class="muted">Requires your LinkedIn Developer App to be approved for the Advertising API or Community Management API product — if this fails, that approval is the usual reason.</p>
   <?php if (empty($company)): ?>
     <p class="muted">No Company Pages connected yet.</p>
   <?php else: foreach ($company as $acct): ?>

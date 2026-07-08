@@ -27,10 +27,15 @@ define('LI_API_BASE',     'https://api.linkedin.com');
 define('LI_AUTH_URL',     'https://www.linkedin.com/oauth/v2/authorization');
 define('LI_TOKEN_URL',    'https://www.linkedin.com/oauth/v2/accessToken');
 
-// Requested once for both personal and company-page connections — LinkedIn
-// only reveals which orgs a member administers *after* a token exists
-// (via the organizationAcls endpoint), so both scopes are requested up
-// front regardless of which "type" of connection the user is starting.
-define('LI_SCOPES', 'openid profile w_member_social w_organization_social');
+// Requested separately per connection type, not combined — LinkedIn
+// rejects the *entire* authorization request if it includes a scope your
+// Developer App isn't approved for. w_organization_social specifically
+// requires LinkedIn's Advertising API or Community Management API
+// approval, which is a separate (non-instant) approval process from the
+// default "Sign In with LinkedIn" / "Share on LinkedIn" products — so it's
+// only requested when the user clicks "Add Company Page(s)", not for a
+// plain personal-profile connection.
+define('LI_SCOPES_PERSONAL', 'openid profile w_member_social');
+define('LI_SCOPES_COMPANY',  'openid profile w_member_social w_organization_social');
 
 define('UPLOAD_DIR', __DIR__ . '/uploads');

@@ -13,8 +13,9 @@ if (!$code || !$state || empty($_SESSION['li_oauth_state']) || !hash_equals($_SE
     redirect('pages/accounts.php');
 }
 
-$type = $_SESSION['li_oauth_type'] ?? 'personal';
-unset($_SESSION['li_oauth_state'], $_SESSION['li_oauth_type']);
+$type  = $_SESSION['li_oauth_type'] ?? 'personal';
+$scope = $_SESSION['li_oauth_scope'] ?? LI_SCOPES_PERSONAL;
+unset($_SESSION['li_oauth_state'], $_SESSION['li_oauth_type'], $_SESSION['li_oauth_scope']);
 
 try {
     $token = li_exchange_code($code);
@@ -30,7 +31,7 @@ $userId    = current_user_id();
 
 // A personal-profile row is always safe to save (or refresh) — the token
 // includes profile access regardless of which "type" flow was started.
-li_upsert_account($userId, 'personal', $personUrn, $info['name'] ?? 'Personal Profile', $info['name'] ?? '', $token['access_token'], $expiresAt, LI_SCOPES);
+li_upsert_account($userId, 'personal', $personUrn, $info['name'] ?? 'Personal Profile', $info['name'] ?? '', $token['access_token'], $expiresAt, $scope);
 
 if ($type === 'company') {
     $_SESSION['li_pending_token']      = $token['access_token'];
