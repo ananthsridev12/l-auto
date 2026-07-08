@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
 
 require_login();
@@ -47,7 +48,8 @@ try {
         $post['caption'] ?? '',
         $post['campaign_id'] ?? '',
         $slidePaths,
-        $post['title'] ?? ''
+        $post['title'] ?? '',
+        get_mention_candidates($userId)
     );
 
     $upd = db()->prepare('UPDATE posts SET status = "posted", posted_at = NOW(), li_post_urn = ?, error_message = NULL WHERE id = ?');

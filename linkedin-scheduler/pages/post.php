@@ -194,6 +194,7 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
 <script>
   window.SLIDES = <?= json_encode(array_column($post['slides'], 'url')) ?>;
   window.POST_NOW_URL = <?= json_encode(app_path('api/post_now.php')) ?>;
+  window.MENTION_ACCOUNTS = <?= json_encode(array_map(fn ($a) => ['name' => $a['display_name'], 'type' => $a['account_type']], $accounts)) ?>;
 </script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

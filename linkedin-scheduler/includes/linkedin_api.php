@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/pdf_builder.php';
+require_once __DIR__ . '/linkedin_text.php';
 
 function li_json_headers(string $accessToken): array
 {
@@ -82,11 +83,15 @@ function li_upload_document(string $accessToken, string $actingUrn, string $pdfP
     return $value['document'];
 }
 
-function li_create_post(string $accessToken, string $actingUrn, string $commentary, ?array $content = null): string
+// $mentionCandidates maps connected-account display name => URN, so any
+// "@[Name]" the user inserted via the "Tag a Page" toolbar button
+// becomes a real LinkedIn mention. Every other reserved character in
+// the commentary is escaped here too — see includes/linkedin_text.php.
+function li_create_post(string $accessToken, string $actingUrn, string $commentary, ?array $content = null, array $mentionCandidates = []): string
 {
     $body = [
         'author'         => $actingUrn,
-        'commentary'     => $commentary,
+        'commentary'     => li_build_commentary($commentary, $mentionCandidates),
         'visibility'     => 'PUBLIC',
         'distribution'   => ['feedDistribution' => 'MAIN_FEED'],
         'lifecycleState' => 'PUBLISHED',
@@ -127,19 +132,19 @@ function li_create_post(string $accessToken, string $actingUrn, string $commenta
 // visibly, the caption shown directly under a carousel's swipeable PDF
 // in the feed — so it should be the post's human-readable topic/title,
 // not the internal campaign ID. Falls back to $campaignId when blank.
-function li_publish_post(string $accessToken, string $actingUrn, string $format, string $caption, string $campaignId, array $slidePaths, string $title = ''): string
+function li_publish_post(string $accessToken, string $actingUrn, string $format, string $caption, string $campaignId, array $slidePaths, string $title = '', array $mentionCandidates = []): string
 {
     $mediaTitle = $title !== '' ? $title : $campaignId;
 
     if (in_array($format, ['Text Post', 'Poll'], true) || empty($slidePaths)) {
-        return li_create_post($accessToken, $actingUrn, $caption);
+        return li_create_post($accessToken, $actingUrn, $caption, null, $mentionCandidates);
     }
 
     if ($format === 'Single Image' || count($slidePaths) === 1) {
         $imageUrn = li_upload_image($accessToken, $actingUrn, $slidePaths[0]);
         return li_create_post($accessToken, $actingUrn, $caption, [
             'media' => ['title' => $mediaTitle, 'id' => $imageUrn],
-        ]);
+        ], $mentionCandidates);
     }
 
     // Carousel: combine slides into a single PDF, upload as a document.
@@ -155,7 +160,7 @@ function li_publish_post(string $accessToken, string $actingUrn, string $format,
         sleep(3); // LinkedIn needs a moment to finish processing the uploaded document.
         return li_create_post($accessToken, $actingUrn, $caption, [
             'media' => ['title' => $mediaTitle, 'id' => $docUrn],
-        ]);
+        ], $mentionCandidates);
     } finally {
         @unlink($pdfPath);
     }

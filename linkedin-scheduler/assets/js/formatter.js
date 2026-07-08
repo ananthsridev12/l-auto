@@ -96,10 +96,19 @@ const EMOJI_SET = [
   '📈','📊','📌','📝','📅','💬','✅','❌','⏰','🎯',
 ];
 
+function closeOtherPickers(exceptId) {
+  ['emojiPicker', 'mentionPicker'].forEach(id => {
+    if (id === exceptId) return;
+    const other = document.getElementById(id);
+    if (other) other.style.display = 'none';
+  });
+}
+
 function toggleEmojiPicker() {
   const picker = document.getElementById('emojiPicker');
   if (!picker) return;
   const opening = picker.style.display === 'none' || !picker.style.display;
+  if (opening) closeOtherPickers('emojiPicker');
   if (opening && !picker.dataset.built) {
     EMOJI_SET.forEach(emoji => {
       const btn = document.createElement('button');
@@ -126,12 +135,69 @@ function insertEmoji(emoji) {
   if (picker) picker.style.display = 'none';
 }
 
-document.addEventListener('click', (ev) => {
-  const picker = document.getElementById('emojiPicker');
-  if (!picker || picker.style.display === 'none') return;
-  if (!picker.contains(ev.target) && ev.target.closest('.emoji-picker-wrap') === null) {
-    picker.style.display = 'none';
+// ── "Tag a Page" mention picker ─────────────────────────────────────────
+// Lists the user's own connected LinkedIn accounts (window.MENTION_ACCOUNTS,
+// set by the page). Inserts "@[Display Name]" at the cursor — the app
+// resolves that to a real LinkedIn mention (with the account's URN) only
+// at publish time, matching it by exact name against the poster's
+// connected accounts. See includes/linkedin_text.php.
+
+function toggleMentionPicker() {
+  const picker = document.getElementById('mentionPicker');
+  if (!picker) return;
+  const opening = picker.style.display === 'none' || !picker.style.display;
+  if (opening) closeOtherPickers('mentionPicker');
+  if (opening && !picker.dataset.built) {
+    const accounts = window.MENTION_ACCOUNTS || [];
+    if (accounts.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'mention-picker-empty';
+      empty.textContent = 'No connected LinkedIn accounts to tag yet.';
+      picker.appendChild(empty);
+    } else {
+      accounts.forEach(acct => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mention-option';
+        btn.innerHTML = '';
+        btn.textContent = acct.name;
+        const typeSpan = document.createElement('span');
+        typeSpan.className = 'mention-type';
+        typeSpan.textContent = '(' + acct.type + ')';
+        btn.appendChild(typeSpan);
+        btn.onclick = (ev) => { ev.stopPropagation(); insertMention(acct.name); };
+        picker.appendChild(btn);
+      });
+    }
+    picker.dataset.built = '1';
   }
+  picker.style.display = opening ? 'block' : 'none';
+}
+
+function insertMention(name) {
+  const ta = document.getElementById('caption');
+  if (!ta) return;
+  const tag = '@[' + name + '] ';
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  ta.value = ta.value.slice(0, s) + tag + ta.value.slice(e);
+  ta.selectionStart = ta.selectionEnd = s + tag.length;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+  const picker = document.getElementById('mentionPicker');
+  if (picker) picker.style.display = 'none';
+}
+
+document.addEventListener('click', (ev) => {
+  ['emojiPicker', 'mentionPicker'].forEach(id => {
+    const picker = document.getElementById(id);
+    if (!picker || picker.style.display === 'none' || !picker.style.display) return;
+    // Close unless the click landed inside this picker's own wrapper
+    // (its toggle button or the picker itself) — a click on the *other*
+    // picker's toggle button should still close this one.
+    if (!picker.parentElement.contains(ev.target)) {
+      picker.style.display = 'none';
+    }
+  });
 });
 
 function _toast(msg) {

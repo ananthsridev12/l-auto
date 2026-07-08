@@ -3,6 +3,7 @@
 //   */15 * * * *   php /home/{username}/public_html/linkedin-scheduler/cron/auto_post.php
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
 
 // Anything "scheduled" more than this many hours in the past is treated
@@ -67,7 +68,8 @@ foreach ($due as $post) {
             $post['caption'] ?? '',
             $post['campaign_id'] ?? '',
             $slidePaths,
-            $post['title'] ?? ''
+            $post['title'] ?? '',
+            get_mention_candidates((int) $post['user_id'])
         );
         $upd = $pdo->prepare('UPDATE posts SET status = "posted", posted_at = NOW(), li_post_urn = ?, error_message = NULL WHERE id = ?');
         $upd->execute([$postUrn, $post['id']]);

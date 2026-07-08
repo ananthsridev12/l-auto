@@ -18,6 +18,7 @@ $todayList = count($todayIds) > 1
     ? array_map(fn ($id) => fetch_post_with_slides($id, $userId), $todayIds)
     : [];
 $formatDisabled = $post && !in_array($post['format'], get_enabled_formats($userId), true);
+$accounts = fetch_user_accounts($userId);
 
 $pageTitle   = "Today's Post";
 $activePage  = 'today';
@@ -105,6 +106,7 @@ require __DIR__ . '/../includes/layout_top.php';
 <script>
   window.SLIDES = <?= json_encode(array_column($post['slides'] ?? [], 'url')) ?>;
   window.POST_NOW_URL = <?= json_encode(app_path('api/post_now.php')) ?>;
+  window.MENTION_ACCOUNTS = <?= json_encode(array_map(fn ($a) => ['name' => $a['display_name'], 'type' => $a['account_type']], $accounts)) ?>;
 </script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

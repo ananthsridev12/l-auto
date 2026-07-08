@@ -36,3 +36,13 @@ function fetch_user_accounts(int $userId): array
     $stmt->execute([$userId]);
     return $stmt->fetchAll();
 }
+
+// display_name => target_urn, for resolving "@[Name]" tags inserted via
+// the "Tag a Page" toolbar button into real LinkedIn mentions at publish
+// time. See includes/linkedin_text.php.
+function get_mention_candidates(int $userId): array
+{
+    $stmt = db()->prepare('SELECT display_name, target_urn FROM linkedin_accounts WHERE user_id = ? AND status = "active"');
+    $stmt->execute([$userId]);
+    return array_column($stmt->fetchAll(), 'target_urn', 'display_name');
+}
