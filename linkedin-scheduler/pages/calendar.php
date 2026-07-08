@@ -17,7 +17,7 @@ $stmt = db()->prepare(
 $stmt->execute([$userId, $year, $month]);
 $postsByDate = [];
 foreach ($stmt->fetchAll() as $row) {
-    $postsByDate[$row['sched_date']] = $row;
+    $postsByDate[$row['sched_date']][] = $row;
 }
 
 $grid = build_calendar_grid($year, $month, $postsByDate);
@@ -50,13 +50,14 @@ require __DIR__ . '/../includes/layout_top.php';
       <?php if ($cell === null): ?>
         <div class="cal-cell empty"></div>
       <?php else: ?>
-        <div class="cal-cell <?= $cell['date'] === $today ? 'is-today' : '' ?> <?= $cell['post'] ? 'has-post' : '' ?>"
-             <?= $cell['post'] ? 'onclick="window.location=\'' . h(app_path('pages/post.php?id=' . $cell['post']['id'])) . '\'"' : '' ?>>
+        <div class="cal-cell <?= $cell['date'] === $today ? 'is-today' : '' ?> <?= $cell['posts'] ? 'has-post' : '' ?>">
           <span class="cal-day"><?= (int) $cell['day'] ?></span>
-          <?php if ($cell['post']): ?>
-            <span class="cal-fmt cal-fmt-<?= h(strtolower(str_replace(' ', '-', $cell['post']['format']))) ?>"><?= h($cell['post']['format']) ?></span>
-            <span class="cal-title"><?= h(mb_strimwidth($cell['post']['title'] ?? $cell['post']['campaign_id'], 0, 40, '…')) ?></span>
-          <?php endif; ?>
+          <?php foreach ($cell['posts'] as $post): ?>
+            <a class="cal-post-row" href="<?= h(app_path('pages/post.php?id=' . $post['id'])) ?>">
+              <span class="cal-fmt cal-fmt-<?= h(strtolower(str_replace(' ', '-', $post['format']))) ?>"><?= h($post['format']) ?></span>
+              <span class="cal-title"><?= h(mb_strimwidth($post['title'] ?? $post['campaign_id'], 0, 30, '…')) ?></span>
+            </a>
+          <?php endforeach; ?>
         </div>
       <?php endif; ?>
     <?php endforeach; endforeach; ?>

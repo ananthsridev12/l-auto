@@ -281,8 +281,19 @@ nav a.active { background: #EEF3FB; color: #0A66C2; font-weight: 600; border-rig
 }
 .cal-cell.empty { background: transparent; border-color: transparent; }
 .cal-cell.is-today { border-color: #0A66C2; border-width: 2px; }
-.cal-cell.has-post { cursor: pointer; background: #F7FAFF; }
-.cal-cell.has-post:hover { background: #EEF3FB; border-color: #0A66C2; }
+.cal-cell.has-post { background: #F7FAFF; overflow-y: auto; }
+
+.cal-post-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  text-decoration: none;
+  color: inherit;
+}
+.cal-post-row:hover { background: #EEF3FB; }
+.cal-post-row + .cal-post-row { margin-top: 2px; }
 .cal-day { font-size: 13px; font-weight: 700; color: #191919; }
 .is-today .cal-day { color: #0A66C2; }
 .cal-fmt {

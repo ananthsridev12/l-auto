@@ -37,7 +37,8 @@ function flash(string $key, ?string $message = null)
     return $value;
 }
 
-// Builds a Mon–Sun month grid; $postsByDate is keyed by 'Y-m-d'.
+// Builds a Mon–Sun month grid; $postsByDate is keyed by 'Y-m-d' with an
+// ARRAY of posts per date (a day can have more than one scheduled post).
 function build_calendar_grid(int $year, int $month, array $postsByDate): array
 {
     $firstOfMonth = new DateTime("{$year}-{$month}-01");
@@ -49,7 +50,7 @@ function build_calendar_grid(int $year, int $month, array $postsByDate): array
 
     for ($day = 1; $day <= $daysInMonth; $day++) {
         $date = sprintf('%04d-%02d-%02d', $year, $month, $day);
-        $week[] = ['day' => $day, 'date' => $date, 'post' => $postsByDate[$date] ?? null];
+        $week[] = ['day' => $day, 'date' => $date, 'posts' => $postsByDate[$date] ?? []];
         if (count($week) === 7) {
             $grid[] = $week;
             $week = [];

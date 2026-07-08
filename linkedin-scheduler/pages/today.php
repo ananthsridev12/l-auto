@@ -6,10 +6,17 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_login();
 $userId = current_user_id();
 
-$stmt = db()->prepare('SELECT id FROM posts WHERE user_id = ? AND DATE(scheduled_at) = CURDATE() ORDER BY id LIMIT 1');
+$stmt = db()->prepare('SELECT id FROM posts WHERE user_id = ? AND DATE(scheduled_at) = CURDATE() ORDER BY id ASC');
 $stmt->execute([$userId]);
-$postId = $stmt->fetchColumn();
-$post = $postId ? fetch_post_with_slides((int) $postId, $userId) : null;
+$todayIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+// The common case (one post today) gets the full editor below. With more
+// than one scheduled for the same day, show a picklist instead of
+// silently editing/posting just one of them.
+$post = count($todayIds) === 1 ? fetch_post_with_slides($todayIds[0], $userId) : null;
+$todayList = count($todayIds) > 1
+    ? array_map(fn ($id) => fetch_post_with_slides($id, $userId), $todayIds)
+    : [];
 
 $pageTitle   = "Today's Post";
 $activePage  = 'today';
@@ -73,6 +80,25 @@ require __DIR__ . '/../includes/layout_top.php';
     </div>
   </div>
 </div>
+<?php elseif ($todayList): ?>
+<p class="muted"><?= count($todayList) ?> posts are scheduled for today — open one to review and post it.</p>
+<section class="card">
+  <table class="preview-table">
+    <thead><tr><th>Campaign ID</th><th>Format</th><th>Title</th><th>Account</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      <?php foreach ($todayList as $p): ?>
+        <tr>
+          <td><?= h($p['campaign_id']) ?></td>
+          <td><?= h($p['format']) ?></td>
+          <td><?= h($p['title']) ?></td>
+          <td><?= h($p['account_name'] ?? '— unassigned —') ?></td>
+          <td><span class="badge badge-<?= h(strtolower($p['status'])) ?>"><?= h(ucfirst($p['status'])) ?></span></td>
+          <td><a href="<?= h(app_path('pages/post.php?id=' . $p['id'])) ?>" class="btn-tiny">Open</a></td>
+        </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+</section>
 <?php else: ?>
 <div class="empty-state">
   <h2>No post scheduled for today</h2>
