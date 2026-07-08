@@ -25,6 +25,7 @@ $__flashSuccess = flash('success');
     <nav>
       <a href="<?= h(app_path('pages/today.php')) ?>" class="<?= ($activePage ?? '') === 'today' ? 'active' : '' ?>">Today</a>
       <a href="<?= h(app_path('pages/calendar.php')) ?>" class="<?= ($activePage ?? '') === 'calendar' ? 'active' : '' ?>">Calendar</a>
+      <a href="<?= h(app_path('pages/drafts.php')) ?>" class="<?= ($activePage ?? '') === 'drafts' ? 'active' : '' ?>">Drafts</a>
       <a href="<?= h(app_path('pages/import.php')) ?>" class="<?= ($activePage ?? '') === 'import' ? 'active' : '' ?>">Import</a>
       <a href="<?= h(app_path('pages/accounts.php')) ?>" class="<?= ($activePage ?? '') === 'accounts' ? 'active' : '' ?>">Accounts</a>
       <a href="<?= h(app_path('pages/history.php')) ?>" class="<?= ($activePage ?? '') === 'history' ? 'active' : '' ?>">History</a>

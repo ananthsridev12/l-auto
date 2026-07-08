@@ -1,8 +1,14 @@
 <?php
-// Run daily via cPanel Cron Job, e.g.:
-//   0 9 * * *   php /home/{username}/public_html/linkedin-scheduler/cron/auto_post.php
+// Run via cPanel Cron Job every 15 minutes, e.g.:
+//   */15 * * * *   php /home/{username}/public_html/linkedin-scheduler/cron/auto_post.php
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
+
+// Anything "scheduled" more than this many hours in the past is treated
+// as stale rather than posted — protects against a backlog of overdue
+// rows (e.g. cron was off for a while, or a CSV date had already passed
+// at import time) firing all at once the moment cron next runs.
+const STALE_HOURS = 24;
 
 $pdo = db();
 
@@ -16,11 +22,24 @@ $due = $stmt->fetchAll();
 
 $posted = 0;
 $failed = 0;
+$skippedStale = 0;
 $skippedNoAccount = (int) $pdo->query(
     "SELECT COUNT(*) FROM posts WHERE status = 'scheduled' AND scheduled_at <= NOW() AND linkedin_account_id IS NULL"
 )->fetchColumn();
 
 foreach ($due as $post) {
+    $hoursOverdue = (time() - strtotime($post['scheduled_at'])) / 3600;
+    if ($hoursOverdue > STALE_HOURS) {
+        $upd = $pdo->prepare('UPDATE posts SET status = "failed", error_message = ? WHERE id = ?');
+        $upd->execute([
+            sprintf('Skipped: was scheduled for %s, more than %dh ago — review and reschedule manually.', $post['scheduled_at'], STALE_HOURS),
+            $post['id'],
+        ]);
+        $skippedStale++;
+        echo "[stale, skipped] #{$post['id']} {$post['campaign_id']} was due {$post['scheduled_at']}\n";
+        continue;
+    }
+
     if ($post['account_status'] !== 'active') {
         $upd = $pdo->prepare('UPDATE posts SET status = "failed", error_message = ? WHERE id = ?');
         $upd->execute(['Connected LinkedIn account needs to be reconnected.', $post['id']]);
@@ -60,4 +79,4 @@ foreach ($due as $post) {
     }
 }
 
-echo "Done. posted={$posted} failed={$failed} skipped_no_account={$skippedNoAccount}\n";
+echo "Done. posted={$posted} failed={$failed} skipped_stale={$skippedStale} skipped_no_account={$skippedNoAccount}\n";

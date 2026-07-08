@@ -95,10 +95,14 @@ foreach ($rows as $row) {
         $unmatchedAccount++;
     }
 
-    // A row with both a target account and a calendar date comes in
-    // already scheduled (at a default 9am slot, editable afterward);
-    // otherwise it lands as an unscheduled draft.
-    if ($accountId !== null && !empty($row['date'])) {
+    // A row with both a target account and a *future* calendar date comes
+    // in already scheduled (at a default 9am slot, editable afterward).
+    // A past date is never auto-scheduled — the cron sweep treats any
+    // "scheduled" row with scheduled_at <= NOW() as due immediately, so
+    // auto-scheduling a past date would post it the moment cron next
+    // runs, with no chance to review it first. Those land as drafts
+    // instead, same as rows with no date or no matched account.
+    if ($accountId !== null && !empty($row['date']) && $row['date'] >= date('Y-m-d')) {
         $status = 'scheduled';
         $scheduledAt = $row['date'] . ' 09:00:00';
     } else {
