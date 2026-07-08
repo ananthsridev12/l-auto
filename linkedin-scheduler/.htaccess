@@ -1,0 +1,9 @@
+<Files "config.php">
+    Require all denied
+</Files>
+
+<FilesMatch "\.(sql|md|log)$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes
