@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Today's Post</h1>
+  {% if post %}<span class="date-label">{{ post.date }}</span>{% endif %}
+</div>
+
+{% if post %}
+<div class="post-card">
+
+  <div class="post-meta-bar">
+    <span class="badge badge-campaign">{{ post.campaign_id }}</span>
+    <span class="badge badge-{{ post.format | lower | replace(' ','-') }}">{{ post.format }}</span>
+    <span class="post-title-text">{{ post.title }}</span>
+  </div>
+
+  <div class="post-layout">
+
+    <!-- Slide preview -->
+    <div class="slides-panel">
+      {% if post.slides %}
+        <div class="slide-frame">
+          <img id="slideImg" src="{{ post.slides[0] }}" alt="Slide preview">
+        </div>
+        {% if post.slides | length > 1 %}
+        <div class="slide-nav">
+          <button class="slide-btn" onclick="prevSlide()">&#8592;</button>
+          <span id="slideCounter">1 / {{ post.slides | length }}</span>
+          <button class="slide-btn" onclick="nextSlide()">&#8594;</button>
+        </div>
+        {% endif %}
+        <p class="slide-hint">{{ post.slides | length }} slide{% if post.slides | length > 1 %}s{% endif %} — will post as {% if post.slides | length > 1 %}PDF carousel{% else %}image{% endif %}</p>
+      {% else %}
+        <div class="no-slides">
+          <p>No rendered slides found.</p>
+          <p class="hint">Run render.py for {{ post.campaign_id }} first.</p>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Caption editor -->
+    <div class="editor-panel">
+      <div class="editor-label">Caption</div>
+
+      <div class="toolbar">
+        <button class="tool-btn bold-btn" onclick="applyBold()" title="Bold selected text">B</button>
+        <button class="tool-btn italic-btn" onclick="applyItalic()" title="Italic selected text">I</button>
+        <div class="toolbar-divider"></div>
+        <button class="tool-btn clear-btn" onclick="clearFormatting()" title="Remove formatting from selection">Clear Format</button>
+        <div class="toolbar-spacer"></div>
+        <span class="char-count"><span id="charCount">0</span> / 3,000</span>
+      </div>
+
+      <textarea id="caption" class="caption-editor" spellcheck="true">{{ post.caption }}</textarea>
+
+      <div class="editor-footer">
+        <span class="editor-hint">Select text, then click B or I to format. Works like LinkedIn Text Formatter.</span>
+      </div>
+
+      <button id="postBtn" class="post-btn" onclick="postNow()">
+        Post to LinkedIn
+      </button>
+
+      <div id="postStatus" class="post-status" style="display:none"></div>
+    </div>
+
+  </div>
+</div>
+
+{% else %}
+<div class="empty-state">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5" width="64" height="64"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+  <h2>No post scheduled for today</h2>
+  <p>Check your <a href="/calendar">calendar</a> to see upcoming posts, or add content to your CSV.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/formatter.js"></script>
+<script>
+const SLIDES = {{ post.slides | tojson if post else '[]' }};
+const CAMPAIGN_ID = "{{ post.campaign_id if post else '' }}";
+const FORMAT = "{{ post.format if post else '' }}";
+let current = 0;
+
+function prevSlide() {
+  if (current > 0) { current--; updateSlide(); }
+}
+function nextSlide() {
+  if (current < SLIDES.length - 1) { current++; updateSlide(); }
+}
+function updateSlide() {
+  document.getElementById('slideImg').src = SLIDES[current];
+  document.getElementById('slideCounter').textContent = `${current + 1} / ${SLIDES.length}`;
+}
+
+// Character counter
+const ta = document.getElementById('caption');
+const cc = document.getElementById('charCount');
+if (ta && cc) {
+  const update = () => {
+    cc.textContent = ta.value.length;
+    cc.style.color = ta.value.length > 2800 ? '#c0392b' : '#666';
+  };
+  ta.addEventListener('input', update);
+  update();
+}
+
+// Post
+async function postNow() {
+  const btn    = document.getElementById('postBtn');
+  const status = document.getElementById('postStatus');
+  const text   = document.getElementById('caption').value.trim();
+
+  if (!text) { alert('Caption is empty.'); return; }
+
+  btn.disabled    = true;
+  btn.textContent = 'Posting…';
+  status.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_id: CAMPAIGN_ID, caption: text, format: FORMAT }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      status.className = 'post-status success';
+      status.textContent = '✓ Posted successfully to LinkedIn!';
+      btn.textContent = 'Posted ✓';
+    } else {
+      throw new Error(d.error || 'Unknown error');
+    }
+  } catch (e) {
+    status.className = 'post-status error';
+    status.textContent = '✕ ' + e.message;
+    btn.disabled    = false;
+    btn.textContent = 'Post to LinkedIn';
+  }
+  status.style.display = 'block';
+}
+</script>
+{% endblock %}

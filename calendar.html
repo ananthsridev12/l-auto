@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>{{ month_name }} {{ year }}</h1>
+</div>
+
+<div class="calendar-card">
+  <div class="cal-weekdays">
+    <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+  </div>
+  <div class="cal-grid">
+    {% for week in grid %}
+      {% for cell in week %}
+        {% if cell is none %}
+          <div class="cal-cell empty"></div>
+        {% else %}
+          <div class="cal-cell {% if cell.date == today %}is-today{% endif %} {% if cell.post %}has-post{% endif %}"
+               {% if cell.post %}onclick="window.location='/post/{{ cell.date }}'"{% endif %}>
+            <span class="cal-day">{{ cell.day }}</span>
+            {% if cell.post %}
+              <span class="cal-fmt cal-fmt-{{ cell.post.format | lower | replace(' ','-') }}">
+                {{ cell.post.format | replace('Single Image','Image') | replace('Carousel','Carousel') | replace('Text Post','Text') }}
+              </span>
+              <span class="cal-title">{{ cell.post.title[:40] }}{% if cell.post.title | length > 40 %}…{% endif %}</span>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+  </div>
+</div>
+
+<div class="cal-legend">
+  <span class="legend-item"><span class="dot dot-image"></span>Single Image</span>
+  <span class="legend-item"><span class="dot dot-carousel"></span>Carousel</span>
+  <span class="legend-item"><span class="dot dot-text-post"></span>Text Post</span>
+</div>
+{% endblock %}
