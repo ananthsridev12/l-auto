@@ -41,6 +41,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $scheduledAt = null;
     $status = 'draft';
     if ($action === 'schedule' && $schedDate !== '') {
+        if (!in_array($existing['format'], get_enabled_formats($userId), true)) {
+            flash('error', "\"{$existing['format']}\" posting is disabled in Settings, so this can't be scheduled — enable it there first, or change this post's format.");
+            redirect('pages/post.php?id=' . $postId);
+        }
         $scheduledAt = $schedDate . ' ' . ($schedTime ?: '09:00') . ':00';
         $status = 'scheduled';
     }
@@ -61,6 +65,7 @@ if (!$post) {
     redirect('pages/calendar.php');
 }
 $accounts = fetch_user_accounts($userId);
+$formatDisabled = !in_array($post['format'], get_enabled_formats($userId), true);
 
 $pageTitle   = $post['campaign_id'] ?: 'Edit Post';
 $activePage  = 'calendar';
@@ -75,6 +80,10 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
   <h1><?= h($post['campaign_id']) ?></h1>
   <span class="badge badge-<?= h(strtolower($post['status'])) ?>"><?= h(ucfirst($post['status'])) ?></span>
 </div>
+
+<?php if ($formatDisabled): ?>
+  <p class="badge badge-warning">"<?= h($post['format']) ?>" posting is disabled in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> — this post can't be scheduled or posted until it's enabled, or you change its format.</p>
+<?php endif; ?>
 
 <div class="post-card">
   <div class="post-meta-bar">
@@ -103,14 +112,7 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
         <input type="hidden" name="csrf" value="<?= h($token) ?>">
 
         <div class="editor-label">Caption</div>
-        <div class="toolbar">
-          <button type="button" class="tool-btn" onclick="applyBold()">B</button>
-          <button type="button" class="tool-btn" onclick="applyItalic()">I</button>
-          <div class="toolbar-divider"></div>
-          <button type="button" class="tool-btn" onclick="clearFormatting()">Clear Format</button>
-          <div class="toolbar-spacer"></div>
-          <span class="char-count"><span id="charCount">0</span> / 3,000</span>
-        </div>
+        <?php include __DIR__ . '/_formatter_toolbar.php'; ?>
         <textarea id="caption" name="caption" class="caption-editor"><?= h($post['caption']) ?></textarea>
 
         <label>Title
@@ -139,7 +141,7 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
         </div>
       </form>
 
-      <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= !$post['linkedin_account_id'] ? 'disabled' : '' ?>>
+      <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$post['linkedin_account_id'] || $formatDisabled) ? 'disabled' : '' ?>>
         Post Now
       </button>
       <div id="postStatus" class="post-status" style="display:none"></div>

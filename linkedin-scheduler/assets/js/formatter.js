@@ -21,12 +21,21 @@ const UNDO   = {};  // Unicode → plain ASCII (for clearing)
   lowers.split('').forEach((c, i) => { const u = String.fromCodePoint(0x1D622 + i); ITALIC[c] = u; UNDO[u] = c; });
 })();
 
-function _transform(map) {
+// Underline / strikethrough use Unicode combining marks appended after
+// each character (U+0332 combining low line, U+0336 combining long
+// stroke overlay) — same trick as bold/italic in spirit: no real rich
+// text exists in a LinkedIn post, so the visual effect has to be baked
+// into the character stream itself. Renders correctly in LinkedIn's feed.
+const UNDERLINE_MARK    = '̲';
+const STRIKETHROUGH_MARK = '̶';
+const COMBINING_MARKS_RE = /[̀-ͯ]/g;
+
+function _transformChars(fn) {
   const ta = document.getElementById('caption');
   if (!ta) return;
   const s = ta.selectionStart, e = ta.selectionEnd;
-  if (s === e) { _toast('Select text first, then click B or I'); return; }
-  const out = [...ta.value.substring(s, e)].map(c => map[c] || c).join('');
+  if (s === e) { _toast('Select text first, then click a formatting button'); return; }
+  const out = [...ta.value.substring(s, e)].map(fn).join('');
   ta.value = ta.value.slice(0, s) + out + ta.value.slice(e);
   ta.selectionStart = s;
   ta.selectionEnd   = s + out.length;
@@ -34,19 +43,42 @@ function _transform(map) {
   ta.dispatchEvent(new Event('input'));
 }
 
-function applyBold()   { _transform(BOLD);   }
-function applyItalic() { _transform(ITALIC); }
+function _transformLines(fn) {
+  const ta = document.getElementById('caption');
+  if (!ta) return;
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  if (s === e) { _toast('Select one or more lines first'); return; }
+  let n = 0;
+  const out = ta.value.substring(s, e).split('\n')
+    .map(line => line.trim() === '' ? line : fn(line, ++n))
+    .join('\n');
+  ta.value = ta.value.slice(0, s) + out + ta.value.slice(e);
+  ta.selectionStart = s;
+  ta.selectionEnd   = s + out.length;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+
+function applyBold()          { _transformChars(c => BOLD[c] || c); }
+function applyItalic()        { _transformChars(c => ITALIC[c] || c); }
+function applyUnderline()     { _transformChars(c => c === '\n' ? c : c + UNDERLINE_MARK); }
+function applyStrikethrough() { _transformChars(c => c === '\n' ? c : c + STRIKETHROUGH_MARK); }
+
+function applyBulletList()   { _transformLines(line => `• ${line}`); }
+function applyNumberedList() { _transformLines((line, n) => `${n}. ${line}`); }
 
 function clearFormatting() {
   const ta = document.getElementById('caption');
   if (!ta) return;
   const s = ta.selectionStart, e = ta.selectionEnd;
+  const stripAll = str => [...str].map(c => UNDO[c] || c).join('')
+    .normalize('NFC').replace(COMBINING_MARKS_RE, '')
+    .replace(/^(•|\d+\.)\s+/gm, ''); // strip bullet/numbered list prefixes too
 
   if (s === e) {
-    // No selection — clear entire textarea
-    ta.value = [...ta.value].map(c => UNDO[c] || c).join('');
+    ta.value = stripAll(ta.value);
   } else {
-    const out = [...ta.value.substring(s, e)].map(c => UNDO[c] || c).join('');
+    const out = stripAll(ta.value.substring(s, e));
     ta.value = ta.value.slice(0, s) + out + ta.value.slice(e);
     ta.selectionStart = s;
     ta.selectionEnd   = s + out.length;
@@ -54,6 +86,53 @@ function clearFormatting() {
   ta.focus();
   ta.dispatchEvent(new Event('input'));
 }
+
+// ── Emoji picker ─────────────────────────────────────────────────────────
+
+const EMOJI_SET = [
+  '😀','😂','😊','😍','🤔','😅','😉','🙂','😢','😮',
+  '👍','👏','🙌','💪','🤝','👀','🙏','✌️','👌','🤟',
+  '🔥','✨','🎉','🚀','💡','⭐','❤️','💯','⚡','🏆',
+  '📈','📊','📌','📝','📅','💬','✅','❌','⏰','🎯',
+];
+
+function toggleEmojiPicker() {
+  const picker = document.getElementById('emojiPicker');
+  if (!picker) return;
+  const opening = picker.style.display === 'none' || !picker.style.display;
+  if (opening && !picker.dataset.built) {
+    EMOJI_SET.forEach(emoji => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'emoji-option';
+      btn.textContent = emoji;
+      btn.onclick = (ev) => { ev.stopPropagation(); insertEmoji(emoji); };
+      picker.appendChild(btn);
+    });
+    picker.dataset.built = '1';
+  }
+  picker.style.display = opening ? 'grid' : 'none';
+}
+
+function insertEmoji(emoji) {
+  const ta = document.getElementById('caption');
+  if (!ta) return;
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  ta.value = ta.value.slice(0, s) + emoji + ta.value.slice(e);
+  ta.selectionStart = ta.selectionEnd = s + emoji.length;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+  const picker = document.getElementById('emojiPicker');
+  if (picker) picker.style.display = 'none';
+}
+
+document.addEventListener('click', (ev) => {
+  const picker = document.getElementById('emojiPicker');
+  if (!picker || picker.style.display === 'none') return;
+  if (!picker.contains(ev.target) && ev.target.closest('.emoji-picker-wrap') === null) {
+    picker.style.display = 'none';
+  }
+});
 
 function _toast(msg) {
   let t = document.getElementById('_toast');

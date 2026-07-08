@@ -31,6 +31,9 @@ if (!$post['linkedin_account_id']) {
 if ($post['account_status'] !== 'active') {
     json_response(['success' => false, 'error' => 'The connected LinkedIn account needs to be reconnected.'], 422);
 }
+if (!in_array($post['format'], get_enabled_formats($userId), true)) {
+    json_response(['success' => false, 'error' => "\"{$post['format']}\" posting is disabled in Settings."], 422);
+}
 
 $slideStmt = db()->prepare('SELECT filepath FROM post_slides WHERE post_id = ? ORDER BY slide_order ASC');
 $slideStmt->execute([$postId]);

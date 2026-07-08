@@ -2,6 +2,7 @@
 // Run via cPanel Cron Job every 15 minutes, e.g.:
 //   */15 * * * *   php /home/{username}/public_html/linkedin-scheduler/cron/auto_post.php
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
 
 // Anything "scheduled" more than this many hours in the past is treated
@@ -43,6 +44,13 @@ foreach ($due as $post) {
     if ($post['account_status'] !== 'active') {
         $upd = $pdo->prepare('UPDATE posts SET status = "failed", error_message = ? WHERE id = ?');
         $upd->execute(['Connected LinkedIn account needs to be reconnected.', $post['id']]);
+        $failed++;
+        continue;
+    }
+
+    if (!in_array($post['format'], get_enabled_formats((int) $post['user_id']), true)) {
+        $upd = $pdo->prepare('UPDATE posts SET status = "failed", error_message = ? WHERE id = ?');
+        $upd->execute(["\"{$post['format']}\" posting is disabled in Settings.", $post['id']]);
         $failed++;
         continue;
     }

@@ -1,8 +1,36 @@
 <?php
 
+const ALL_POST_FORMATS = ['Single Image', 'Carousel', 'Text Post', 'Poll'];
+
+// Poll is excluded from the default set — LinkedIn's Posts API (what
+// this app uses to publish) has no endpoint for creating a real,
+// votable poll, so "posting" a Poll-format row would only ever publish
+// plain text under a misleading label. Users can still turn it on
+// explicitly in Settings if they just want the text content out.
+const DEFAULT_ENABLED_FORMATS = ['Single Image', 'Carousel', 'Text Post'];
+
 function h(?string $value): string
 {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+}
+
+function get_enabled_formats(int $userId): array
+{
+    $stmt = db()->prepare('SELECT enabled_formats FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $raw = $stmt->fetchColumn();
+    if (!$raw) {
+        return DEFAULT_ENABLED_FORMATS;
+    }
+    $selected = array_map('trim', explode(',', $raw));
+    return array_values(array_intersect(ALL_POST_FORMATS, $selected));
+}
+
+function set_enabled_formats(int $userId, array $formats): void
+{
+    $formats = array_values(array_intersect(ALL_POST_FORMATS, $formats));
+    $stmt = db()->prepare('UPDATE users SET enabled_formats = ? WHERE id = ?');
+    $stmt->execute([implode(',', $formats), $userId]);
 }
 
 function redirect(string $path): void

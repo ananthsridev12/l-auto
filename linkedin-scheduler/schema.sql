@@ -2,11 +2,15 @@
 -- Target: MySQL 5.7+/8.0 (shared hosting / cPanel), InnoDB, utf8mb4
 
 CREATE TABLE IF NOT EXISTS users (
-  id            INT AUTO_INCREMENT PRIMARY KEY,
-  email         VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  name          VARCHAR(255),
-  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+  id               INT AUTO_INCREMENT PRIMARY KEY,
+  email            VARCHAR(255) UNIQUE NOT NULL,
+  password_hash    VARCHAR(255) NOT NULL,
+  name             VARCHAR(255),
+  -- Comma-separated subset of Single Image/Carousel/Text Post/Poll.
+  -- NULL/empty = default (everything except Poll, which LinkedIn's Posts
+  -- API cannot actually publish — see includes/helpers.php).
+  enabled_formats  VARCHAR(255) DEFAULT NULL,
+  created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Connected LinkedIn accounts: personal profile OR company page.

@@ -12,6 +12,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'formats') {
+        set_enabled_formats($userId, $_POST['formats'] ?? []);
+        flash('success', 'Post formats updated.');
+        redirect('pages/settings.php');
+    }
+
     $name = trim($_POST['name'] ?? '');
     $newPassword = $_POST['new_password'] ?? '';
 
@@ -30,6 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     flash('success', 'Settings saved.');
     redirect('pages/settings.php');
 }
+
+$enabledFormats = get_enabled_formats($userId);
 
 $pageTitle  = 'Settings';
 $activePage = 'settings';
@@ -58,6 +66,23 @@ require __DIR__ . '/../includes/layout_top.php';
 <section class="card">
   <h2>LinkedIn Accounts</h2>
   <p class="muted">Manage which personal profile and Company Pages are connected from the <a href="<?= h(app_path('pages/accounts.php')) ?>">Accounts</a> page.</p>
+</section>
+
+<section class="card">
+  <h2>Post Formats</h2>
+  <p class="muted">Only checked formats will auto-schedule from CSV import or be schedulable from the post editor. Anything else lands in Drafts instead. Poll is unchecked by default because LinkedIn's API has no way to actually publish a real poll — a "Poll" post would otherwise just go out as plain text under a misleading label.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="formats">
+    <?php foreach (ALL_POST_FORMATS as $fmt): ?>
+      <label class="checkbox-row">
+        <input type="checkbox" name="formats[]" value="<?= h($fmt) ?>" <?= in_array($fmt, $enabledFormats, true) ? 'checked' : '' ?>>
+        <?= h($fmt) ?>
+        <?= $fmt === 'Poll' ? '<span class="muted">(cannot actually publish as a poll — see note above)</span>' : '' ?>
+      </label>
+    <?php endforeach; ?>
+    <button type="submit" class="btn-primary">Save Formats</button>
+  </form>
 </section>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

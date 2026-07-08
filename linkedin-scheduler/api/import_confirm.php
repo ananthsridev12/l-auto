@@ -24,6 +24,8 @@ if (!$rows) {
     redirect('pages/import.php');
 }
 
+$enabledFormats = get_enabled_formats($userId);
+
 // Verify every mapped account actually belongs to this user (defense
 // against a tampered mapping_json field naming another user's account).
 $stmt = db()->prepare('SELECT id FROM linkedin_accounts WHERE user_id = ? AND status = "active"');
@@ -95,14 +97,15 @@ foreach ($rows as $row) {
         $unmatchedAccount++;
     }
 
-    // A row with both a target account and a *future* calendar date comes
-    // in already scheduled (at a default 9am slot, editable afterward).
-    // A past date is never auto-scheduled — the cron sweep treats any
-    // "scheduled" row with scheduled_at <= NOW() as due immediately, so
-    // auto-scheduling a past date would post it the moment cron next
-    // runs, with no chance to review it first. Those land as drafts
-    // instead, same as rows with no date or no matched account.
-    if ($accountId !== null && !empty($row['date']) && $row['date'] >= date('Y-m-d')) {
+    // A row auto-schedules only if it has a matched account, a *future*
+    // calendar date, AND its format is one the user has enabled (Poll
+    // is off by default — see includes/helpers.php). A past date is
+    // never auto-scheduled — the cron sweep treats any "scheduled" row
+    // with scheduled_at <= NOW() as due immediately, so auto-scheduling
+    // a past date would post it the moment cron next runs, with no
+    // chance to review it first. Anything that doesn't qualify lands as
+    // a draft instead.
+    if ($accountId !== null && !empty($row['date']) && $row['date'] >= date('Y-m-d') && in_array($row['format'], $enabledFormats, true)) {
         $status = 'scheduled';
         $scheduledAt = $row['date'] . ' 09:00:00';
     } else {
