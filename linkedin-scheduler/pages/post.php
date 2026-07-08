@@ -18,12 +18,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('error', 'Post not found.');
         redirect('pages/calendar.php');
     }
+
+    $action = $_POST['action'] ?? 'save';
+
+    // "unpublish" is the one action allowed on an already-posted post —
+    // it's an explicit manual override for when the user has deleted the
+    // LinkedIn post themselves and wants to reuse/reschedule the content.
+    // The app has no way to detect that on its own (would require calling
+    // LinkedIn's API to check the post still exists), so this is opt-in.
+    if ($action === 'unpublish') {
+        if ($existing['status'] !== 'posted') {
+            flash('error', 'Only a published post can be marked as unpublished.');
+            redirect('pages/post.php?id=' . $postId);
+        }
+        $stmt = db()->prepare(
+            'UPDATE posts SET status = "draft", scheduled_at = NULL, posted_at = NULL, li_post_urn = NULL, error_message = NULL
+             WHERE id = ? AND user_id = ?'
+        );
+        $stmt->execute([$postId, $userId]);
+        flash('success', 'Marked as not posted — this is now a draft you can edit and reschedule.');
+        redirect('pages/post.php?id=' . $postId);
+    }
+
     if ($existing['status'] === 'posted') {
         flash('error', 'This post has already been published and can no longer be edited.');
         redirect('pages/post.php?id=' . $postId);
     }
-
-    $action = $_POST['action'] ?? 'save';
 
     if ($action === 'delete') {
         $stmt = db()->prepare('DELETE FROM posts WHERE id = ? AND user_id = ?');
@@ -108,53 +128,65 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
     </div>
 
     <div class="editor-panel">
-      <form method="post" id="postForm">
-        <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <?php if ($post['status'] === 'posted'): ?>
+        <div class="editor-label">Caption (published — read only)</div>
+        <textarea class="caption-editor" readonly><?= h($post['caption']) ?></textarea>
+        <p class="muted">Posted <?= h($post['posted_at']) ?><?= $post['account_name'] ? ' as ' . h($post['account_name']) : '' ?><?= $post['li_post_urn'] ? ' — ' . h($post['li_post_urn']) : '' ?></p>
 
-        <div class="editor-label">Caption</div>
-        <?php include __DIR__ . '/_formatter_toolbar.php'; ?>
-        <textarea id="caption" name="caption" class="caption-editor"><?= h($post['caption']) ?></textarea>
+        <form method="post" onsubmit="return confirm('Only do this if you deleted the post on LinkedIn yourself. This turns it back into an editable draft here — it will NOT delete or repost anything on LinkedIn automatically.');" style="margin-top:12px;">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="action" value="unpublish">
+          <button type="submit" class="btn-secondary">I deleted this on LinkedIn — reset to draft</button>
+        </form>
+      <?php else: ?>
+        <form method="post" id="postForm">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
 
-        <label>Title
-          <input type="text" name="title" value="<?= h($post['title']) ?>">
-        </label>
+          <div class="editor-label">Caption</div>
+          <?php include __DIR__ . '/_formatter_toolbar.php'; ?>
+          <textarea id="caption" name="caption" class="caption-editor"><?= h($post['caption']) ?></textarea>
 
-        <label>LinkedIn Account
-          <select name="linkedin_account_id">
-            <option value="">— Unassigned —</option>
-            <?php foreach ($accounts as $acct): ?>
-              <option value="<?= (int) $acct['id'] ?>" <?= $post['linkedin_account_id'] == $acct['id'] ? 'selected' : '' ?>>
-                <?= h($acct['display_name']) ?> (<?= h($acct['account_type']) ?>)
-              </option>
-            <?php endforeach; ?>
-          </select>
-        </label>
+          <label>Title
+            <input type="text" name="title" value="<?= h($post['title']) ?>">
+          </label>
 
-        <div class="schedule-row">
-          <label>Date <input type="date" name="scheduled_date" value="<?= h($schedDateVal) ?>"></label>
-          <label>Time <input type="time" name="scheduled_time" value="<?= h($schedTimeVal) ?>"></label>
-        </div>
+          <label>LinkedIn Account
+            <select name="linkedin_account_id">
+              <option value="">— Unassigned —</option>
+              <?php foreach ($accounts as $acct): ?>
+                <option value="<?= (int) $acct['id'] ?>" <?= $post['linkedin_account_id'] == $acct['id'] ? 'selected' : '' ?>>
+                  <?= h($acct['display_name']) ?> (<?= h($acct['account_type']) ?>)
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </label>
 
-        <div class="button-row">
-          <button type="submit" name="action" value="save" class="btn-secondary">Save Draft</button>
-          <button type="submit" name="action" value="schedule" class="btn-primary">Schedule</button>
-        </div>
-      </form>
+          <div class="schedule-row">
+            <label>Date <input type="date" name="scheduled_date" value="<?= h($schedDateVal) ?>"></label>
+            <label>Time <input type="time" name="scheduled_time" value="<?= h($schedTimeVal) ?>"></label>
+          </div>
 
-      <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$post['linkedin_account_id'] || $formatDisabled) ? 'disabled' : '' ?>>
-        Post Now
-      </button>
-      <div id="postStatus" class="post-status" style="display:none"></div>
+          <div class="button-row">
+            <button type="submit" name="action" value="save" class="btn-secondary">Save Draft</button>
+            <button type="submit" name="action" value="schedule" class="btn-primary">Schedule</button>
+          </div>
+        </form>
 
-      <?php if ($post['error_message']): ?>
-        <p class="badge badge-warning">Last error: <?= h($post['error_message']) ?></p>
+        <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$post['linkedin_account_id'] || $formatDisabled) ? 'disabled' : '' ?>>
+          Post Now
+        </button>
+        <div id="postStatus" class="post-status" style="display:none"></div>
+
+        <?php if ($post['error_message']): ?>
+          <p class="badge badge-warning">Last error: <?= h($post['error_message']) ?></p>
+        <?php endif; ?>
+
+        <form method="post" onsubmit="return confirm('Delete this post permanently?');" style="margin-top:20px;">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="action" value="delete">
+          <button type="submit" class="btn-tiny btn-danger">Delete Post</button>
+        </form>
       <?php endif; ?>
-
-      <form method="post" onsubmit="return confirm('Delete this post permanently?');" style="margin-top:20px;">
-        <input type="hidden" name="csrf" value="<?= h($token) ?>">
-        <input type="hidden" name="action" value="delete">
-        <button type="submit" class="btn-tiny btn-danger">Delete Post</button>
-      </form>
     </div>
   </div>
 </div>
