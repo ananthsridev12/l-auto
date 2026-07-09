@@ -30,13 +30,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $enabledFormats = get_enabled_formats($userId);
     $updateStmt = db()->prepare('UPDATE posts SET scheduled_at = ?, status = "scheduled" WHERE id = ?');
+    $toDraftStmt = db()->prepare('UPDATE posts SET scheduled_at = NULL, status = "draft" WHERE id = ?');
 
     $updated = 0;
     $skippedNoAccount = 0;
     $skippedFormat = 0;
     $skippedNotScheduled = 0;
+    $skippedAlreadyDraft = 0;
 
-    if ($mode === 'shift') {
+    if ($mode === 'to_draft') {
+        foreach ($selectedPosts as $p) {
+            if ($p['status'] !== 'scheduled') {
+                $skippedAlreadyDraft++;
+                continue;
+            }
+            $toDraftStmt->execute([$p['id']]);
+            $updated++;
+        }
+    } elseif ($mode === 'shift') {
         $days = (int) ($_POST['shift_days'] ?? 0);
         foreach ($selectedPosts as $p) {
             if ($p['status'] !== 'scheduled' || !$p['scheduled_at']) {
@@ -82,6 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($skippedFormat > 0) {
         $parts[] = "{$skippedFormat} skipped (format disabled in Settings)";
+    }
+    if ($skippedAlreadyDraft > 0) {
+        $parts[] = "{$skippedAlreadyDraft} skipped (already a draft)";
     }
     if ($skippedNotScheduled > 0) {
         $parts[] = "{$skippedNotScheduled} skipped (not currently scheduled — shift only applies to already-scheduled posts)";
@@ -144,6 +158,7 @@ require __DIR__ . '/../includes/layout_top.php';
       <label class="checkbox-row"><input type="radio" name="mode" value="same" checked> Set the same date/time for all selected</label>
       <label class="checkbox-row"><input type="radio" name="mode" value="spread"> Auto-spread one per day, starting from a date</label>
       <label class="checkbox-row"><input type="radio" name="mode" value="shift"> Shift already-scheduled posts by N days (ignores drafts)</label>
+      <label class="checkbox-row"><input type="radio" name="mode" value="to_draft"> Move selected back to Draft (unschedule, ignores existing drafts)</label>
 
       <div id="dateFields" class="schedule-row">
         <label>Date <input type="date" name="bulk_date"></label>
@@ -169,7 +184,7 @@ require __DIR__ . '/../includes/layout_top.php';
   const shiftFields = document.getElementById('shiftFields');
   function updateModeFields() {
     const mode = document.querySelector('input[name=mode]:checked').value;
-    dateFields.style.display = mode === 'shift' ? 'none' : 'flex';
+    dateFields.style.display = (mode === 'same' || mode === 'spread') ? 'flex' : 'none';
     shiftFields.style.display = mode === 'shift' ? 'block' : 'none';
   }
   modeRadios.forEach(r => r.addEventListener('change', updateModeFields));
