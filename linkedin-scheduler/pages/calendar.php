@@ -41,6 +41,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </div>
 </div>
 
+<p class="muted cal-scroll-hint">Swipe sideways to see the full week &rarr;</p>
 <div class="calendar-card">
   <div class="cal-weekdays">
     <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
@@ -54,7 +55,10 @@ require __DIR__ . '/../includes/layout_top.php';
           <span class="cal-day"><?= (int) $cell['day'] ?></span>
           <?php foreach ($cell['posts'] as $post): ?>
             <a class="cal-post-row" href="<?= h(app_path('pages/post.php?id=' . $post['id'])) ?>">
-              <span class="cal-fmt cal-fmt-<?= h(strtolower(str_replace(' ', '-', $post['format']))) ?>"><?= h($post['format']) ?></span>
+              <span class="cal-badges">
+                <span class="cal-fmt cal-fmt-<?= h(strtolower(str_replace(' ', '-', $post['format']))) ?>"><?= h($post['format']) ?></span>
+                <span class="cal-status cal-status-<?= h(strtolower($post['status'])) ?>"><?= h(ucfirst($post['status'])) ?></span>
+              </span>
               <span class="cal-title"><?= h(mb_strimwidth($post['title'] ?? $post['campaign_id'], 0, 30, '…')) ?></span>
             </a>
           <?php endforeach; ?>
@@ -69,6 +73,12 @@ require __DIR__ . '/../includes/layout_top.php';
   <span class="legend-item"><span class="dot dot-carousel"></span>Carousel</span>
   <span class="legend-item"><span class="dot dot-text-post"></span>Text Post</span>
   <span class="legend-item"><span class="dot dot-poll"></span>Poll</span>
+</div>
+<div class="cal-legend">
+  <span class="legend-item"><span class="cal-status cal-status-draft">Draft</span></span>
+  <span class="legend-item"><span class="cal-status cal-status-scheduled">Scheduled</span></span>
+  <span class="legend-item"><span class="cal-status cal-status-posted">Posted</span></span>
+  <span class="legend-item"><span class="cal-status cal-status-failed">Failed</span></span>
 </div>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

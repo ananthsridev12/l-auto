@@ -8,7 +8,7 @@ require_once __DIR__ . '/../includes/linkedin_api.php';
 require_login();
 $userId = current_user_id();
 
-$availableFormats = array_values(array_intersect(['Text Post', 'Single Image'], get_enabled_formats($userId)));
+$availableFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel'], get_enabled_formats($userId)));
 $accounts = fetch_user_accounts($userId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -26,6 +26,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($format === 'Single Image' && empty($_FILES['image']['tmp_name'])) {
         flash('error', 'Upload an image for a Single Image post.');
         redirect('pages/new_post.php');
+    }
+    if ($format === 'Carousel') {
+        $uploadedCount = empty($_FILES['images']['tmp_name']) ? 0 : count(array_filter($_FILES['images']['tmp_name']));
+        if ($uploadedCount === 0) {
+            flash('error', 'Upload at least one image for a Carousel post.');
+            redirect('pages/new_post.php');
+        }
+        if ($uploadedCount > MAX_SLIDES_PER_CAMPAIGN) {
+            flash('error', 'A Carousel can have at most ' . MAX_SLIDES_PER_CAMPAIGN . ' slides.');
+            redirect('pages/new_post.php');
+        }
     }
 
     $caption    = $_POST['caption'] ?? '';
@@ -82,6 +93,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ->execute([$postId, $filename, $destPath]);
     }
 
+    if ($format === 'Carousel' && !empty($_FILES['images']['tmp_name'])) {
+        $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+        if (!is_dir($destDir)) {
+            mkdir($destDir, 0755, true);
+        }
+        $insertSlide = db()->prepare('INSERT INTO post_slides (post_id, slide_order, filename, filepath) VALUES (?, ?, ?, ?)');
+        $order = 0;
+        foreach ($_FILES['images']['tmp_name'] as $i => $tmpPath) {
+            if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
+                continue;
+            }
+            $contents = file_get_contents($tmpPath);
+            $mime = zip_sniff_image_mime($contents);
+            if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
+                continue; // skip a bad file rather than aborting the whole carousel
+            }
+            $order++;
+            $ext = $mime === 'image/png' ? 'png' : 'jpg';
+            $filename = sprintf('slide_%02d.%s', $order, $ext);
+            $destPath = $destDir . '/' . $filename;
+            file_put_contents($destPath, $contents);
+            $insertSlide->execute([$postId, $order, $filename, $destPath]);
+        }
+        if ($order === 0) {
+            db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
+            flash('error', 'None of the uploaded files were valid PNG/JPEG images.');
+            redirect('pages/new_post.php');
+        }
+    }
+
     if ($action === 'post_now') {
         $result = publish_post_now($postId, $userId);
         flash($result['success'] ? 'success' : 'error', $result['success'] ? 'Posted to LinkedIn.' : $result['error']);
@@ -102,7 +143,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <?php if (empty($availableFormats)): ?>
   <section class="card">
-    <p class="muted">Text Post and Single Image are both disabled in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> — enable at least one to compose a new post here.</p>
+    <p class="muted">Text Post, Single Image, and Carousel are all disabled in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> — enable at least one to compose a new post here.</p>
   </section>
 <?php else: ?>
 <div class="post-card">
@@ -118,6 +159,11 @@ require __DIR__ . '/../includes/layout_top.php';
       <div id="imageUploadField" style="width:100%; margin-top:12px; display:none;">
         <label>Image (PNG or JPEG)
           <input type="file" name="image" accept="image/png,image/jpeg" form="newPostForm">
+        </label>
+      </div>
+      <div id="carouselUploadField" style="width:100%; margin-top:12px; display:none;">
+        <label>Slides (PNG or JPEG, select multiple — combined into a PDF carousel, in the order selected)
+          <input type="file" name="images[]" accept="image/png,image/jpeg" multiple form="newPostForm">
         </label>
       </div>
     </div>
@@ -168,9 +214,11 @@ require __DIR__ . '/../includes/layout_top.php';
   (function () {
     var select = document.getElementById('formatSelect');
     var imageField = document.getElementById('imageUploadField');
-    if (!select || !imageField) return;
+    var carouselField = document.getElementById('carouselUploadField');
+    if (!select || !imageField || !carouselField) return;
     var toggle = function () {
       imageField.style.display = select.value === 'Single Image' ? 'block' : 'none';
+      carouselField.style.display = select.value === 'Carousel' ? 'block' : 'none';
     };
     select.addEventListener('change', toggle);
     toggle();
