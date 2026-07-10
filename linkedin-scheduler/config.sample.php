@@ -39,3 +39,11 @@ define('LI_SCOPES_PERSONAL', 'openid profile w_member_social');
 define('LI_SCOPES_COMPANY',  'openid profile w_member_social w_organization_social');
 
 define('UPLOAD_DIR', __DIR__ . '/uploads');
+
+// Free-tier Gemini API key, used by Content Studio to write carousel/
+// single-image copy when a CSV row's Creative Content column is left
+// blank (see includes/ai_generate.php). Get one at https://aistudio.google.com/apikey
+// Leave blank to disable AI generation — pre-written Creative Content
+// rows still work fine without it.
+define('GEMINI_API_KEY', '');
+define('GEMINI_MODEL',   'gemini-2.5-flash');
