@@ -260,10 +260,48 @@ function render_draw_rule($im, float $y, array $p): float
     return $y + $gapAbove + $thick + $gapBelow;
 }
 
-function render_numbered_card($im, int $num, string $text, float $y, array $p): float
+// Pure measurement, no drawing — mirrors render_numbered_card()'s height
+// math exactly so render_fit_font_size() can pick a size before drawing.
+function render_numbered_card_height(string $text, int $fontSize): float
+{
+    [, , $cw] = render_content_edges();
+    $badge = 44; $px = 20; $py = 15;
+    $lines = render_wrap($text, $fontSize, false, $cw - $badge - $px * 2 - 18);
+    $ch = max($badge + $py * 2, count($lines) * render_lh($fontSize) + $py * 2);
+    return $ch + 14; // + the gap render_numbered_card() adds below each card
+}
+
+// Pure measurement, no drawing — mirrors render_cta_banner()'s height math.
+function render_cta_banner_height(string $text, int $fontSize): float
+{
+    [, , $cw] = render_content_edges();
+    $aw = render_text_width('→  ', $fontSize, true);
+    $lines = render_wrap($text, $fontSize, true, $cw - $aw - 40);
+    return count($lines) * render_lh($fontSize) + 40 + 16; // + the gap below
+}
+
+// Picks the largest candidate font size (assumed descending) whose
+// projected total height for every item stays at/below $ceiling, so the
+// footer never has to clamp onto still-drawing content. Falls back to the
+// smallest candidate (best effort) if nothing fits.
+function render_fit_font_size(array $items, float $startY, float $ceiling, array $candidateSizes, callable $itemHeightFn): int
+{
+    foreach ($candidateSizes as $size) {
+        $y = $startY;
+        foreach ($items as $item) {
+            $y += $itemHeightFn($item, $size);
+        }
+        if ($y <= $ceiling) {
+            return $size;
+        }
+    }
+    return end($candidateSizes);
+}
+
+function render_numbered_card($im, int $num, string $text, float $y, array $p, int $fontSize = 26): float
 {
     [$cx, $rx, $cw] = render_content_edges();
-    $fs = 26; $badge = 44; $px = 20; $py = 15;
+    $fs = $fontSize; $badge = 44; $px = 20; $py = 15;
     $lines = render_wrap($text, $fs, false, $cw - $badge - $px * 2 - 18);
     $lineH = render_lh($fs);
     $textH = count($lines) * $lineH;
@@ -287,10 +325,10 @@ function render_numbered_card($im, int $num, string $text, float $y, array $p): 
     return $y + $ch + 14;
 }
 
-function render_cta_banner($im, string $text, float $y, array $p): float
+function render_cta_banner($im, string $text, float $y, array $p, int $fontSize = 27): float
 {
     [$cx, $rx, $cw] = render_content_edges();
-    $fs = 27;
+    $fs = $fontSize;
     $lh = render_lh($fs);
     $aw = render_text_width('→  ', $fs, true);
     $lines = render_wrap($text, $fs, true, $cw - $aw - 40);
@@ -394,8 +432,10 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
         $y += 22;
     }
 
-    foreach (($slide['points'] ?? []) as $i => $point) {
-        $y = render_numbered_card($im, $i + 1, $point, $y, $p);
+    $points = $slide['points'] ?? [];
+    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], 'render_numbered_card_height');
+    foreach ($points as $i => $point) {
+        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize);
     }
 
     render_footer_simple($im, $y, $p, $name);
@@ -426,8 +466,10 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
         $y += 22;
     }
 
-    foreach (($slide['points'] ?? []) as $point) {
-        $y = render_cta_banner($im, $point, $y, $p);
+    $points = $slide['points'] ?? [];
+    $bannerSize = render_fit_font_size($points, $y, 802, [27, 24, 21, 19], 'render_cta_banner_height');
+    foreach ($points as $point) {
+        $y = render_cta_banner($im, $point, $y, $p, $bannerSize);
     }
 
     render_footer_with_photo($im, $y, $p, $name, $photoPath);
@@ -458,8 +500,10 @@ function render_slide_single($im, array $data, array $p, string $name): void
         $y += 22;
     }
 
-    foreach (($slide['points'] ?? []) as $i => $point) {
-        $y = render_numbered_card($im, $i + 1, $point, $y, $p);
+    $points = $slide['points'] ?? [];
+    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], 'render_numbered_card_height');
+    foreach ($points as $i => $point) {
+        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize);
     }
 
     render_footer_simple($im, $y, $p, $name);
