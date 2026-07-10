@@ -9,6 +9,8 @@ const ALL_POST_FORMATS = ['Single Image', 'Carousel', 'Text Post', 'Poll'];
 // explicitly in Settings if they just want the text content out.
 const DEFAULT_ENABLED_FORMATS = ['Single Image', 'Carousel', 'Text Post'];
 
+const AI_PROVIDERS = ['gemini', 'claude', 'openai'];
+
 function h(?string $value): string
 {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
@@ -67,6 +69,103 @@ function set_gemini_api_key(int $userId, ?string $key): void
     $key = trim((string) $key);
     $stmt = db()->prepare('UPDATE users SET gemini_api_key = ? WHERE id = ?');
     $stmt->execute([$key === '' ? null : $key, $userId]);
+}
+
+function get_claude_api_key(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT claude_api_key FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $key = $stmt->fetchColumn();
+    return $key ?: null;
+}
+
+function set_claude_api_key(int $userId, ?string $key): void
+{
+    $key = trim((string) $key);
+    $stmt = db()->prepare('UPDATE users SET claude_api_key = ? WHERE id = ?');
+    $stmt->execute([$key === '' ? null : $key, $userId]);
+}
+
+function get_openai_api_key(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT openai_api_key FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $key = $stmt->fetchColumn();
+    return $key ?: null;
+}
+
+function set_openai_api_key(int $userId, ?string $key): void
+{
+    $key = trim((string) $key);
+    $stmt = db()->prepare('UPDATE users SET openai_api_key = ? WHERE id = ?');
+    $stmt->execute([$key === '' ? null : $key, $userId]);
+}
+
+function get_ai_provider(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT ai_provider FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $provider = $stmt->fetchColumn();
+    return in_array($provider, AI_PROVIDERS, true) ? $provider : null;
+}
+
+function set_ai_provider(int $userId, ?string $provider): void
+{
+    $provider = in_array($provider, AI_PROVIDERS, true) ? $provider : null;
+    $stmt = db()->prepare('UPDATE users SET ai_provider = ? WHERE id = ?');
+    $stmt->execute([$provider, $userId]);
+}
+
+function get_brand_brief(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT brand_brief FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $brief = $stmt->fetchColumn();
+    return $brief !== false && trim((string) $brief) !== '' ? $brief : null;
+}
+
+function set_brand_brief(int $userId, ?string $brief): void
+{
+    $brief = trim((string) $brief);
+    $stmt = db()->prepare('UPDATE users SET brand_brief = ? WHERE id = ?');
+    $stmt->execute([$brief === '' ? null : $brief, $userId]);
+}
+
+// Resolves which provider/key/model AI generation should use for
+// $userId. Provider: the user's own preference, or AI_PROVIDER_DEFAULT
+// if unset. API key: the user's own key for that provider; only falls
+// back to the admin-shared *_API_KEY_DEFAULT (config.php) when the
+// resolved provider is ALSO the site's default provider — a user who
+// deliberately picked a non-default provider without their own key gets
+// null (not silently billed to the admin's key for a provider they
+// didn't confirm). Model is always the provider's config constant.
+function resolve_ai_config(int $userId): array
+{
+    $provider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;
+
+    $userKeys = [
+        'gemini' => get_gemini_api_key($userId),
+        'claude' => get_claude_api_key($userId),
+        'openai' => get_openai_api_key($userId),
+    ];
+    $models = [
+        'gemini' => GEMINI_MODEL,
+        'claude' => CLAUDE_MODEL,
+        'openai' => OPENAI_MODEL,
+    ];
+
+    $apiKey = $userKeys[$provider] ?? null;
+    if ($apiKey === null && $provider === AI_PROVIDER_DEFAULT) {
+        // Gemini intentionally has no admin-shared default — its free
+        // tier is meant to be per-user, not pooled across every signup.
+        if ($provider === 'claude' && CLAUDE_API_KEY_DEFAULT !== '') {
+            $apiKey = CLAUDE_API_KEY_DEFAULT;
+        } elseif ($provider === 'openai' && OPENAI_API_KEY_DEFAULT !== '') {
+            $apiKey = OPENAI_API_KEY_DEFAULT;
+        }
+    }
+
+    return ['provider' => $provider, 'api_key' => $apiKey, 'model' => $models[$provider] ?? null];
 }
 
 function redirect(string $path): void

@@ -10,11 +10,22 @@ CREATE TABLE IF NOT EXISTS users (
   -- NULL/empty = default (everything except Poll, which LinkedIn's Posts
   -- API cannot actually publish — see includes/helpers.php).
   enabled_formats  VARCHAR(255) DEFAULT NULL,
-  -- Per-user Gemini API key for Content Studio / New Post AI generation
-  -- (includes/ai_generate.php) — each user brings their own free-tier
-  -- key rather than sharing one app-wide key. NULL = AI generation
-  -- unavailable for that user; pre-written content still works fine.
+  -- Per-provider API keys for Content Studio / New Post AI generation
+  -- (includes/ai_generate.php). Each is optional — a user can bring their
+  -- own key for whichever provider(s) they want, or leave all blank and
+  -- fall back to the admin-configured default provider/key in config.php
+  -- (see resolve_ai_config() in includes/helpers.php). ai_provider is the
+  -- user's preferred provider ('gemini'|'claude'|'openai'); NULL means
+  -- "use the site default". The model used per provider is always an
+  -- admin/config-level constant (GEMINI_MODEL/CLAUDE_MODEL/OPENAI_MODEL),
+  -- never user-editable.
   gemini_api_key   VARCHAR(255) DEFAULT NULL,
+  claude_api_key   VARCHAR(255) DEFAULT NULL,
+  openai_api_key   VARCHAR(255) DEFAULT NULL,
+  ai_provider      VARCHAR(20) DEFAULT NULL,
+  -- Free-text brand/voice/business context, prepended to every AI
+  -- generation call alongside any selected persona/content pillar below.
+  brand_brief      TEXT DEFAULT NULL,
   created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -52,6 +63,42 @@ CREATE TABLE IF NOT EXISTS tag_directory (
   created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uniq_user_name (user_id, display_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Content Knowledge Base: reusable context a user builds up once and
+-- picks from when generating (New Post's AI panel) or that's applied
+-- automatically (brand_brief) instead of retyping brand context every
+-- time. See includes/ai_generate.php build_generation_prompt().
+CREATE TABLE IF NOT EXISTS personas (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  user_id      INT NOT NULL,
+  name         VARCHAR(255) NOT NULL,
+  description  TEXT,
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_user_persona (user_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS content_pillars (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  user_id      INT NOT NULL,
+  name         VARCHAR(255) NOT NULL,
+  description  TEXT,
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_user_pillar (user_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- funnel_stage is a plain attribute rather than a separate funnel-builder
+-- entity — enough to let a CTA be filtered/labeled by where it fits
+-- without a whole new funnel-modeling UI.
+CREATE TABLE IF NOT EXISTS cta_library (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  user_id       INT NOT NULL,
+  text          VARCHAR(500) NOT NULL,
+  funnel_stage  ENUM('Awareness','Consideration','Decision','Retention') DEFAULT NULL,
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Tracks each CSV+ZIP bulk import run.

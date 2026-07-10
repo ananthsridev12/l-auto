@@ -8,7 +8,8 @@ require_once __DIR__ . '/../includes/ai_generate.php';
 
 require_login();
 $userId = current_user_id();
-$geminiKey = get_gemini_api_key($userId);
+$aiConfig = resolve_ai_config($userId);
+$brandBrief = get_brand_brief($userId);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_FILES['csv']['tmp_name'])) {
     json_response(['success' => false, 'error' => 'No CSV file uploaded'], 400);
@@ -37,14 +38,14 @@ foreach ($preview['rows'] as &$entry) {
         $entry['creative'] = $mechanical;
         continue;
     }
-    if (!gemini_configured($geminiKey)) {
+    if (!ai_configured($aiConfig)) {
         $entry['skip'] = true;
-        $entry['skip_reason'] = 'No Creative Content, and no Gemini API key set in Settings';
+        $entry['skip_reason'] = 'No Creative Content, and no AI provider configured in Settings';
         continue;
     }
     try {
         $entry['source'] = 'ai';
-        $entry['creative'] = generate_creative_via_gemini($row, $geminiKey);
+        $entry['creative'] = generate_creative_via_ai($row, $aiConfig, $brandBrief);
     } catch (Throwable $e) {
         $entry['skip'] = true;
         $entry['skip_reason'] = 'AI generation failed: ' . $e->getMessage();
@@ -74,5 +75,6 @@ json_response([
     'suggested_matches' => $suggested,
     'accounts'          => $accounts,
     'csv_filename'      => $_FILES['csv']['name'],
-    'gemini_configured' => gemini_configured($geminiKey),
+    'ai_configured'     => ai_configured($aiConfig),
+    'ai_provider'       => $aiConfig['provider'],
 ]);

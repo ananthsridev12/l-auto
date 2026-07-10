@@ -42,9 +42,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
-    if (($_POST['form'] ?? '') === 'gemini_key') {
+    if (($_POST['form'] ?? '') === 'ai_provider') {
+        set_ai_provider($userId, $_POST['ai_provider'] ?? '');
         set_gemini_api_key($userId, $_POST['gemini_api_key'] ?? '');
-        flash('success', trim((string) ($_POST['gemini_api_key'] ?? '')) === '' ? 'Gemini API key removed.' : 'Gemini API key saved.');
+        set_claude_api_key($userId, $_POST['claude_api_key'] ?? '');
+        set_openai_api_key($userId, $_POST['openai_api_key'] ?? '');
+        flash('success', 'AI provider settings saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'brand_brief') {
+        set_brand_brief($userId, $_POST['brand_brief'] ?? '');
+        flash('success', 'Brand brief saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'persona_add') {
+        $name = trim($_POST['persona_name'] ?? '');
+        $desc = trim($_POST['persona_description'] ?? '');
+        if ($name === '') {
+            flash('error', 'Enter a persona name.');
+            redirect('pages/settings.php');
+        }
+        $stmt = db()->prepare(
+            'INSERT INTO personas (user_id, name, description) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description)'
+        );
+        $stmt->execute([$userId, $name, $desc]);
+        flash('success', "Persona \"{$name}\" saved.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'persona_delete') {
+        $stmt = db()->prepare('DELETE FROM personas WHERE id = ? AND user_id = ?');
+        $stmt->execute([(int) ($_POST['persona_id'] ?? 0), $userId]);
+        flash('success', 'Persona removed.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'pillar_add') {
+        $name = trim($_POST['pillar_name'] ?? '');
+        $desc = trim($_POST['pillar_description'] ?? '');
+        if ($name === '') {
+            flash('error', 'Enter a content pillar name.');
+            redirect('pages/settings.php');
+        }
+        $stmt = db()->prepare(
+            'INSERT INTO content_pillars (user_id, name, description) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description)'
+        );
+        $stmt->execute([$userId, $name, $desc]);
+        flash('success', "Content pillar \"{$name}\" saved.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'pillar_delete') {
+        $stmt = db()->prepare('DELETE FROM content_pillars WHERE id = ? AND user_id = ?');
+        $stmt->execute([(int) ($_POST['pillar_id'] ?? 0), $userId]);
+        flash('success', 'Content pillar removed.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'cta_add') {
+        $text = trim($_POST['cta_text'] ?? '');
+        $stage = $_POST['cta_funnel_stage'] ?? '';
+        $stage = in_array($stage, ['Awareness', 'Consideration', 'Decision', 'Retention'], true) ? $stage : null;
+        if ($text === '') {
+            flash('error', 'Enter the CTA text.');
+            redirect('pages/settings.php');
+        }
+        $stmt = db()->prepare('INSERT INTO cta_library (user_id, text, funnel_stage) VALUES (?, ?, ?)');
+        $stmt->execute([$userId, $text, $stage]);
+        flash('success', 'CTA added to your library.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'cta_delete') {
+        $stmt = db()->prepare('DELETE FROM cta_library WHERE id = ? AND user_id = ?');
+        $stmt->execute([(int) ($_POST['cta_id'] ?? 0), $userId]);
+        flash('success', 'CTA removed.');
         redirect('pages/settings.php');
     }
 
@@ -70,6 +146,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $enabledFormats = get_enabled_formats($userId);
 $tagDirectory = fetch_tag_directory($userId);
 $geminiKey = get_gemini_api_key($userId);
+$claudeKey = get_claude_api_key($userId);
+$openaiKey = get_openai_api_key($userId);
+$aiProvider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;
+$brandBrief = get_brand_brief($userId);
+$personas = fetch_personas($userId);
+$contentPillars = fetch_content_pillars($userId);
+$ctaLibrary = fetch_cta_library($userId);
+$funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 
 $pageTitle  = 'Settings';
 $activePage = 'settings';
@@ -118,15 +202,144 @@ require __DIR__ . '/../includes/layout_top.php';
 </section>
 
 <section class="card">
-  <h2>AI Generation (Gemini)</h2>
-  <p class="muted">Used by <a href="<?= h(app_path('pages/content_studio.php')) ?>">Content Studio</a> and New Post's "Generate with AI" to write captions and slide copy when you haven't written them yourself. Bring your own free-tier key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> — nothing is shared across accounts. Leave blank to disable AI generation; pre-written content still works fine without it.</p>
+  <h2>AI Provider</h2>
+  <p class="muted">Used by <a href="<?= h(app_path('pages/content_studio.php')) ?>">Content Studio</a> and New Post's "Generate with AI" to write captions and slide copy when you haven't written them yourself. Pick which provider to use and paste your key for it — only the selected provider's key matters. Gemini has a free tier (get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>); Claude and OpenAI are paid per-call unless this site has a shared key configured for them, in which case leaving your own key blank will use that instead.</p>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
-    <input type="hidden" name="form" value="gemini_key">
+    <input type="hidden" name="form" value="ai_provider">
+    <label class="checkbox-row"><input type="radio" name="ai_provider" value="gemini" <?= $aiProvider === 'gemini' ? 'checked' : '' ?>> Gemini</label>
     <label>Gemini API Key
       <input type="password" name="gemini_api_key" value="<?= h($geminiKey ?? '') ?>" placeholder="AIza..." autocomplete="off">
     </label>
-    <button type="submit" class="btn-primary">Save Key</button>
+    <label class="checkbox-row"><input type="radio" name="ai_provider" value="claude" <?= $aiProvider === 'claude' ? 'checked' : '' ?>> Claude</label>
+    <label>Claude API Key
+      <input type="password" name="claude_api_key" value="<?= h($claudeKey ?? '') ?>" placeholder="sk-ant-..." autocomplete="off">
+    </label>
+    <label class="checkbox-row"><input type="radio" name="ai_provider" value="openai" <?= $aiProvider === 'openai' ? 'checked' : '' ?>> OpenAI</label>
+    <label>OpenAI API Key
+      <input type="password" name="openai_api_key" value="<?= h($openaiKey ?? '') ?>" placeholder="sk-..." autocomplete="off">
+    </label>
+    <button type="submit" class="btn-primary">Save AI Provider</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Brand Brief</h2>
+  <p class="muted">A short description of your business, audience, and voice — automatically added as context to every AI generation call, so you don't have to retype it each time.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="brand_brief">
+    <label>Brand Brief
+      <textarea name="brand_brief" rows="4" placeholder="e.g. We sell predictive-maintenance sensors to mid-size manufacturing plants. Voice: direct, data-driven, not salesy."><?= h($brandBrief ?? '') ?></textarea>
+    </label>
+    <button type="submit" class="btn-primary">Save Brand Brief</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Personas</h2>
+  <p class="muted">Target audiences you write for. Pick one from New Post's "Generate with AI" panel instead of retyping who the post is for.</p>
+  <?php if ($personas): ?>
+    <?php foreach ($personas as $p): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($p['name']) ?></span>
+          <span class="muted"><?= h(mb_strimwidth($p['description'] ?? '', 0, 80, '…')) ?></span>
+        </div>
+        <form method="post" onsubmit="return confirm('Remove this persona?');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="persona_delete">
+          <input type="hidden" name="persona_id" value="<?= (int) $p['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No personas added yet.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="persona_add">
+    <label>Name
+      <input type="text" name="persona_name" placeholder="e.g. Plant Reliability Manager" required>
+    </label>
+    <label>Description <span class="muted">(optional — pain points, goals, what they care about)</span>
+      <textarea name="persona_description" rows="2"></textarea>
+    </label>
+    <button type="submit" class="btn-secondary">Add Persona</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Content Pillars</h2>
+  <p class="muted">The recurring themes you post about. Pick one from New Post's "Generate with AI" panel to keep content on-strategy.</p>
+  <?php if ($contentPillars): ?>
+    <?php foreach ($contentPillars as $cp): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($cp['name']) ?></span>
+          <span class="muted"><?= h(mb_strimwidth($cp['description'] ?? '', 0, 80, '…')) ?></span>
+        </div>
+        <form method="post" onsubmit="return confirm('Remove this content pillar?');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="pillar_delete">
+          <input type="hidden" name="pillar_id" value="<?= (int) $cp['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No content pillars added yet.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="pillar_add">
+    <label>Name
+      <input type="text" name="pillar_name" placeholder="e.g. Case Studies" required>
+    </label>
+    <label>Description <span class="muted">(optional)</span>
+      <textarea name="pillar_description" rows="2"></textarea>
+    </label>
+    <button type="submit" class="btn-secondary">Add Content Pillar</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>CTA Library</h2>
+  <p class="muted">Reusable calls-to-action, optionally tagged with a funnel stage. Pick one from New Post's "Generate with AI" panel instead of writing a CTA from scratch each time.</p>
+  <?php if ($ctaLibrary): ?>
+    <?php foreach ($ctaLibrary as $cta): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($cta['text']) ?></span>
+          <?php if ($cta['funnel_stage']): ?><span class="badge badge-format"><?= h($cta['funnel_stage']) ?></span><?php endif; ?>
+        </div>
+        <form method="post" onsubmit="return confirm('Remove this CTA?');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="cta_delete">
+          <input type="hidden" name="cta_id" value="<?= (int) $cta['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No CTAs added yet.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="cta_add">
+    <label>CTA Text
+      <input type="text" name="cta_text" placeholder="e.g. Book a call with our team" required>
+    </label>
+    <label>Funnel Stage <span class="muted">(optional)</span>
+      <select name="cta_funnel_stage">
+        <option value="">— None —</option>
+        <?php foreach ($funnelStages as $stage): ?>
+          <option value="<?= h($stage) ?>"><?= h($stage) ?></option>
+        <?php endforeach; ?>
+      </select>
+    </label>
+    <button type="submit" class="btn-secondary">Add CTA</button>
   </form>
 </section>
 

@@ -5,13 +5,17 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/zip_import.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
+require_once __DIR__ . '/../includes/ai_generate.php';
 
 require_login();
 $userId = current_user_id();
 
 $availableFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel'], get_enabled_formats($userId)));
 $accounts = fetch_user_accounts($userId);
-$geminiKey = get_gemini_api_key($userId);
+$aiConfig = resolve_ai_config($userId);
+$personas = fetch_personas($userId);
+$contentPillars = fetch_content_pillars($userId);
+$ctaLibrary = fetch_cta_library($userId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
@@ -210,11 +214,11 @@ require __DIR__ . '/../includes/layout_top.php';
 
       <div style="width:100%; margin-top:12px;">
         <label class="checkbox-row">
-          <input type="checkbox" id="aiGenerateToggle" <?= $geminiKey ? '' : 'disabled' ?>>
+          <input type="checkbox" id="aiGenerateToggle" <?= ai_configured($aiConfig) ? '' : 'disabled' ?>>
           Generate with AI instead
         </label>
-        <?php if (!$geminiKey): ?>
-          <p class="muted">Add a Gemini API key in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> to use this.</p>
+        <?php if (!ai_configured($aiConfig)): ?>
+          <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> to use this.</p>
         <?php endif; ?>
       </div>
 
@@ -222,15 +226,40 @@ require __DIR__ . '/../includes/layout_top.php';
         <label>Topic / Title
           <input type="text" id="aiTopic">
         </label>
-        <label>Target Persona <span class="muted">(optional)</span>
-          <input type="text" id="aiPersona">
+
+        <label>Persona <span class="muted">(optional)</span>
+          <select id="aiPersonaSelect">
+            <option value="">— None —</option>
+            <?php foreach ($personas as $p): ?>
+              <option value="<?= (int) $p['id'] ?>"><?= h($p['name']) ?></option>
+            <?php endforeach; ?>
+            <option value="custom">Custom / type my own…</option>
+          </select>
         </label>
-        <label>Style / Type <span class="muted">(optional)</span>
-          <input type="text" id="aiType">
+        <input type="text" id="aiPersona" placeholder="Describe the target persona" style="width:100%; margin-top:6px; display:none;">
+
+        <label>Content Pillar / Style <span class="muted">(optional)</span>
+          <select id="aiPillarSelect">
+            <option value="">— None —</option>
+            <?php foreach ($contentPillars as $cp): ?>
+              <option value="<?= (int) $cp['id'] ?>"><?= h($cp['name']) ?></option>
+            <?php endforeach; ?>
+            <option value="custom">Custom / type my own…</option>
+          </select>
         </label>
-        <label>CTA Question <span class="muted">(optional)</span>
-          <input type="text" id="aiCta">
+        <input type="text" id="aiType" placeholder="e.g. Case Study, Checklist" style="width:100%; margin-top:6px; display:none;">
+
+        <label>CTA <span class="muted">(optional)</span>
+          <select id="aiCtaSelect">
+            <option value="">— None —</option>
+            <?php foreach ($ctaLibrary as $cta): ?>
+              <option value="<?= (int) $cta['id'] ?>"><?= h($cta['text']) ?><?= $cta['funnel_stage'] ? ' (' . h($cta['funnel_stage']) . ')' : '' ?></option>
+            <?php endforeach; ?>
+            <option value="custom">Custom / type my own…</option>
+          </select>
         </label>
+        <input type="text" id="aiCta" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; display:none;">
+
         <button type="button" id="aiGenerateBtn" class="btn-secondary" style="margin-top:8px;">Generate</button>
         <p id="aiGenerateStatus" class="muted"></p>
         <div id="aiSlidesReview"></div>

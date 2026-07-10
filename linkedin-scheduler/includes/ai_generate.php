@@ -2,26 +2,57 @@
 // Ported from the local Python prototype's generate.py — used by Content
 // Studio and New Post's "Generate with AI" whenever there's no
 // pre-written Creative Content but enough context (Topic / Title,
-// Target Persona, Type, CTA) to ask an AI to write the copy. Calls
-// Gemini instead of the Claude API generate.py used, since Gemini's
-// free tier covers this app's volume indefinitely. Each user supplies
-// their own key in Settings (includes/helpers.php get_gemini_api_key())
-// — there is no app-wide key, so every call here takes $apiKey explicitly
-// rather than reading a shared config constant.
+// Target Persona, Type, CTA) is present to ask an AI to write the copy.
 //
-// Returns the same JSON shape as includes/creative_builder.php so both
-// paths feed includes/image_renderer.php identically.
+// Supports 3 providers (Gemini, Claude, OpenAI) behind one shared
+// dispatcher — see generate_creative_via_ai(). Which provider/key/model
+// to use for a given user is resolved by resolve_ai_config() in
+// includes/helpers.php (per-user preference + key, falling back to an
+// admin-configured default — see config.sample.php). All three provider
+// calls return the identical JSON shape includes/creative_builder.php
+// also produces, so every path feeds includes/image_renderer.php
+// identically.
 
+const AI_PROVIDER_LABELS = ['gemini' => 'Gemini', 'claude' => 'Claude', 'openai' => 'OpenAI'];
+
+function ai_configured(array $aiConfig): bool
+{
+    return !empty($aiConfig['api_key']);
+}
+
+// Legacy name kept as a thin alias — existing call sites/tests reference
+// gemini_configured() specifically for the Gemini key.
 function gemini_configured(?string $apiKey): bool
 {
     return $apiKey !== null && trim($apiKey) !== '';
 }
 
-function gemini_build_prompt(array $row, string $format): string
+// Brand context injected ahead of the POST DETAILS section when the user
+// has a brand brief and/or picked a persona/content pillar from their
+// Content Knowledge Base (see includes/post_helpers.php fetch_personas()
+// etc.) — richer than the short "Target Audience:" label alone.
+function build_context_block(?string $brandBrief, ?array $persona, ?array $pillar): string
 {
+    $parts = [];
+    if ($brandBrief) {
+        $parts[] = "Brand context: {$brandBrief}";
+    }
+    if ($persona && !empty($persona['description'])) {
+        $parts[] = "Target persona \"{$persona['name']}\": {$persona['description']}";
+    }
+    if ($pillar && !empty($pillar['description'])) {
+        $parts[] = "Content pillar \"{$pillar['name']}\": {$pillar['description']}";
+    }
+    return $parts ? implode("\n", $parts) . "\n\n" : '';
+}
+
+function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null): string
+{
+    $context = build_context_block($brandBrief, $persona, $pillar);
+
     if ($format === 'Text Post') {
         $topic   = trim($row['Topic / Title'] ?? $row['Topic/Title'] ?? '');
-        $persona = trim($row['Target Persona'] ?? '');
+        $personaLabel = trim($row['Target Persona'] ?? '');
         $type    = trim($row['Type'] ?? '');
         $caption = trim($row['Post Caption'] ?? '');
         $captionBlock = $caption !== ''
@@ -29,11 +60,11 @@ function gemini_build_prompt(array $row, string $format): string
             : 'Write a professional LinkedIn text post matching the topic and tone, including 3-5 relevant hashtags at the end.';
 
         return <<<PROMPT
-You are a LinkedIn content specialist writing a text-only post for a B2B engineering/manufacturing audience.
+{$context}You are a LinkedIn content specialist writing a text-only post for a B2B engineering/manufacturing audience.
 
 POST DETAILS:
 - Topic: {$topic}
-- Target Audience: {$persona}
+- Target Audience: {$personaLabel}
 - Content Style: {$type}
 
 CAPTION:
@@ -54,7 +85,7 @@ PROMPT;
     }
 
     $topic    = trim($row['Topic / Title'] ?? $row['Topic/Title'] ?? '');
-    $persona  = trim($row['Target Persona'] ?? '');
+    $personaLabel = trim($row['Target Persona'] ?? '');
     $type     = trim($row['Type'] ?? '');
     $cta      = trim($row['CTA'] ?? '');
     $tagPage  = trim($row['Tag Page'] ?? '');
@@ -66,11 +97,11 @@ PROMPT;
 
     if ($format === 'Single Image') {
         return <<<PROMPT
-You are a LinkedIn content specialist creating a single-image post for a B2B engineering/manufacturing audience.
+{$context}You are a LinkedIn content specialist creating a single-image post for a B2B engineering/manufacturing audience.
 
 POST DETAILS:
 - Topic: {$topic}
-- Target Audience: {$persona}
+- Target Audience: {$personaLabel}
 - Content Style: {$type}
 - CTA Question: {$cta}
 - Tag Page: {$tagPage}
@@ -102,11 +133,11 @@ PROMPT;
     }
 
     return <<<PROMPT
-You are a LinkedIn content specialist creating a carousel post for a B2B engineering/manufacturing audience.
+{$context}You are a LinkedIn content specialist creating a carousel post for a B2B engineering/manufacturing audience.
 
 POST DETAILS:
 - Topic: {$topic}
-- Target Audience: {$persona}
+- Target Audience: {$personaLabel}
 - Content Style: {$type}
 - Slide Count: 5
 - CTA Question: {$cta}
@@ -142,27 +173,17 @@ Return ONLY raw JSON — no markdown, no code fences, no explanation:
 PROMPT;
 }
 
-function generate_creative_via_gemini(array $row, ?string $apiKey): array
+// ── HTTP mechanics, one function per provider ───────────────────────
+// Each returns the raw text the model produced (expected to be a JSON
+// string); generate_creative_via_ai() does the shared decode/validation.
+
+function ai_http_post_json(string $url, array $body, array $headers): array
 {
-    if (!gemini_configured($apiKey)) {
-        throw new RuntimeException('Add a Gemini API key in Settings to use AI generation, or fill in the Creative Content column for this row instead.');
-    }
-
-    $rawFormat = trim($row['Final_Format'] ?? '');
-    $format = in_array($rawFormat, ['Single Image', 'Text Post'], true) ? $rawFormat : 'Carousel';
-    $prompt = gemini_build_prompt($row, $format);
-
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . GEMINI_MODEL . ':generateContent?key=' . urlencode($apiKey);
-    $body = [
-        'contents'         => [['parts' => [['text' => $prompt]]]],
-        'generationConfig' => ['responseMimeType' => 'application/json'],
-    ];
-
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_HTTPHEADER     => $headers,
         CURLOPT_POSTFIELDS     => json_encode($body),
         CURLOPT_TIMEOUT        => 60,
     ]);
@@ -170,6 +191,17 @@ function generate_creative_via_gemini(array $row, ?string $apiKey): array
     $status   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlErr  = curl_error($ch);
     curl_close($ch);
+    return [$status, $response, $curlErr];
+}
+
+function ai_call_gemini(string $prompt, string $apiKey, string $model): string
+{
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . urlencode($apiKey);
+    $body = [
+        'contents'         => [['parts' => [['text' => $prompt]]]],
+        'generationConfig' => ['responseMimeType' => 'application/json'],
+    ];
+    [$status, $response, $curlErr] = ai_http_post_json($url, $body, ['Content-Type: application/json']);
 
     if ($response === false) {
         throw new RuntimeException("Gemini request failed: {$curlErr}");
@@ -186,13 +218,106 @@ function generate_creative_via_gemini(array $row, ?string $apiKey): array
             ? "Gemini declined to generate this row: {$blockReason}"
             : 'Gemini returned an unexpected response shape.');
     }
+    return $text;
+}
+
+function ai_call_claude(string $prompt, string $apiKey, string $model): string
+{
+    $body = [
+        'model'      => $model,
+        'max_tokens' => 2000,
+        'messages'   => [['role' => 'user', 'content' => $prompt]],
+    ];
+    $headers = [
+        'Content-Type: application/json',
+        'x-api-key: ' . $apiKey,
+        'anthropic-version: 2023-06-01',
+    ];
+    [$status, $response, $curlErr] = ai_http_post_json('https://api.anthropic.com/v1/messages', $body, $headers);
+
+    if ($response === false) {
+        throw new RuntimeException("Claude request failed: {$curlErr}");
+    }
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("Claude request failed ({$status}): " . substr($response, 0, 300));
+    }
+
+    $data = json_decode($response, true);
+    $text = $data['content'][0]['text'] ?? null;
+    if ($text === null) {
+        throw new RuntimeException('Claude returned an unexpected response shape.');
+    }
+
+    // Claude has no forced-JSON response mode like Gemini/OpenAI — strip
+    // markdown code fences in case it wrapped the JSON anyway (same
+    // safety net the original generate.py's Claude integration used).
+    $text = trim($text);
+    if (str_starts_with($text, '```')) {
+        $text = preg_replace('/^```(?:json)?\s*/', '', $text);
+        $text = preg_replace('/```\s*$/', '', $text);
+    }
+    return trim($text);
+}
+
+function ai_call_openai(string $prompt, string $apiKey, string $model): string
+{
+    $body = [
+        'model'           => $model,
+        'messages'        => [['role' => 'user', 'content' => $prompt]],
+        'response_format' => ['type' => 'json_object'],
+    ];
+    $headers = [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $apiKey,
+    ];
+    [$status, $response, $curlErr] = ai_http_post_json('https://api.openai.com/v1/chat/completions', $body, $headers);
+
+    if ($response === false) {
+        throw new RuntimeException("OpenAI request failed: {$curlErr}");
+    }
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("OpenAI request failed ({$status}): " . substr($response, 0, 300));
+    }
+
+    $data = json_decode($response, true);
+    $text = $data['choices'][0]['message']['content'] ?? null;
+    if ($text === null) {
+        throw new RuntimeException('OpenAI returned an unexpected response shape.');
+    }
+    return trim($text);
+}
+
+// ── Shared entry point ───────────────────────────────────────────────
+
+// $aiConfig is resolve_ai_config()'s shape: ['provider','api_key','model'].
+// $persona/$pillar are full records (['name','description']) from
+// includes/post_helpers.php fetch_persona()/fetch_content_pillar(), not
+// just IDs — pass null for either when the caller has nothing selected.
+function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null): array
+{
+    $provider = $aiConfig['provider'] ?? 'gemini';
+    $label = AI_PROVIDER_LABELS[$provider] ?? ucfirst($provider);
+
+    if (!ai_configured($aiConfig)) {
+        throw new RuntimeException("Add a {$label} API key in Settings to use AI generation, or fill in the Creative Content column for this row instead.");
+    }
+
+    $rawFormat = trim($row['Final_Format'] ?? '');
+    $format = in_array($rawFormat, ['Single Image', 'Text Post'], true) ? $rawFormat : 'Carousel';
+    $prompt = build_generation_prompt($row, $format, $brandBrief, $persona, $pillar);
+
+    $text = match ($provider) {
+        'claude' => ai_call_claude($prompt, $aiConfig['api_key'], $aiConfig['model']),
+        'openai' => ai_call_openai($prompt, $aiConfig['api_key'], $aiConfig['model']),
+        default  => ai_call_gemini($prompt, $aiConfig['api_key'], $aiConfig['model']),
+    };
 
     $creative = json_decode(trim($text), true);
     if (!is_array($creative) || !isset($creative['slides']) || !is_array($creative['slides'])) {
-        throw new RuntimeException('Gemini did not return valid JSON for this row.');
+        throw new RuntimeException("{$label} did not return valid JSON for this row.");
     }
     if ($format !== 'Text Post' && empty($creative['slides'])) {
-        throw new RuntimeException('Gemini did not return valid JSON for this row.');
+        throw new RuntimeException("{$label} did not return valid JSON for this row.");
     }
 
     $creative['format']       = $format === 'Single Image' ? 'single' : ($format === 'Text Post' ? 'text' : 'carousel');
@@ -202,4 +327,11 @@ function generate_creative_via_gemini(array $row, ?string $apiKey): array
     }
 
     return $creative;
+}
+
+// Kept for any direct callers/tests that still want Gemini specifically
+// without going through the provider dispatch.
+function generate_creative_via_gemini(array $row, ?string $apiKey): array
+{
+    return generate_creative_via_ai($row, ['provider' => 'gemini', 'api_key' => $apiKey, 'model' => GEMINI_MODEL]);
 }

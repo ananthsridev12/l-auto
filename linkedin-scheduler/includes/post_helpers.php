@@ -69,3 +69,49 @@ function fetch_mention_picker_list(int $userId): array
     }
     return $list;
 }
+
+// Content Knowledge Base — reusable context for AI generation, picked
+// from New Post's AI panel or applied automatically (see
+// includes/ai_generate.php build_generation_prompt()).
+
+function fetch_personas(int $userId): array
+{
+    $stmt = db()->prepare('SELECT id, name, description FROM personas WHERE user_id = ? ORDER BY name');
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_persona(int $userId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT id, name, description FROM personas WHERE user_id = ? AND id = ?');
+    $stmt->execute([$userId, $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function fetch_content_pillars(int $userId): array
+{
+    $stmt = db()->prepare('SELECT id, name, description FROM content_pillars WHERE user_id = ? ORDER BY name');
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_content_pillar(int $userId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT id, name, description FROM content_pillars WHERE user_id = ? AND id = ?');
+    $stmt->execute([$userId, $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function fetch_cta_library(int $userId): array
+{
+    $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE user_id = ? ORDER BY funnel_stage, text');
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_cta(int $userId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE user_id = ? AND id = ?');
+    $stmt->execute([$userId, $id]);
+    return $stmt->fetch() ?: null;
+}

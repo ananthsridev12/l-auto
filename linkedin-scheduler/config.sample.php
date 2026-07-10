@@ -40,10 +40,23 @@ define('LI_SCOPES_COMPANY',  'openid profile w_member_social w_organization_soci
 
 define('UPLOAD_DIR', __DIR__ . '/uploads');
 
-// Model used for AI generation in Content Studio / New Post (see
-// includes/ai_generate.php) — this is the only Gemini setting that's
-// app-wide. The API key itself is per-user, set by each user in
-// Settings (get/set_gemini_api_key() in includes/helpers.php), not here
-// — every user brings their own free-tier key at
-// https://aistudio.google.com/apikey rather than sharing one app key.
+// AI generation in Content Studio / New Post (see includes/ai_generate.php)
+// supports 3 providers. The MODEL for each is always this admin/config-
+// level constant — never user-editable, so you control quality/cost per
+// provider for the whole site. The API KEY is normally per-user (each user
+// sets their own in Settings — get_gemini_api_key() etc. in
+// includes/helpers.php) since that's realistic for Gemini's free tier.
+// Claude and OpenAI have no ongoing free tier, so if you want this site
+// usable without every new signup needing their own paid key, optionally
+// set a shared *_API_KEY_DEFAULT below — resolve_ai_config() falls back to
+// it only for users who haven't set their own key and whose preferred
+// provider matches AI_PROVIDER_DEFAULT. Leave the _DEFAULT keys blank to
+// require every user to bring their own key for paid providers.
+define('AI_PROVIDER_DEFAULT', 'gemini'); // 'gemini' | 'claude' | 'openai'
+
 define('GEMINI_MODEL', 'gemini-2.5-flash');
+define('CLAUDE_MODEL', 'claude-sonnet-5');
+define('OPENAI_MODEL', 'gpt-4o-mini');
+
+define('CLAUDE_API_KEY_DEFAULT', '');
+define('OPENAI_API_KEY_DEFAULT', '');

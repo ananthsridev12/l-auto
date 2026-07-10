@@ -17,12 +17,40 @@
 
   var currentCreative = null;
 
+  // Each Knowledge Base dropdown reveals its "type my own" text input
+  // only when "custom" is selected — otherwise the picked entry's id is
+  // sent and the free-text field is ignored.
+  [['aiPersonaSelect', 'aiPersona'], ['aiPillarSelect', 'aiType'], ['aiCtaSelect', 'aiCta']].forEach(function (pair) {
+    var select = document.getElementById(pair[0]);
+    var input = document.getElementById(pair[1]);
+    if (!select || !input) return;
+    select.addEventListener('change', function () {
+      input.style.display = select.value === 'custom' ? 'block' : 'none';
+      if (select.value !== 'custom') input.value = '';
+    });
+  });
+
   toggle.addEventListener('change', function () {
     fields.style.display = toggle.checked ? 'block' : 'none';
     if (window.newPostUpdateUploadFields) {
       window.newPostUpdateUploadFields();
     }
   });
+
+  // Sends the dropdown's picked Knowledge Base id under $idField when a
+  // real entry is selected, else the free-text fallback input under
+  // $textField (only meaningful when "custom" was chosen).
+  function appendKbField(fd, selectId, textId, idField, textField) {
+    var select = document.getElementById(selectId);
+    var val = select ? select.value : '';
+    if (val && val !== 'custom') {
+      fd.append(idField, val);
+      fd.append(textField, '');
+    } else {
+      fd.append(idField, '');
+      fd.append(textField, document.getElementById(textId).value.trim());
+    }
+  }
 
   generateBtn.addEventListener('click', function () {
     var format = formatSelect.value;
@@ -37,9 +65,9 @@
     fd.append('csrf', window.NEW_POST_CSRF);
     fd.append('format', format);
     fd.append('topic', topic);
-    fd.append('persona', document.getElementById('aiPersona').value.trim());
-    fd.append('type', document.getElementById('aiType').value.trim());
-    fd.append('cta', document.getElementById('aiCta').value.trim());
+    appendKbField(fd, 'aiPersonaSelect', 'aiPersona', 'persona_id', 'persona');
+    appendKbField(fd, 'aiPillarSelect', 'aiType', 'pillar_id', 'type');
+    appendKbField(fd, 'aiCtaSelect', 'aiCta', 'cta_id', 'cta');
     fd.append('caption', caption);
 
     statusEl.textContent = 'Generating...';
