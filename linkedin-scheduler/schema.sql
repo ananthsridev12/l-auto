@@ -132,13 +132,11 @@ CREATE TABLE IF NOT EXISTS brand_palettes (
   UNIQUE KEY uniq_user_palette_name (user_id, name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Per-user uploaded fonts (Regular + Bold TTF/OTF pair), selectable as
--- the renderer's typeface — see includes/image_renderer.php
--- render_font_path(). The bundled Inter (assets/fonts/) is used until a
--- user sets one of these as their default. Only one font per user should
--- have is_default = 1 (enforced in application code, same approach as
--- brand_palettes.is_default — see includes/post_helpers.php
--- set_default_brand_font()).
+-- Per-user uploaded fonts (Regular + Bold TTF/OTF pair) — a library to
+-- pick from, not a single active font. is_default is unused (superseded
+-- by users.heading_font_id/body_font_id below, which assign a font per
+-- role instead of one font for everything); kept only so an earlier
+-- deploy of this table doesn't need a destructive migration.
 CREATE TABLE IF NOT EXISTS brand_fonts (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   user_id       INT NOT NULL,
@@ -150,6 +148,17 @@ CREATE TABLE IF NOT EXISTS brand_fonts (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uniq_user_font_name (user_id, name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Which brand_fonts row (if any) each user has assigned to each role —
+-- see includes/image_renderer.php render_font_override_role(). NULL
+-- means fall back to the bundled Inter/DejaVu chain for that role.
+-- Added via ALTER (not inline on the users table above) because
+-- brand_fonts has to exist first for the foreign keys to be valid.
+ALTER TABLE users
+  ADD COLUMN heading_font_id INT DEFAULT NULL,
+  ADD COLUMN body_font_id INT DEFAULT NULL,
+  ADD FOREIGN KEY (heading_font_id) REFERENCES brand_fonts(id) ON DELETE SET NULL,
+  ADD FOREIGN KEY (body_font_id) REFERENCES brand_fonts(id) ON DELETE SET NULL;
 
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks

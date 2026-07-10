@@ -72,7 +72,7 @@ function build_caption_rules(string $cta): string
 
     return <<<RULES
 CAPTION RULES:
-- 100 to 250 words
+- 150 to 250 words
 - Short paragraphs, 2 to 4 lines each
 - Start directly with a hook line — no greeting or preamble
 - {$ctaLine}
@@ -140,11 +140,11 @@ CAPTION:
 IMAGE TEXT RULES:
 - Headline: max 8 words, states the core idea
 - Body: exactly 1 sentence, max 25 words
-- Points: exactly 3 to 4 short supporting points, max 10 words each — never leave points empty
+- Points: exactly 3 short supporting points, max 10 words each — never leave points empty
 
 EXAMPLE of the right length and style (topic: quoting delays in manufacturing):
   Body: "Manual quoting creates delays, errors, and lost revenue."
-  Points: "Quote cycle from days to minutes" / "Pricing consistent across every deal" / "Engineering no longer involved in every quote" / "94% sales team adoption post-implementation"
+  Points: "Quote cycle from days to minutes" / "Pricing consistent across every deal" / "Engineering no longer involved in every quote"
 
 {$styleRules}
 

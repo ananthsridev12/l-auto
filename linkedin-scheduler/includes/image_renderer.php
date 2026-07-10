@@ -207,22 +207,26 @@ function sniff_font_ext(string $contents): ?string
 }
 
 // Set once per render_creative_to_slides() call (see below) from the
-// user's default includes/post_helpers.php fetch_default_brand_font(),
-// if they have one — render_font_path() checks this before falling back
-// to the bundled Inter/DejaVu chain. A single render call only ever uses
-// one font throughout, so this doesn't need per-call-site plumbing.
-function render_font_override(?array $paths = null, bool $set = false): ?array
+// user's includes/post_helpers.php fetch_heading_font()/fetch_body_font()
+// role assignments, if set — render_font_path() checks the override for
+// the role a given piece of text belongs to before falling back to the
+// bundled Inter/DejaVu chain. Only actual headline text uses role
+// 'heading'; everything else (body, numbered points, CTA banner,
+// counter, footer, eyebrow) uses 'body' — see each render_slide_*()
+// call site. A single render call only ever uses one pair of fonts per
+// role throughout, so this doesn't need per-call-site font-path plumbing.
+function render_font_override_role(string $role, ?array $paths = null, bool $set = false): ?array
 {
-    static $override = null;
+    static $overrides = ['heading' => null, 'body' => null];
     if ($set) {
-        $override = $paths;
+        $overrides[$role] = $paths;
     }
-    return $override;
+    return $overrides[$role] ?? null;
 }
 
-function render_font_path(bool $bold): string
+function render_font_path(bool $bold, string $role = 'body'): string
 {
-    $override = render_font_override();
+    $override = render_font_override_role($role);
     if ($override) {
         $path = $override[$bold ? 'bold' : 'regular'] ?? null;
         if ($path && is_file($path)) {
@@ -252,21 +256,21 @@ function render_font_path(bool $bold): string
     throw new RuntimeException('No usable TTF font found — upload an Inter Bold/Regular .ttf file to assets/fonts/.');
 }
 
-function render_text_width(string $text, int $size, bool $bold): float
+function render_text_width(string $text, int $size, bool $bold, string $role = 'body'): float
 {
     if ($text === '') {
         return 0.0;
     }
-    $bbox = imagettfbbox($size, 0, render_font_path($bold), $text);
+    $bbox = imagettfbbox($size, 0, render_font_path($bold, $role), $text);
     return abs($bbox[2] - $bbox[0]);
 }
 
-function render_ascent(int $size, bool $bold): float
+function render_ascent(int $size, bool $bold, string $role = 'body'): float
 {
     static $cache = [];
-    $key = ($bold ? 'b' : 'r') . $size;
+    $key = $role . ($bold ? 'b' : 'r') . $size;
     if (!isset($cache[$key])) {
-        $bbox = imagettfbbox($size, 0, render_font_path($bold), 'Ágy');
+        $bbox = imagettfbbox($size, 0, render_font_path($bold, $role), 'Ágy');
         $cache[$key] = -$bbox[7];
     }
     return $cache[$key];
@@ -274,17 +278,17 @@ function render_ascent(int $size, bool $bold): float
 
 // Draws text with $topY as the TOP of the text (like PIL's draw.text),
 // converting to GD's baseline-relative imagettftext() internally.
-function render_text($im, float $x, float $topY, string $text, int $size, bool $bold, int $color): void
+function render_text($im, float $x, float $topY, string $text, int $size, bool $bold, int $color, string $role = 'body'): void
 {
     if ($text === '') {
         return;
     }
-    imagettftext($im, $size, 0, (int) round($x), (int) round($topY + render_ascent($size, $bold)), $color, render_font_path($bold), $text);
+    imagettftext($im, $size, 0, (int) round($x), (int) round($topY + render_ascent($size, $bold, $role)), $color, render_font_path($bold, $role), $text);
 }
 
 // ── Text utilities ───────────────────────────────────────────────────
 
-function render_wrap(string $text, int $size, bool $bold, float $maxPx): array
+function render_wrap(string $text, int $size, bool $bold, float $maxPx, string $role = 'body'): array
 {
     $words = preg_split('/\s+/', trim((string) $text));
     $words = array_values(array_filter($words, fn ($w) => $w !== ''));
@@ -295,7 +299,7 @@ function render_wrap(string $text, int $size, bool $bold, float $maxPx): array
     $current = [];
     foreach ($words as $word) {
         $test = implode(' ', array_merge($current, [$word]));
-        if ($current && render_text_width($test, $size, $bold) > $maxPx) {
+        if ($current && render_text_width($test, $size, $bold, $role) > $maxPx) {
             $lines[] = implode(' ', $current);
             $current = [$word];
         } else {
@@ -454,10 +458,10 @@ function render_fit_font_size(array $items, float $startY, float $ceiling, array
 // the vertical space everything below (points, footer) needs. Picks the
 // largest candidate size (assumed descending) that keeps the text at or
 // under $maxLines, falling back to the smallest candidate otherwise.
-function render_fit_headline_size(string $text, float $maxPx, array $candidateSizes, int $maxLines, bool $bold = true): int
+function render_fit_headline_size(string $text, float $maxPx, array $candidateSizes, int $maxLines, bool $bold = true, string $role = 'heading'): int
 {
     foreach ($candidateSizes as $size) {
-        if (count(render_wrap($text, $size, $bold, $maxPx)) <= $maxLines) {
+        if (count(render_wrap($text, $size, $bold, $maxPx, $role)) <= $maxLines) {
             return $size;
         }
     }
@@ -508,18 +512,15 @@ function render_cta_banner($im, string $text, float $y, array $p, int $fontSize 
     return $y + $ph + 16;
 }
 
-// $contentY + gap is a floor, not a ceiling: the max(...) pins the footer
-// near the bottom for typical short content (today's usual case), but
-// if content genuinely runs long there is no upper clamp to fight it
-// back up into — a footer sitting lower than the usual position (even
-// close to the canvas edge) is preferable to it being forced on top of
-// still-drawing content. render_fit_headline_size()/render_fit_font_size()
-// keep content within budget for the vast majority of inputs; this is
-// the last-resort guarantee for whatever they can't.
+// clamp(800, y+50, 944) per the design spec — content-length budgets
+// (exactly 3 points, word-count limits, render_fit_headline_size() /
+// render_fit_font_size() auto-shrink) are what keep content from ever
+// reaching this ceiling; the footer itself just trusts that and holds
+// its documented position.
 function render_footer_simple($im, float $contentY, array $p, string $name): void
 {
     [$cx, $rx] = render_content_edges();
-    $fy = max(800, $contentY + 50);
+    $fy = max(800, min($contentY + 50, RENDER_SIZE - RENDER_PAD - 56));
     imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 2, $p['divider']);
     render_text($im, $cx, $fy + 12, $name, 22, true, $p['name']);
 }
@@ -527,7 +528,7 @@ function render_footer_simple($im, float $contentY, array $p, string $name): voi
 function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath): void
 {
     [$cx, $rx] = render_content_edges();
-    $fy = max(720, $contentY + 50);
+    $fy = max(720, min($contentY + 50, RENDER_SIZE - RENDER_PAD - 148));
     imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 2, $p['divider']);
     $py = $fy + 14;
 
@@ -549,17 +550,21 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
 
 // ── Slide renderers ──────────────────────────────────────────────────
 
-function render_slide_hook($im, array $slide, int $total, array $p, string $name): void
+function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = ''): void
 {
     [$cx, , $cw] = render_content_edges();
     render_draw_bar($im, $p);
     render_draw_counter($im, 1, $total, $p);
 
     $y = RENDER_PAD + 12;
+    if ($seriesLabel !== '') {
+        render_text($im, $cx, $y, strtoupper($seriesLabel), 16, false, $p['counter']);
+        $y += render_lh(16) + 8;
+    }
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [78, 68, 58, 50, 44], 2);
     $lh = render_lh($hs);
-    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw) as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline']);
+    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw, 'heading') as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
         $y += $lh;
     }
 
@@ -591,8 +596,8 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     $y = RENDER_PAD + 12;
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [54, 48, 42, 38, 34], 2);
     $lh = render_lh($hs);
-    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw) as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline']);
+    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw, 'heading') as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
         $y += $lh;
     }
 
@@ -627,8 +632,8 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     $y = RENDER_PAD + 12;
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [52, 46, 40, 36, 32], 2);
     $lh = render_lh($hs);
-    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw) as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline']);
+    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw, 'heading') as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
         $y += $lh;
     }
 
@@ -662,22 +667,28 @@ function render_slide_single($im, array $data, array $p, string $name): void
     $y = RENDER_PAD + 12;
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [68, 60, 52, 46, 40], 3);
     $lh = render_lh($hs);
-    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw) as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline']);
+    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw, 'heading') as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
         $y += $lh;
     }
 
     $y = render_draw_rule($im, $y, $p);
 
+    // Boxed in the accent color, same treatment as render_slide_hook()'s
+    // body — Single Image shares that spec row, not Content/CTA's
+    // freestanding one.
     $body = $slide['body'] ?? '';
     if ($body !== '') {
-        $bs = render_fit_headline_size($body, $cw, [27, 24, 21], 3, false);
-        $blh = render_lh($bs);
-        foreach (render_wrap($body, $bs, false, $cw) as $line) {
-            render_text($im, $cx, $y, $line, $bs, false, $p['body']);
-            $y += $blh;
+        $blh = render_lh(27);
+        $lines = render_wrap($body, 27, false, $cw - 24);
+        $ph = count($lines) * $blh + 28;
+        render_rrect($im, $cx, $y, $cx + $cw, $y + $ph, $p['accent'], 10);
+        $ty = $y + 14;
+        foreach ($lines as $line) {
+            render_text($im, $cx + 22, $ty, $line, 27, false, $p['accent_text']);
+            $ty += $blh;
         }
-        $y += 22;
+        $y += $ph + 22;
     }
 
     $points = $slide['points'] ?? [];
@@ -702,8 +713,10 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         throw new RuntimeException("Could not create output directory: {$outDir}");
     }
 
-    $userFont = $userId ? fetch_default_brand_font($userId) : null;
-    render_font_override($userFont ? ['regular' => $userFont['regular_path'], 'bold' => $userFont['bold_path']] : null, true);
+    $headingFont = $userId ? fetch_heading_font($userId) : null;
+    $bodyFont = $userId ? fetch_body_font($userId) : null;
+    render_font_override_role('heading', $headingFont ? ['regular' => $headingFont['regular_path'], 'bold' => $headingFont['bold_path']] : null, true);
+    render_font_override_role('body', $bodyFont ? ['regular' => $bodyFont['regular_path'], 'bold' => $bodyFont['bold_path']] : null, true);
 
     $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
     $slides = $data['slides'] ?? [];
@@ -734,7 +747,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $p['bg']);
 
         if ($n === 1) {
-            render_slide_hook($im, $slide, $total, $p, $footerName);
+            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '');
         } elseif ($n === $total) {
             render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath);
         } else {

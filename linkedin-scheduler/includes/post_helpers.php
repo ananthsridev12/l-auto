@@ -169,18 +169,38 @@ function fetch_brand_font(int $userId, int $id): ?array
     return $stmt->fetch() ?: null;
 }
 
-function fetch_default_brand_font(int $userId): ?array
+// Which font (if any) is assigned to each rendering role — see
+// includes/image_renderer.php render_font_override_role(). Headline text
+// uses 'heading'; body, points, CTA banner, counter, and footer all use
+// 'body'. NULL falls back to the bundled Inter/DejaVu chain.
+function fetch_heading_font(int $userId): ?array
 {
-    $stmt = db()->prepare('SELECT id, name, regular_path, bold_path, is_default FROM brand_fonts WHERE user_id = ? AND is_default = 1 LIMIT 1');
-    $stmt->execute([$userId]);
+    $stmt = db()->prepare(
+        'SELECT bf.id, bf.name, bf.regular_path, bf.bold_path
+         FROM users u JOIN brand_fonts bf ON bf.id = u.heading_font_id
+         WHERE u.id = ? AND bf.user_id = ?'
+    );
+    $stmt->execute([$userId, $userId]);
     return $stmt->fetch() ?: null;
 }
 
-// Only one font per user may be default — clears any existing default
-// before setting the new one, same approach as set_default_brand_palette().
-function set_default_brand_font(int $userId, int $id): void
+function fetch_body_font(int $userId): ?array
 {
-    $pdo = db();
-    $pdo->prepare('UPDATE brand_fonts SET is_default = 0 WHERE user_id = ?')->execute([$userId]);
-    $pdo->prepare('UPDATE brand_fonts SET is_default = 1 WHERE user_id = ? AND id = ?')->execute([$userId, $id]);
+    $stmt = db()->prepare(
+        'SELECT bf.id, bf.name, bf.regular_path, bf.bold_path
+         FROM users u JOIN brand_fonts bf ON bf.id = u.body_font_id
+         WHERE u.id = ? AND bf.user_id = ?'
+    );
+    $stmt->execute([$userId, $userId]);
+    return $stmt->fetch() ?: null;
+}
+
+function set_heading_font(int $userId, ?int $fontId): void
+{
+    db()->prepare('UPDATE users SET heading_font_id = ? WHERE id = ?')->execute([$fontId ?: null, $userId]);
+}
+
+function set_body_font(int $userId, ?int $fontId): void
+{
+    db()->prepare('UPDATE users SET body_font_id = ? WHERE id = ?')->execute([$fontId ?: null, $userId]);
 }

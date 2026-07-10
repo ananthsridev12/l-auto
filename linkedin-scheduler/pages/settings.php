@@ -259,9 +259,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
-    if (($_POST['form'] ?? '') === 'font_set_default') {
-        set_default_brand_font($userId, (int) ($_POST['font_id'] ?? 0));
-        flash('success', 'Default font updated.');
+    if (($_POST['form'] ?? '') === 'font_set_role') {
+        $fontId = (int) ($_POST['font_id'] ?? 0);
+        $role = ($_POST['role'] ?? '') === 'body' ? 'body' : 'heading';
+        if (!fetch_brand_font($userId, $fontId)) {
+            flash('error', 'Font not found.');
+            redirect('pages/settings.php');
+        }
+        if ($role === 'heading') {
+            set_heading_font($userId, $fontId);
+        } else {
+            set_body_font($userId, $fontId);
+        }
+        flash('success', ucfirst($role) . ' font updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'font_clear_role') {
+        $role = ($_POST['role'] ?? '') === 'body' ? 'body' : 'heading';
+        if ($role === 'heading') {
+            set_heading_font($userId, null);
+        } else {
+            set_body_font($userId, null);
+        }
+        flash('success', ucfirst($role) . ' font reset to default (Inter).');
         redirect('pages/settings.php');
     }
 
@@ -298,6 +319,8 @@ $ctaLibrary = fetch_cta_library($userId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 $brandPalettes = fetch_brand_palettes($userId);
 $brandFonts = fetch_brand_fonts($userId);
+$headingFontId = (int) (fetch_heading_font($userId)['id'] ?? 0);
+$bodyFontId = (int) (fetch_body_font($userId)['id'] ?? 0);
 
 $footerImages = [];
 foreach (['logo', 'photo'] as $slot) {
@@ -483,21 +506,33 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card">
   <h2>Brand Fonts</h2>
-  <p class="muted">Upload your own typeface (Regular + Bold, .ttf or .otf) and set it as default to use it on every rendered post image instead of the built-in Inter font. Upload as many as you like and switch the default any time — only one is active at once.</p>
+  <p class="muted">Upload your own typefaces (Regular + Bold, .ttf or .otf) — a library to pick from, not a single active font. Assign one to <strong>Heading</strong> (headline text) and one to <strong>Body</strong> (everything else — body text, numbered points, CTA banner, counter, footer) independently. Leave either unassigned to use the built-in Inter for that role.</p>
   <?php if ($brandFonts): ?>
     <?php foreach ($brandFonts as $bf): ?>
+      <?php $isHeading = (int) $bf['id'] === $headingFontId; $isBody = (int) $bf['id'] === $bodyFontId; ?>
       <div class="account-row">
         <div class="account-info">
           <span><?= h($bf['name']) ?></span>
-          <?php if ($bf['is_default']): ?><span class="badge badge-active">Default</span><?php endif; ?>
+          <?php if ($isHeading): ?><span class="badge badge-active">Heading</span><?php endif; ?>
+          <?php if ($isBody): ?><span class="badge badge-active">Body</span><?php endif; ?>
         </div>
         <div class="inline-form">
-          <?php if (!$bf['is_default']): ?>
+          <?php if (!$isHeading): ?>
             <form method="post">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
-              <input type="hidden" name="form" value="font_set_default">
+              <input type="hidden" name="form" value="font_set_role">
+              <input type="hidden" name="role" value="heading">
               <input type="hidden" name="font_id" value="<?= (int) $bf['id'] ?>">
-              <button type="submit" class="btn-tiny">Set Default</button>
+              <button type="submit" class="btn-tiny">Use for Heading</button>
+            </form>
+          <?php endif; ?>
+          <?php if (!$isBody): ?>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="font_set_role">
+              <input type="hidden" name="role" value="body">
+              <input type="hidden" name="font_id" value="<?= (int) $bf['id'] ?>">
+              <button type="submit" class="btn-tiny">Use for Body</button>
             </form>
           <?php endif; ?>
           <form method="post" onsubmit="return confirm('Remove this font?');">
@@ -510,7 +545,27 @@ require __DIR__ . '/../includes/layout_top.php';
       </div>
     <?php endforeach; ?>
   <?php else: ?>
-    <p class="muted">No custom fonts yet — Inter is used by default.</p>
+    <p class="muted">No custom fonts yet — Inter is used for both roles.</p>
+  <?php endif; ?>
+  <?php if ($headingFontId || $bodyFontId): ?>
+    <div class="inline-form" style="margin-top:8px;">
+      <?php if ($headingFontId): ?>
+        <form method="post">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="font_clear_role">
+          <input type="hidden" name="role" value="heading">
+          <button type="submit" class="btn-tiny btn-danger">Reset Heading to Inter</button>
+        </form>
+      <?php endif; ?>
+      <?php if ($bodyFontId): ?>
+        <form method="post">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="font_clear_role">
+          <input type="hidden" name="role" value="body">
+          <button type="submit" class="btn-tiny btn-danger">Reset Body to Inter</button>
+        </form>
+      <?php endif; ?>
+    </div>
   <?php endif; ?>
   <form method="post" class="stacked-form" style="margin-top:16px;" enctype="multipart/form-data">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
