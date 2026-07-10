@@ -72,26 +72,47 @@
   });
 
   function generateContentForBatch(batchId, postIds) {
-    var done = 0, failed = 0;
-    function next() {
-      if (done + failed >= postIds.length) {
-        statusEl.textContent = 'Done: ' + done + ' generated' + (failed ? ', ' + failed + ' failed (you can retry those from the review screen)' : '') + '. Opening calendar...';
-        window.location.href = window.CALENDAR_BATCH_BASE_URL + '?id=' + batchId;
-        return;
-      }
-      var postId = postIds[done + failed];
+    var done = 0, failed = 0, errors = [];
+
+    function callOnce(postId) {
       var fd = new FormData();
       fd.append('csrf', window.CALENDAR_CSRF);
       fd.append('post_id', postId);
+      return fetch(window.CALENDAR_GENERATE_ONE_URL, { method: 'POST', body: fd }).then(function (r) { return r.json(); });
+    }
+
+    // One automatic retry after a short delay — AI calls fired back-to-
+    // back with no gap can hit a transient/rate-limit error that clears
+    // up a few seconds later, so this avoids a batch showing failed rows
+    // over what's often just a momentary blip.
+    function callWithRetry(postId) {
+      return callOnce(postId).then(function (data) {
+        if (data.success) return data;
+        return new Promise(function (resolve) { setTimeout(resolve, 4000); }).then(function () { return callOnce(postId); });
+      });
+    }
+
+    function next() {
+      if (done + failed >= postIds.length) {
+        var summary = 'Done: ' + done + ' generated';
+        if (failed) {
+          summary += ', ' + failed + ' failed — ' + errors.join(' | ') + ' (retry from the review screen)';
+        }
+        statusEl.textContent = summary + '. Opening calendar...';
+        var goToBatch = function () { window.location.href = window.CALENDAR_BATCH_BASE_URL + '?id=' + batchId; };
+        failed ? setTimeout(goToBatch, 2500) : goToBatch();
+        return;
+      }
+      var postId = postIds[done + failed];
       statusEl.textContent = 'Generating content ' + (done + failed + 1) + ' / ' + postIds.length + '...';
-      fetch(window.CALENDAR_GENERATE_ONE_URL, { method: 'POST', body: fd })
-        .then(function (r) { return r.json(); })
+      callWithRetry(postId)
         .then(function (data) {
-          if (data.success) done++; else failed++;
+          if (data.success) { done++; } else { failed++; errors.push(data.error); }
           next();
         })
-        .catch(function () {
+        .catch(function (err) {
           failed++;
+          errors.push(String(err));
           next();
         });
     }

@@ -54,10 +54,16 @@ $brief = resolve_brief_for_pillar($userId, $pillar);
 try {
     $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar);
 } catch (Throwable $e) {
+    // Persisted (not just returned in this response) so the failure
+    // reason survives to the content-review screen even after the
+    // bulk-generation loop that triggered this has already moved on and
+    // redirected — otherwise a failed row just silently shows "No
+    // content yet." with no indication of why.
+    db()->prepare('UPDATE posts SET error_message = ? WHERE id = ?')->execute([$e->getMessage(), $postId]);
     json_response(['success' => false, 'error' => $e->getMessage(), 'post_id' => $postId], 502);
 }
 
-$update = db()->prepare('UPDATE posts SET creative_json = ?, title = ?, caption = ? WHERE id = ?');
+$update = db()->prepare('UPDATE posts SET creative_json = ?, title = ?, caption = ?, error_message = NULL WHERE id = ?');
 $update->execute([json_encode($creative), $creative['title'] ?? null, $creative['caption'] ?? null, $postId]);
 
 json_response(['success' => true, 'post_id' => $postId, 'creative' => $creative]);

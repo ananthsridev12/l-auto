@@ -69,7 +69,11 @@ require __DIR__ . '/../includes/layout_top.php';
             <?php endif; ?>
           </div>
           <?php if (!$p['creative']): ?>
-            <p class="muted">No content yet.</p>
+            <?php if ($p['error_message']): ?>
+              <p class="badge badge-warning" style="display:block; white-space:normal; text-align:left;">Failed: <?= h($p['error_message']) ?></p>
+            <?php else: ?>
+              <p class="muted">No content yet.</p>
+            <?php endif; ?>
             <button type="button" class="btn-tiny generate-one-btn">Generate</button>
           <?php else: ?>
             <label class="field-row">Title <input type="text" class="title-input" value="<?= h($p['title'] ?? '') ?>"></label>

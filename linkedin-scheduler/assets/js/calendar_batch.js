@@ -11,6 +11,19 @@
     return fetch(url, { method: 'POST', body: fd }).then(function (r) { return r.json(); });
   }
 
+  // AI calls in a tight back-to-back loop can hit transient/rate-limit
+  // errors that succeed on a retry a few seconds later — one automatic
+  // retry here means a blip doesn't require the user to notice a failed
+  // row and manually click Generate again.
+  function postWithRetry(url, fields) {
+    return post(url, fields).then(function (data) {
+      if (data.success) return data;
+      return new Promise(function (resolve) { setTimeout(resolve, 4000); }).then(function () {
+        return post(url, fields);
+      });
+    });
+  }
+
   function selectedCardIds(container) {
     return Array.prototype.slice.call(container.querySelectorAll('.review-card')).filter(function (card) {
       var cb = card.querySelector('.approve-checkbox');
@@ -26,12 +39,17 @@
     var approveContentBtn = document.getElementById('approveContentBtn');
 
     function runQueue(ids, urlFn, onDone) {
-      var i = 0, ok = 0, fail = 0;
+      var i = 0, ok = 0, fail = 0, errors = [];
       function next() {
-        if (i >= ids.length) { onDone(ok, fail); return; }
+        if (i >= ids.length) { onDone(ok, fail, errors); return; }
         var id = ids[i];
         contentStatus.textContent = 'Working ' + (i + 1) + ' / ' + ids.length + '...';
-        urlFn(id).then(function () { ok++; i++; next(); }).catch(function () { fail++; i++; next(); });
+        urlFn(id).then(function (data) {
+          if (data.success) { ok++; } else { fail++; errors.push(data.error); }
+          i++; next();
+        }).catch(function (err) {
+          fail++; errors.push(String(err)); i++; next();
+        });
       }
       next();
     }
@@ -42,12 +60,13 @@
         var postId = card.dataset.postId;
         e.target.disabled = true;
         post(window.CALENDAR_GENERATE_ONE_URL, { post_id: postId }).then(function (data) {
-          e.target.disabled = false;
-          if (data.success) {
-            window.location.reload();
-          } else {
+          if (!data.success) {
             alert('Generation failed: ' + data.error);
           }
+          // Reload either way — a failure is now saved as this post's
+          // error_message server-side, so the card shows the actual
+          // reason instead of reverting to a plain "No content yet."
+          window.location.reload();
         });
       }
     });
@@ -61,8 +80,8 @@
         return;
       }
       generateMissingBtn.disabled = true;
-      runQueue(missing, function (id) { return post(window.CALENDAR_GENERATE_ONE_URL, { post_id: id }); }, function (ok, fail) {
-        contentStatus.textContent = ok + ' generated' + (fail ? ', ' + fail + ' failed' : '') + '.';
+      runQueue(missing, function (id) { return postWithRetry(window.CALENDAR_GENERATE_ONE_URL, { post_id: id }); }, function (ok, fail, errors) {
+        contentStatus.textContent = ok + ' generated' + (fail ? ', ' + fail + ' failed: ' + errors.join(' | ') : '') + '.';
         window.location.reload();
       });
     });
