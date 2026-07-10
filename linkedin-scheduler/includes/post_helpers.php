@@ -90,14 +90,14 @@ function fetch_persona(int $userId, int $id): ?array
 
 function fetch_content_pillars(int $userId): array
 {
-    $stmt = db()->prepare('SELECT id, name, description FROM content_pillars WHERE user_id = ? ORDER BY name');
+    $stmt = db()->prepare('SELECT id, name, description, category FROM content_pillars WHERE user_id = ? ORDER BY name');
     $stmt->execute([$userId]);
     return $stmt->fetchAll();
 }
 
 function fetch_content_pillar(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT id, name, description FROM content_pillars WHERE user_id = ? AND id = ?');
+    $stmt = db()->prepare('SELECT id, name, description, category FROM content_pillars WHERE user_id = ? AND id = ?');
     $stmt->execute([$userId, $id]);
     return $stmt->fetch() ?: null;
 }

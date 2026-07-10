@@ -53,7 +53,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['form'] ?? '') === 'brand_brief') {
         set_brand_brief($userId, $_POST['brand_brief'] ?? '');
+        set_self_brief($userId, $_POST['self_brief'] ?? '');
         flash('success', 'Brand brief saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'seed_kb') {
+        seed_default_knowledge_base($userId);
+        flash('success', 'Starter personas, content pillars, and CTAs added — anything you already had was left untouched.');
         redirect('pages/settings.php');
     }
 
@@ -83,15 +90,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'pillar_add') {
         $name = trim($_POST['pillar_name'] ?? '');
         $desc = trim($_POST['pillar_description'] ?? '');
+        $category = ($_POST['pillar_category'] ?? '') === 'personal' ? 'personal' : 'company';
         if ($name === '') {
             flash('error', 'Enter a content pillar name.');
             redirect('pages/settings.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO content_pillars (user_id, name, description) VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description)'
+            'INSERT INTO content_pillars (user_id, name, description, category) VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category)'
         );
-        $stmt->execute([$userId, $name, $desc]);
+        $stmt->execute([$userId, $name, $desc, $category]);
         flash('success', "Content pillar \"{$name}\" saved.");
         redirect('pages/settings.php');
     }
@@ -150,6 +158,7 @@ $claudeKey = get_claude_api_key($userId);
 $openaiKey = get_openai_api_key($userId);
 $aiProvider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;
 $brandBrief = get_brand_brief($userId);
+$selfBrief = get_self_brief($userId);
 $personas = fetch_personas($userId);
 $contentPillars = fetch_content_pillars($userId);
 $ctaLibrary = fetch_cta_library($userId);
@@ -224,15 +233,28 @@ require __DIR__ . '/../includes/layout_top.php';
 </section>
 
 <section class="card">
-  <h2>Brand Brief</h2>
-  <p class="muted">A short description of your business, audience, and voice — automatically added as context to every AI generation call, so you don't have to retype it each time.</p>
+  <h2>Brand Brief &amp; Self Brief</h2>
+  <p class="muted">Brand Brief covers company-related posts (services, case studies, industry expertise). Self Brief is the personal-voice counterpart used for personal content pillars (achievements, opinions, life events) — see the Company/Personal tag on each pillar below. Both are automatically added as context to every AI generation call, so you don't have to retype them each time.</p>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="brand_brief">
     <label>Brand Brief
       <textarea name="brand_brief" rows="4" placeholder="e.g. We sell predictive-maintenance sensors to mid-size manufacturing plants. Voice: direct, data-driven, not salesy."><?= h($brandBrief ?? '') ?></textarea>
     </label>
-    <button type="submit" class="btn-primary">Save Brand Brief</button>
+    <label>Self Brief
+      <textarea name="self_brief" rows="4" placeholder="e.g. I'm a reliability engineer turned founder. Voice: candid, a bit informal, share real lessons not just wins."><?= h($selfBrief ?? '') ?></textarea>
+    </label>
+    <button type="submit" class="btn-primary">Save Briefs</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Personas, Pillars &amp; CTAs</h2>
+  <p class="muted">Every new account starts with a generic starter set of personas, content pillars, and CTAs (editable/removable below). If you deleted them or never got them, load them again any time — this only adds what's missing, it never duplicates.</p>
+  <form method="post">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="seed_kb">
+    <button type="submit" class="btn-secondary">Load Starter Content</button>
   </form>
 </section>
 
@@ -278,6 +300,7 @@ require __DIR__ . '/../includes/layout_top.php';
       <div class="account-row">
         <div class="account-info">
           <span><?= h($cp['name']) ?></span>
+          <span class="badge <?= $cp['category'] === 'personal' ? 'badge-format' : 'badge-active' ?>"><?= $cp['category'] === 'personal' ? 'Personal' : 'Company' ?></span>
           <span class="muted"><?= h(mb_strimwidth($cp['description'] ?? '', 0, 80, '…')) ?></span>
         </div>
         <form method="post" onsubmit="return confirm('Remove this content pillar?');">
@@ -296,6 +319,12 @@ require __DIR__ . '/../includes/layout_top.php';
     <input type="hidden" name="form" value="pillar_add">
     <label>Name
       <input type="text" name="pillar_name" placeholder="e.g. Case Studies" required>
+    </label>
+    <label>Category
+      <select name="pillar_category">
+        <option value="company">Company</option>
+        <option value="personal">Personal</option>
+      </select>
     </label>
     <label>Description <span class="muted">(optional)</span>
       <textarea name="pillar_description" rows="2"></textarea>

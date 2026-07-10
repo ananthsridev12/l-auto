@@ -54,10 +54,10 @@ if ($row['Topic / Title'] === '' && $row['Post Caption'] === '') {
     json_response(['success' => false, 'error' => 'Enter at least a topic/title (or a caption) to generate from.'], 422);
 }
 
-$brandBrief = get_brand_brief($userId);
+$brief = resolve_brief_for_pillar($userId, $pillar);
 
 try {
-    $creative = generate_creative_via_ai($row, $aiConfig, $brandBrief, $persona, $pillar);
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar);
 } catch (Throwable $e) {
     json_response(['success' => false, 'error' => $e->getMessage()], 502);
 }

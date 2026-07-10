@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/kb_seed.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
@@ -63,6 +64,7 @@ function register_user(string $email, string $password, string $name): array
     }
     $stmt = db()->prepare('INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)');
     $stmt->execute([$email, password_hash($password, PASSWORD_DEFAULT), trim($name)]);
+    seed_default_knowledge_base((int) db()->lastInsertId());
     return [true, null];
 }
 

@@ -131,6 +131,32 @@ function set_brand_brief(int $userId, ?string $brief): void
     $stmt->execute([$brief === '' ? null : $brief, $userId]);
 }
 
+function get_self_brief(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT self_brief FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $brief = $stmt->fetchColumn();
+    return $brief !== false && trim((string) $brief) !== '' ? $brief : null;
+}
+
+function set_self_brief(int $userId, ?string $brief): void
+{
+    $brief = trim((string) $brief);
+    $stmt = db()->prepare('UPDATE users SET self_brief = ? WHERE id = ?');
+    $stmt->execute([$brief === '' ? null : $brief, $userId]);
+}
+
+// Picks brand_brief for company-category pillars (or when no pillar is
+// selected — the common case) and self_brief for personal-category ones,
+// so AI generation always uses the voice that actually matches the post.
+function resolve_brief_for_pillar(int $userId, ?array $pillar): ?string
+{
+    if ($pillar && ($pillar['category'] ?? 'company') === 'personal') {
+        return get_self_brief($userId);
+    }
+    return get_brand_brief($userId);
+}
+
 // Resolves which provider/key/model AI generation should use for
 // $userId. Provider: the user's own preference, or AI_PROVIDER_DEFAULT
 // if unset. API key: the user's own key for that provider; only falls

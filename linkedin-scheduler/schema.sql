@@ -25,7 +25,12 @@ CREATE TABLE IF NOT EXISTS users (
   ai_provider      VARCHAR(20) DEFAULT NULL,
   -- Free-text brand/voice/business context, prepended to every AI
   -- generation call alongside any selected persona/content pillar below.
+  -- brand_brief covers company-related posts; self_brief is the personal-
+  -- voice counterpart used for personal-category content pillars (see
+  -- content_pillars.category below) — achievements, opinions, life
+  -- events, not company messaging.
   brand_brief      TEXT DEFAULT NULL,
+  self_brief       TEXT DEFAULT NULL,
   created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -79,11 +84,15 @@ CREATE TABLE IF NOT EXISTS personas (
   UNIQUE KEY uniq_user_persona (user_id, name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- category drives the Content Calendar Generator's Company/Personal mix
+-- (see includes/calendar_planner.php) and which brief (brand_brief vs
+-- self_brief) gets used as context when generating this pillar's posts.
 CREATE TABLE IF NOT EXISTS content_pillars (
   id           INT AUTO_INCREMENT PRIMARY KEY,
   user_id      INT NOT NULL,
   name         VARCHAR(255) NOT NULL,
   description  TEXT,
+  category     ENUM('company','personal') NOT NULL DEFAULT 'company',
   created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uniq_user_pillar (user_id, name)
@@ -98,6 +107,23 @@ CREATE TABLE IF NOT EXISTS cta_library (
   text          VARCHAR(500) NOT NULL,
   funnel_stage  ENUM('Awareness','Consideration','Decision','Retention') DEFAULT NULL,
   created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One Content Calendar Generator run (see includes/calendar_planner.php,
+-- pages/content_calendar.php). Groups the posts it planned and tracks
+-- which stage of the content-approve -> image-approve -> schedule flow
+-- the batch is in. mix_config is the submitted % preferences, kept for
+-- reference/audit, not re-read by the app after generation.
+CREATE TABLE IF NOT EXISTS calendar_batches (
+  id              INT AUTO_INCREMENT PRIMARY KEY,
+  user_id         INT NOT NULL,
+  period_days     INT NOT NULL,
+  posts_per_week  INT NOT NULL,
+  start_date      DATE NOT NULL,
+  status          ENUM('content_review','image_review','ready','scheduled') NOT NULL DEFAULT 'content_review',
+  mix_config      JSON,
+  created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -131,11 +157,28 @@ CREATE TABLE IF NOT EXISTS posts (
   status              ENUM('draft','scheduled','posted','failed') DEFAULT 'draft',
   li_post_urn         VARCHAR(255),
   error_message       TEXT,
+  -- Content Calendar Generator fields — NULL for posts created any other
+  -- way (New Post, Import, Content Studio). creative_json holds the full
+  -- generated creative (title/caption/hashtags/slides) between content
+  -- generation and image rendering — see includes/calendar_planner.php
+  -- and pages/calendar_batch.php. status stays 'draft' through both
+  -- content_approved_at and image_approved_at so cron never touches these
+  -- early; only the final "Confirm & Schedule" step flips it to
+  -- 'scheduled', even though scheduled_at is already set at plan time.
+  calendar_batch_id   INT NULL,
+  content_pillar_id   INT NULL,
+  persona_id          INT NULL,
+  creative_json       LONGTEXT NULL,
+  content_approved_at DATETIME NULL,
+  image_approved_at   DATETIME NULL,
   created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (linkedin_account_id) REFERENCES linkedin_accounts(id) ON DELETE SET NULL,
   FOREIGN KEY (import_batch_id) REFERENCES import_batches(id) ON DELETE SET NULL,
+  FOREIGN KEY (calendar_batch_id) REFERENCES calendar_batches(id) ON DELETE SET NULL,
+  FOREIGN KEY (content_pillar_id) REFERENCES content_pillars(id) ON DELETE SET NULL,
+  FOREIGN KEY (persona_id) REFERENCES personas(id) ON DELETE SET NULL,
   UNIQUE KEY uniq_user_campaign (user_id, campaign_id),
   INDEX idx_scheduled (status, scheduled_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
