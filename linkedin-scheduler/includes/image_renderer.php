@@ -81,15 +81,25 @@ function render_allocate_palette($im, int $paletteId): array
 function render_font_path(bool $bold): string
 {
     $fontsDir = __DIR__ . '/../assets/fonts';
-    $candidates = $bold
-        ? [$fontsDir . '/Inter-Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']
-        : [$fontsDir . '/Inter-Regular.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'];
-    foreach ($candidates as $path) {
+    // Accepts either a plain rename (Inter-Bold.ttf) or Google Fonts'
+    // "static" export as-is, which ships one file per optical size
+    // (Inter_18pt-Bold.ttf / Inter_24pt-Bold.ttf / Inter_28pt-Bold.ttf) —
+    // 28pt is tried first since most of this renderer's text is large
+    // display headlines (54-78px) that optical size was designed for.
+    $names = $bold
+        ? ['Inter-Bold.ttf', 'Inter_28pt-Bold.ttf', 'Inter_24pt-Bold.ttf', 'Inter_18pt-Bold.ttf']
+        : ['Inter-Regular.ttf', 'Inter_28pt-Regular.ttf', 'Inter_24pt-Regular.ttf', 'Inter_18pt-Regular.ttf'];
+    foreach ($names as $name) {
+        $path = $fontsDir . '/' . $name;
         if (is_file($path)) {
             return $path;
         }
     }
-    throw new RuntimeException('No usable TTF font found — upload Inter-Bold.ttf / Inter-Regular.ttf to assets/fonts/.');
+    $fallback = $bold ? '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' : '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
+    if (is_file($fallback)) {
+        return $fallback;
+    }
+    throw new RuntimeException('No usable TTF font found — upload an Inter Bold/Regular .ttf file to assets/fonts/.');
 }
 
 function render_text_width(string $text, int $size, bool $bold): float
