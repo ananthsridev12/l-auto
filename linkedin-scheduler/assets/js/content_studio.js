@@ -38,7 +38,7 @@
         state.accounts = data.accounts;
         state.suggested = data.suggested_matches;
         state.csvFilename = data.csv_filename;
-        statusEl.textContent = data.rows.length + ' row(s) parsed.' + (data.gemini_configured ? '' : ' (Gemini is not configured — only rows with pre-written Creative Content will generate.)');
+        statusEl.textContent = data.rows.length + ' row(s) parsed.' + (data.gemini_configured ? '' : ' (No Gemini API key set in Settings — only rows with pre-written Creative Content will generate.)');
         renderMapping();
         renderReview();
         step2.style.display = '';

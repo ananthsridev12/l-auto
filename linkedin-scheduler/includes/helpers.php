@@ -54,6 +54,21 @@ function set_enabled_formats(int $userId, array $formats): void
     $stmt->execute([implode(',', $formats), $userId]);
 }
 
+function get_gemini_api_key(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT gemini_api_key FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $key = $stmt->fetchColumn();
+    return $key ?: null;
+}
+
+function set_gemini_api_key(int $userId, ?string $key): void
+{
+    $key = trim((string) $key);
+    $stmt = db()->prepare('UPDATE users SET gemini_api_key = ? WHERE id = ?');
+    $stmt->execute([$key === '' ? null : $key, $userId]);
+}
+
 function redirect(string $path): void
 {
     header('Location: ' . app_path($path));

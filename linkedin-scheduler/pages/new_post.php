@@ -4,12 +4,14 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/zip_import.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
+require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
 $userId = current_user_id();
 
 $availableFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel'], get_enabled_formats($userId)));
 $accounts = fetch_user_accounts($userId);
+$geminiKey = get_gemini_api_key($userId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
@@ -23,19 +25,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/new_post.php');
     }
 
-    if ($format === 'Single Image' && empty($_FILES['image']['tmp_name'])) {
-        flash('error', 'Upload an image for a Single Image post.');
-        redirect('pages/new_post.php');
+    // AI-generated slides replace the manual file-upload requirement —
+    // the image gets rendered server-side after the post row exists
+    // (see below), same as Content Studio's confirm step.
+    $aiCreative = null;
+    $aiCreativeRaw = trim($_POST['ai_creative_json'] ?? '');
+    if ($aiCreativeRaw !== '') {
+        $decoded = json_decode($aiCreativeRaw, true);
+        if (is_array($decoded) && !empty($decoded['slides'])) {
+            $aiCreative = $decoded;
+        }
     }
-    if ($format === 'Carousel') {
-        $uploadedCount = empty($_FILES['images']['tmp_name']) ? 0 : count(array_filter($_FILES['images']['tmp_name']));
-        if ($uploadedCount === 0) {
-            flash('error', 'Upload at least one image for a Carousel post.');
+
+    if ($aiCreative === null) {
+        if ($format === 'Single Image' && empty($_FILES['image']['tmp_name'])) {
+            flash('error', 'Upload an image for a Single Image post, or use "Generate with AI".');
             redirect('pages/new_post.php');
         }
-        if ($uploadedCount > MAX_SLIDES_PER_CAMPAIGN) {
-            flash('error', 'A Carousel can have at most ' . MAX_SLIDES_PER_CAMPAIGN . ' slides.');
-            redirect('pages/new_post.php');
+        if ($format === 'Carousel') {
+            $uploadedCount = empty($_FILES['images']['tmp_name']) ? 0 : count(array_filter($_FILES['images']['tmp_name']));
+            if ($uploadedCount === 0) {
+                flash('error', 'Upload at least one image for a Carousel post, or use "Generate with AI".');
+                redirect('pages/new_post.php');
+            }
+            if ($uploadedCount > MAX_SLIDES_PER_CAMPAIGN) {
+                flash('error', 'A Carousel can have at most ' . MAX_SLIDES_PER_CAMPAIGN . ' slides.');
+                redirect('pages/new_post.php');
+            }
         }
     }
 
@@ -73,7 +89,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $postId = (int) db()->lastInsertId();
 
-    if ($format === 'Single Image' && !empty($_FILES['image']['tmp_name'])) {
+    if ($aiCreative !== null && in_array($format, ['Single Image', 'Carousel'], true)) {
+        $user = current_user();
+        $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
+        $photoPath = null;
+        foreach (['png', 'jpg', 'jpeg'] as $ext) {
+            $candidate = __DIR__ . "/../assets/img/profile.{$ext}";
+            if (is_file($candidate)) {
+                $photoPath = $candidate;
+                break;
+            }
+        }
+        $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+        try {
+            $slides = render_creative_to_slides($aiCreative, $destDir, $footerName, $photoPath);
+        } catch (Throwable $e) {
+            db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
+            flash('error', 'Image rendering failed: ' . $e->getMessage());
+            redirect('pages/new_post.php');
+        }
+        $insertSlide = db()->prepare('INSERT INTO post_slides (post_id, slide_order, filename, filepath) VALUES (?, ?, ?, ?)');
+        foreach ($slides as $order => $slide) {
+            $insertSlide->execute([$postId, $order + 1, $slide['filename'], $slide['filepath']]);
+        }
+    }
+
+    if ($aiCreative === null && $format === 'Single Image' && !empty($_FILES['image']['tmp_name'])) {
         $contents = file_get_contents($_FILES['image']['tmp_name']);
         $mime = zip_sniff_image_mime($contents);
         if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
@@ -93,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ->execute([$postId, $filename, $destPath]);
     }
 
-    if ($format === 'Carousel' && !empty($_FILES['images']['tmp_name'])) {
+    if ($aiCreative === null && $format === 'Carousel' && !empty($_FILES['images']['tmp_name'])) {
         $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         if (!is_dir($destDir)) {
             mkdir($destDir, 0755, true);
@@ -135,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $pageTitle  = 'New Post';
 $activePage = 'new_post';
-$pageScripts = ['formatter.js', 'app.js'];
+$pageScripts = ['formatter.js', 'app.js', 'new_post_ai.js'];
 $token = csrf_token();
 require __DIR__ . '/../includes/layout_top.php';
 ?>
@@ -166,18 +207,47 @@ require __DIR__ . '/../includes/layout_top.php';
           <input type="file" name="images[]" accept="image/png,image/jpeg" multiple form="newPostForm">
         </label>
       </div>
+
+      <div style="width:100%; margin-top:12px;">
+        <label class="checkbox-row">
+          <input type="checkbox" id="aiGenerateToggle" <?= $geminiKey ? '' : 'disabled' ?>>
+          Generate with AI instead
+        </label>
+        <?php if (!$geminiKey): ?>
+          <p class="muted">Add a Gemini API key in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> to use this.</p>
+        <?php endif; ?>
+      </div>
+
+      <div id="aiGenerateFields" style="width:100%; margin-top:12px; display:none;">
+        <label>Topic / Title
+          <input type="text" id="aiTopic">
+        </label>
+        <label>Target Persona <span class="muted">(optional)</span>
+          <input type="text" id="aiPersona">
+        </label>
+        <label>Style / Type <span class="muted">(optional)</span>
+          <input type="text" id="aiType">
+        </label>
+        <label>CTA Question <span class="muted">(optional)</span>
+          <input type="text" id="aiCta">
+        </label>
+        <button type="button" id="aiGenerateBtn" class="btn-secondary" style="margin-top:8px;">Generate</button>
+        <p id="aiGenerateStatus" class="muted"></p>
+        <div id="aiSlidesReview"></div>
+      </div>
     </div>
 
     <div class="editor-panel">
       <form method="post" id="newPostForm" enctype="multipart/form-data">
         <input type="hidden" name="csrf" value="<?= h($token) ?>">
+        <input type="hidden" name="ai_creative_json" id="aiCreativeJsonField">
 
         <div class="editor-label">Caption</div>
         <?php include __DIR__ . '/_formatter_toolbar.php'; ?>
         <textarea id="caption" name="caption" class="caption-editor"></textarea>
 
         <label>Title <span class="muted">(optional)</span>
-          <input type="text" name="title">
+          <input type="text" name="title" id="titleField">
         </label>
 
         <label>Campaign ID <span class="muted">(optional — auto-generated if left blank)</span>
@@ -211,15 +281,20 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <script>
   window.MENTION_ACCOUNTS = <?= json_encode(fetch_mention_picker_list($userId)) ?>;
+  window.AI_GENERATE_PREVIEW_URL = <?= json_encode(app_path('api/ai_generate_preview.php')) ?>;
+  window.NEW_POST_CSRF = <?= json_encode($token) ?>;
   (function () {
     var select = document.getElementById('formatSelect');
     var imageField = document.getElementById('imageUploadField');
     var carouselField = document.getElementById('carouselUploadField');
+    var aiToggle = document.getElementById('aiGenerateToggle');
     if (!select || !imageField || !carouselField) return;
     var toggle = function () {
-      imageField.style.display = select.value === 'Single Image' ? 'block' : 'none';
-      carouselField.style.display = select.value === 'Carousel' ? 'block' : 'none';
+      var usingAi = aiToggle && aiToggle.checked;
+      imageField.style.display = (!usingAi && select.value === 'Single Image') ? 'block' : 'none';
+      carouselField.style.display = (!usingAi && select.value === 'Carousel') ? 'block' : 'none';
     };
+    window.newPostUpdateUploadFields = toggle;
     select.addEventListener('change', toggle);
     toggle();
   })();

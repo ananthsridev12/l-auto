@@ -40,10 +40,10 @@ define('LI_SCOPES_COMPANY',  'openid profile w_member_social w_organization_soci
 
 define('UPLOAD_DIR', __DIR__ . '/uploads');
 
-// Free-tier Gemini API key, used by Content Studio to write carousel/
-// single-image copy when a CSV row's Creative Content column is left
-// blank (see includes/ai_generate.php). Get one at https://aistudio.google.com/apikey
-// Leave blank to disable AI generation — pre-written Creative Content
-// rows still work fine without it.
-define('GEMINI_API_KEY', '');
-define('GEMINI_MODEL',   'gemini-2.5-flash');
+// Model used for AI generation in Content Studio / New Post (see
+// includes/ai_generate.php) — this is the only Gemini setting that's
+// app-wide. The API key itself is per-user, set by each user in
+// Settings (get/set_gemini_api_key() in includes/helpers.php), not here
+// — every user brings their own free-tier key at
+// https://aistudio.google.com/apikey rather than sharing one app key.
+define('GEMINI_MODEL', 'gemini-2.5-flash');

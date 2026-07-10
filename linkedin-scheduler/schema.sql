@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS users (
   -- NULL/empty = default (everything except Poll, which LinkedIn's Posts
   -- API cannot actually publish — see includes/helpers.php).
   enabled_formats  VARCHAR(255) DEFAULT NULL,
+  -- Per-user Gemini API key for Content Studio / New Post AI generation
+  -- (includes/ai_generate.php) — each user brings their own free-tier
+  -- key rather than sharing one app-wide key. NULL = AI generation
+  -- unavailable for that user; pre-written content still works fine.
+  gemini_api_key   VARCHAR(255) DEFAULT NULL,
   created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

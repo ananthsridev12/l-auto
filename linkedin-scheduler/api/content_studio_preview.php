@@ -7,6 +7,8 @@ require_once __DIR__ . '/../includes/creative_builder.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
 
 require_login();
+$userId = current_user_id();
+$geminiKey = get_gemini_api_key($userId);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_FILES['csv']['tmp_name'])) {
     json_response(['success' => false, 'error' => 'No CSV file uploaded'], 400);
@@ -35,14 +37,14 @@ foreach ($preview['rows'] as &$entry) {
         $entry['creative'] = $mechanical;
         continue;
     }
-    if (!gemini_configured()) {
+    if (!gemini_configured($geminiKey)) {
         $entry['skip'] = true;
-        $entry['skip_reason'] = 'No Creative Content, and Gemini is not configured (add GEMINI_API_KEY in config.php)';
+        $entry['skip_reason'] = 'No Creative Content, and no Gemini API key set in Settings';
         continue;
     }
     try {
         $entry['source'] = 'ai';
-        $entry['creative'] = generate_creative_via_gemini($row);
+        $entry['creative'] = generate_creative_via_gemini($row, $geminiKey);
     } catch (Throwable $e) {
         $entry['skip'] = true;
         $entry['skip_reason'] = 'AI generation failed: ' . $e->getMessage();
@@ -51,7 +53,7 @@ foreach ($preview['rows'] as &$entry) {
 unset($entry);
 
 $stmt = db()->prepare('SELECT id, display_name, account_type FROM linkedin_accounts WHERE user_id = ? AND status = "active" ORDER BY display_name');
-$stmt->execute([current_user_id()]);
+$stmt->execute([$userId]);
 $accounts = $stmt->fetchAll();
 
 $suggested = [];
@@ -72,5 +74,5 @@ json_response([
     'suggested_matches' => $suggested,
     'accounts'          => $accounts,
     'csv_filename'      => $_FILES['csv']['name'],
-    'gemini_configured' => gemini_configured(),
+    'gemini_configured' => gemini_configured($geminiKey),
 ]);

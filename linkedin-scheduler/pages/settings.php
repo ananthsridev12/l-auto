@@ -42,6 +42,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'gemini_key') {
+        set_gemini_api_key($userId, $_POST['gemini_api_key'] ?? '');
+        flash('success', trim((string) ($_POST['gemini_api_key'] ?? '')) === '' ? 'Gemini API key removed.' : 'Gemini API key saved.');
+        redirect('pages/settings.php');
+    }
+
     $name = trim($_POST['name'] ?? '');
     $newPassword = $_POST['new_password'] ?? '';
 
@@ -63,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $enabledFormats = get_enabled_formats($userId);
 $tagDirectory = fetch_tag_directory($userId);
+$geminiKey = get_gemini_api_key($userId);
 
 $pageTitle  = 'Settings';
 $activePage = 'settings';
@@ -107,6 +114,19 @@ require __DIR__ . '/../includes/layout_top.php';
       </label>
     <?php endforeach; ?>
     <button type="submit" class="btn-primary">Save Formats</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>AI Generation (Gemini)</h2>
+  <p class="muted">Used by <a href="<?= h(app_path('pages/content_studio.php')) ?>">Content Studio</a> and New Post's "Generate with AI" to write captions and slide copy when you haven't written them yourself. Bring your own free-tier key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> — nothing is shared across accounts. Leave blank to disable AI generation; pre-written content still works fine without it.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="gemini_key">
+    <label>Gemini API Key
+      <input type="password" name="gemini_api_key" value="<?= h($geminiKey ?? '') ?>" placeholder="AIza..." autocomplete="off">
+    </label>
+    <button type="submit" class="btn-primary">Save Key</button>
   </form>
 </section>
 

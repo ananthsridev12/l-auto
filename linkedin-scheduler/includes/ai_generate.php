@@ -1,21 +1,58 @@
 <?php
 // Ported from the local Python prototype's generate.py — used by Content
-// Studio only when a CSV row's Creative Content column is blank but
-// enough context (Topic / Title, Target Persona, Type, CTA) is present to
-// ask an AI to write the copy. Calls Gemini instead of the Claude API
-// generate.py used, since Gemini's free tier covers this app's volume
-// indefinitely (see config.sample.php GEMINI_API_KEY / GEMINI_MODEL).
+// Studio and New Post's "Generate with AI" whenever there's no
+// pre-written Creative Content but enough context (Topic / Title,
+// Target Persona, Type, CTA) to ask an AI to write the copy. Calls
+// Gemini instead of the Claude API generate.py used, since Gemini's
+// free tier covers this app's volume indefinitely. Each user supplies
+// their own key in Settings (includes/helpers.php get_gemini_api_key())
+// — there is no app-wide key, so every call here takes $apiKey explicitly
+// rather than reading a shared config constant.
 //
 // Returns the same JSON shape as includes/creative_builder.php so both
 // paths feed includes/image_renderer.php identically.
 
-function gemini_configured(): bool
+function gemini_configured(?string $apiKey): bool
 {
-    return defined('GEMINI_API_KEY') && GEMINI_API_KEY !== '';
+    return $apiKey !== null && trim($apiKey) !== '';
 }
 
 function gemini_build_prompt(array $row, string $format): string
 {
+    if ($format === 'Text Post') {
+        $topic   = trim($row['Topic / Title'] ?? $row['Topic/Title'] ?? '');
+        $persona = trim($row['Target Persona'] ?? '');
+        $type    = trim($row['Type'] ?? '');
+        $caption = trim($row['Post Caption'] ?? '');
+        $captionBlock = $caption !== ''
+            ? "Use this exact caption (do not change it):\n\"\"\"\n{$caption}\n\"\"\""
+            : 'Write a professional LinkedIn text post matching the topic and tone, including 3-5 relevant hashtags at the end.';
+
+        return <<<PROMPT
+You are a LinkedIn content specialist writing a text-only post for a B2B engineering/manufacturing audience.
+
+POST DETAILS:
+- Topic: {$topic}
+- Target Audience: {$persona}
+- Content Style: {$type}
+
+CAPTION:
+{$captionBlock}
+
+CONSTRAINTS:
+- Tone: professional, direct, insight-driven (not salesy)
+- Length: 3-6 short paragraphs, LinkedIn-native formatting (short lines, no walls of text)
+
+Return ONLY raw JSON — no markdown, no code fences, no explanation:
+{
+  "title": "short internal title for this post",
+  "caption": "full LinkedIn post text including hashtags",
+  "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
+  "slides": []
+}
+PROMPT;
+    }
+
     $topic    = trim($row['Topic / Title'] ?? $row['Topic/Title'] ?? '');
     $persona  = trim($row['Target Persona'] ?? '');
     $type     = trim($row['Type'] ?? '');
@@ -105,16 +142,17 @@ Return ONLY raw JSON — no markdown, no code fences, no explanation:
 PROMPT;
 }
 
-function generate_creative_via_gemini(array $row): array
+function generate_creative_via_gemini(array $row, ?string $apiKey): array
 {
-    if (!gemini_configured()) {
-        throw new RuntimeException('Gemini API key is not configured — add GEMINI_API_KEY in config.php, or fill in the Creative Content column for this row instead.');
+    if (!gemini_configured($apiKey)) {
+        throw new RuntimeException('Add a Gemini API key in Settings to use AI generation, or fill in the Creative Content column for this row instead.');
     }
 
-    $format = trim($row['Final_Format'] ?? '') === 'Single Image' ? 'Single Image' : 'Carousel';
+    $rawFormat = trim($row['Final_Format'] ?? '');
+    $format = in_array($rawFormat, ['Single Image', 'Text Post'], true) ? $rawFormat : 'Carousel';
     $prompt = gemini_build_prompt($row, $format);
 
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . GEMINI_MODEL . ':generateContent?key=' . urlencode(GEMINI_API_KEY);
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . GEMINI_MODEL . ':generateContent?key=' . urlencode($apiKey);
     $body = [
         'contents'         => [['parts' => [['text' => $prompt]]]],
         'generationConfig' => ['responseMimeType' => 'application/json'],
@@ -150,11 +188,14 @@ function generate_creative_via_gemini(array $row): array
     }
 
     $creative = json_decode(trim($text), true);
-    if (!is_array($creative) || empty($creative['slides'])) {
+    if (!is_array($creative) || !isset($creative['slides']) || !is_array($creative['slides'])) {
+        throw new RuntimeException('Gemini did not return valid JSON for this row.');
+    }
+    if ($format !== 'Text Post' && empty($creative['slides'])) {
         throw new RuntimeException('Gemini did not return valid JSON for this row.');
     }
 
-    $creative['format']       = $format === 'Single Image' ? 'single' : 'carousel';
+    $creative['format']       = $format === 'Single Image' ? 'single' : ($format === 'Text Post' ? 'text' : 'carousel');
     $creative['series_label'] = creative_series_label($row);
     if (empty($creative['hashtags'])) {
         $creative['hashtags'] = creative_extract_hashtags($creative['caption'] ?? '');
