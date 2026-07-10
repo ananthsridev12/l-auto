@@ -38,19 +38,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($aiCreativeRaw !== '') {
         $decoded = json_decode($aiCreativeRaw, true);
         if (is_array($decoded) && !empty($decoded['slides'])) {
+            if (count($decoded['slides']) > MAX_SLIDES_PER_CAMPAIGN) {
+                flash('error', 'A Carousel can have at most ' . MAX_SLIDES_PER_CAMPAIGN . ' slides.');
+                redirect('pages/new_post.php');
+            }
             $aiCreative = $decoded;
         }
     }
 
     if ($aiCreative === null) {
         if ($format === 'Single Image' && empty($_FILES['image']['tmp_name'])) {
-            flash('error', 'Upload an image for a Single Image post, or use "Generate with AI".');
+            flash('error', 'Upload an image for a Single Image post, or use "Generate with AI" / "Write content directly".');
             redirect('pages/new_post.php');
         }
         if ($format === 'Carousel') {
             $uploadedCount = empty($_FILES['images']['tmp_name']) ? 0 : count(array_filter($_FILES['images']['tmp_name']));
             if ($uploadedCount === 0) {
-                flash('error', 'Upload at least one image for a Carousel post, or use "Generate with AI".');
+                flash('error', 'Upload at least one image for a Carousel post, or use "Generate with AI" / "Write content directly".');
                 redirect('pages/new_post.php');
             }
             if ($uploadedCount > MAX_SLIDES_PER_CAMPAIGN) {
@@ -214,6 +218,10 @@ require __DIR__ . '/../includes/layout_top.php';
         <?php if (!ai_configured($aiConfig)): ?>
           <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> to use this.</p>
         <?php endif; ?>
+        <label class="checkbox-row">
+          <input type="checkbox" id="manualCreativeToggle">
+          Write content directly (no AI) — auto-generate the image from text you type in
+        </label>
       </div>
 
       <div id="aiGenerateFields" style="width:100%; margin-top:12px; display:none;">
@@ -254,6 +262,11 @@ require __DIR__ . '/../includes/layout_top.php';
         </label>
         <input type="text" id="aiCta" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; display:none;">
 
+        <button type="button" id="aiGenerateBtn" class="btn-secondary" style="margin-top:8px;">Generate</button>
+        <p id="aiGenerateStatus" class="muted"></p>
+      </div>
+
+      <div id="creativeSlidesPanel" style="width:100%; margin-top:12px; display:none;">
         <label>Image Template <span class="muted">(optional)</span>
           <select id="aiTemplateSelect">
             <option value="">Auto</option>
@@ -266,10 +279,8 @@ require __DIR__ . '/../includes/layout_top.php';
             <?php endforeach; ?>
           </select>
         </label>
-
-        <button type="button" id="aiGenerateBtn" class="btn-secondary" style="margin-top:8px;">Generate</button>
-        <p id="aiGenerateStatus" class="muted"></p>
         <div id="aiSlidesReview"></div>
+        <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
       </div>
     </div>
 
@@ -319,16 +330,18 @@ require __DIR__ . '/../includes/layout_top.php';
   window.MENTION_ACCOUNTS = <?= json_encode(fetch_mention_picker_list($userId)) ?>;
   window.AI_GENERATE_PREVIEW_URL = <?= json_encode(app_path('api/ai_generate_preview.php')) ?>;
   window.NEW_POST_CSRF = <?= json_encode($token) ?>;
+  window.MAX_SLIDES_PER_CAMPAIGN = <?= (int) MAX_SLIDES_PER_CAMPAIGN ?>;
   (function () {
     var select = document.getElementById('formatSelect');
     var imageField = document.getElementById('imageUploadField');
     var carouselField = document.getElementById('carouselUploadField');
     var aiToggle = document.getElementById('aiGenerateToggle');
+    var manualToggle = document.getElementById('manualCreativeToggle');
     if (!select || !imageField || !carouselField) return;
     var toggle = function () {
-      var usingAi = aiToggle && aiToggle.checked;
-      imageField.style.display = (!usingAi && select.value === 'Single Image') ? 'block' : 'none';
-      carouselField.style.display = (!usingAi && select.value === 'Carousel') ? 'block' : 'none';
+      var usingCreativeJson = (aiToggle && aiToggle.checked) || (manualToggle && manualToggle.checked);
+      imageField.style.display = (!usingCreativeJson && select.value === 'Single Image') ? 'block' : 'none';
+      carouselField.style.display = (!usingCreativeJson && select.value === 'Carousel') ? 'block' : 'none';
     };
     window.newPostUpdateUploadFields = toggle;
     select.addEventListener('change', toggle);
