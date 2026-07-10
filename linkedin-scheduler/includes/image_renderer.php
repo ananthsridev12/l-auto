@@ -206,6 +206,38 @@ function sniff_font_ext(string $contents): ?string
     return null;
 }
 
+// Site-wide fonts already sitting in assets/fonts/ (e.g. dropped in via
+// cPanel file manager) — lets Settings offer "add to my fonts" instead
+// of requiring a re-upload through the browser. Only recognizes a plain
+// "Name-Regular.ttf" / "Name-Bold.ttf" (or "_" separator) naming
+// convention; a family missing either weight, or named some other way
+// (like Google Fonts' per-optical-size static export), won't show up
+// here — it can still be renamed to match, or uploaded normally.
+function scan_site_fonts(): array
+{
+    $dir = __DIR__ . '/../assets/fonts';
+    if (!is_dir($dir)) {
+        return [];
+    }
+    $families = [];
+    foreach (scandir($dir) ?: [] as $file) {
+        if (!preg_match('/^(.+?)[-_](Regular|Bold)\.(ttf|otf)$/i', $file, $m)) {
+            continue;
+        }
+        $familyKey = strtolower($m[1]);
+        $families[$familyKey]['name'] = $m[1];
+        $families[$familyKey][strtolower($m[2])] = $dir . '/' . $file;
+    }
+    $result = [];
+    foreach ($families as $data) {
+        if (isset($data['regular'], $data['bold'])) {
+            $result[] = ['name' => $data['name'], 'regular' => $data['regular'], 'bold' => $data['bold']];
+        }
+    }
+    usort($result, fn ($a, $b) => strcasecmp($a['name'], $b['name']));
+    return $result;
+}
+
 // Set once per render_creative_to_slides() call (see below) from the
 // user's includes/post_helpers.php fetch_heading_font()/fetch_body_font()
 // role assignments, if set — render_font_path() checks the override for

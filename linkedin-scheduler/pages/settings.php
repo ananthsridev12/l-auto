@@ -247,12 +247,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'font_add_from_site') {
+        $familyName = trim($_POST['family'] ?? '');
+        $siteFont = null;
+        foreach (scan_site_fonts() as $sf) {
+            if (strcasecmp($sf['name'], $familyName) === 0) {
+                $siteFont = $sf;
+                break;
+            }
+        }
+        if (!$siteFont) {
+            flash('error', 'That font is no longer in the site library.');
+            redirect('pages/settings.php');
+        }
+        try {
+            $stmt = db()->prepare('INSERT INTO brand_fonts (user_id, name, regular_path, bold_path) VALUES (?, ?, ?, ?)');
+            $stmt->execute([$userId, $siteFont['name'], $siteFont['regular'], $siteFont['bold']]);
+        } catch (PDOException $e) {
+            if ((string) $e->getCode() === '23000') {
+                flash('error', "\"{$siteFont['name']}\" is already in your fonts.");
+                redirect('pages/settings.php');
+            }
+            throw $e;
+        }
+        flash('success', "\"{$siteFont['name']}\" added to your fonts.");
+        redirect('pages/settings.php');
+    }
+
     if (($_POST['form'] ?? '') === 'font_delete') {
         $fontId = (int) ($_POST['font_id'] ?? 0);
         $font = fetch_brand_font($userId, $fontId);
         if ($font) {
-            @unlink($font['regular_path']);
-            @unlink($font['bold_path']);
+            // Only unlink files inside this user's own upload directory —
+            // a font added via "font_add_from_site" points at the shared
+            // assets/fonts/ files instead, which must never be deleted
+            // out from under every other user who might use them too.
+            $ownDir = UPLOAD_DIR . "/{$userId}/fonts/";
+            if (str_starts_with($font['regular_path'], $ownDir)) {
+                @unlink($font['regular_path']);
+            }
+            if (str_starts_with($font['bold_path'], $ownDir)) {
+                @unlink($font['bold_path']);
+            }
             db()->prepare('DELETE FROM brand_fonts WHERE id = ? AND user_id = ?')->execute([$fontId, $userId]);
         }
         flash('success', 'Font removed.');
@@ -321,6 +357,8 @@ $brandPalettes = fetch_brand_palettes($userId);
 $brandFonts = fetch_brand_fonts($userId);
 $headingFontId = (int) (fetch_heading_font($userId)['id'] ?? 0);
 $bodyFontId = (int) (fetch_body_font($userId)['id'] ?? 0);
+$ownedFontNames = array_map(fn ($bf) => strtolower($bf['name']), $brandFonts);
+$siteFonts = array_filter(scan_site_fonts(), fn ($sf) => !in_array(strtolower($sf['name']), $ownedFontNames, true));
 
 $footerImages = [];
 foreach (['logo', 'photo'] as $slot) {
@@ -506,7 +544,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card">
   <h2>Brand Fonts</h2>
-  <p class="muted">Upload your own typefaces (Regular + Bold, .ttf or .otf) — a library to pick from, not a single active font. Assign one to <strong>Heading</strong> (headline text) and one to <strong>Body</strong> (everything else — body text, numbered points, CTA banner, counter, footer) independently. Leave either unassigned to use the built-in Inter for that role.</p>
+  <p class="muted">Upload your own typefaces (Regular + Bold, .ttf or .otf), or add one already on the server below without uploading — a library to pick from, not a single active font. Assign one to <strong>Heading</strong> (headline text) and one to <strong>Body</strong> (everything else — body text, numbered points, CTA banner, counter, footer) independently. Leave either unassigned to use the built-in Inter for that role.</p>
   <?php if ($brandFonts): ?>
     <?php foreach ($brandFonts as $bf): ?>
       <?php $isHeading = (int) $bf['id'] === $headingFontId; $isBody = (int) $bf['id'] === $bodyFontId; ?>
@@ -567,6 +605,24 @@ require __DIR__ . '/../includes/layout_top.php';
       <?php endif; ?>
     </div>
   <?php endif; ?>
+
+  <?php if ($siteFonts): ?>
+    <div class="mspec" style="margin-top:16px;">
+      <div class="mspec-title">Already on the server (assets/fonts/) — add without uploading</div>
+      <?php foreach ($siteFonts as $sf): ?>
+        <div class="account-row">
+          <div class="account-info"><span><?= h($sf['name']) ?></span></div>
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="font_add_from_site">
+            <input type="hidden" name="family" value="<?= h($sf['name']) ?>">
+            <button type="submit" class="btn-tiny">Add to My Fonts</button>
+          </form>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
+
   <form method="post" class="stacked-form" style="margin-top:16px;" enctype="multipart/form-data">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="font_add">
