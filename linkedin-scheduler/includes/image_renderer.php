@@ -410,6 +410,22 @@ function render_fit_font_size(array $items, float $startY, float $ceiling, array
     return end($candidateSizes);
 }
 
+// A word-count limit on the headline/body (see includes/ai_generate.php
+// prompt rules) doesn't bound how many lines it wraps to at a fixed font
+// size — a handful of long words can still wrap to several lines and eat
+// the vertical space everything below (points, footer) needs. Picks the
+// largest candidate size (assumed descending) that keeps the text at or
+// under $maxLines, falling back to the smallest candidate otherwise.
+function render_fit_headline_size(string $text, float $maxPx, array $candidateSizes, int $maxLines, bool $bold = true): int
+{
+    foreach ($candidateSizes as $size) {
+        if (count(render_wrap($text, $size, $bold, $maxPx)) <= $maxLines) {
+            return $size;
+        }
+    }
+    return end($candidateSizes);
+}
+
 function render_numbered_card($im, int $num, string $text, float $y, array $p, int $fontSize = 26): float
 {
     [$cx, $rx, $cw] = render_content_edges();
@@ -454,10 +470,18 @@ function render_cta_banner($im, string $text, float $y, array $p, int $fontSize 
     return $y + $ph + 16;
 }
 
+// $contentY + gap is a floor, not a ceiling: the max(...) pins the footer
+// near the bottom for typical short content (today's usual case), but
+// if content genuinely runs long there is no upper clamp to fight it
+// back up into — a footer sitting lower than the usual position (even
+// close to the canvas edge) is preferable to it being forced on top of
+// still-drawing content. render_fit_headline_size()/render_fit_font_size()
+// keep content within budget for the vast majority of inputs; this is
+// the last-resort guarantee for whatever they can't.
 function render_footer_simple($im, float $contentY, array $p, string $name): void
 {
     [$cx, $rx] = render_content_edges();
-    $fy = max(800, min($contentY + 50, RENDER_SIZE - RENDER_PAD - 56));
+    $fy = max(800, $contentY + 50);
     imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 2, $p['divider']);
     render_text($im, $cx, $fy + 12, $name, 22, true, $p['name']);
 }
@@ -465,7 +489,7 @@ function render_footer_simple($im, float $contentY, array $p, string $name): voi
 function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath): void
 {
     [$cx, $rx] = render_content_edges();
-    $fy = max(720, min($contentY + 50, RENDER_SIZE - RENDER_PAD - 148));
+    $fy = max(720, $contentY + 50);
     imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 2, $p['divider']);
     $py = $fy + 14;
 
@@ -494,9 +518,10 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     render_draw_counter($im, 1, $total, $p);
 
     $y = RENDER_PAD + 12;
-    $lh = render_lh(78);
-    foreach (render_wrap($slide['headline'] ?? '', 78, true, $cw) as $line) {
-        render_text($im, $cx, $y, $line, 78, true, $p['headline']);
+    $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [78, 68, 58, 50, 44], 2);
+    $lh = render_lh($hs);
+    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw) as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline']);
         $y += $lh;
     }
 
@@ -526,9 +551,10 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = RENDER_PAD + 12;
-    $lh = render_lh(54);
-    foreach (render_wrap($slide['headline'] ?? '', 54, true, $cw) as $line) {
-        render_text($im, $cx, $y, $line, 54, true, $p['headline']);
+    $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [54, 48, 42, 38, 34], 2);
+    $lh = render_lh($hs);
+    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw) as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline']);
         $y += $lh;
     }
 
@@ -536,9 +562,10 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
 
     $body = $slide['body'] ?? '';
     if ($body !== '') {
-        $blh = render_lh(26);
-        foreach (render_wrap($body, 26, false, $cw) as $line) {
-            render_text($im, $cx, $y, $line, 26, false, $p['body']);
+        $bs = render_fit_headline_size($body, $cw, [26, 23, 20], 3, false);
+        $blh = render_lh($bs);
+        foreach (render_wrap($body, $bs, false, $cw) as $line) {
+            render_text($im, $cx, $y, $line, $bs, false, $p['body']);
             $y += $blh;
         }
         $y += 22;
@@ -560,9 +587,10 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = RENDER_PAD + 12;
-    $lh = render_lh(52);
-    foreach (render_wrap($slide['headline'] ?? '', 52, true, $cw) as $line) {
-        render_text($im, $cx, $y, $line, 52, true, $p['headline']);
+    $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [52, 46, 40, 36, 32], 2);
+    $lh = render_lh($hs);
+    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw) as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline']);
         $y += $lh;
     }
 
@@ -594,9 +622,10 @@ function render_slide_single($im, array $data, array $p, string $name): void
     $slide = $data['slides'][0];
 
     $y = RENDER_PAD + 12;
-    $lh = render_lh(68);
-    foreach (render_wrap($slide['headline'] ?? '', 68, true, $cw) as $line) {
-        render_text($im, $cx, $y, $line, 68, true, $p['headline']);
+    $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [68, 60, 52, 46, 40], 3);
+    $lh = render_lh($hs);
+    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw) as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline']);
         $y += $lh;
     }
 
@@ -604,9 +633,10 @@ function render_slide_single($im, array $data, array $p, string $name): void
 
     $body = $slide['body'] ?? '';
     if ($body !== '') {
-        $blh = render_lh(27);
-        foreach (render_wrap($body, 27, false, $cw) as $line) {
-            render_text($im, $cx, $y, $line, 27, false, $p['body']);
+        $bs = render_fit_headline_size($body, $cw, [27, 24, 21], 3, false);
+        $blh = render_lh($bs);
+        foreach (render_wrap($body, $bs, false, $cw) as $line) {
+            render_text($im, $cx, $y, $line, $bs, false, $p['body']);
             $y += $blh;
         }
         $y += 22;
