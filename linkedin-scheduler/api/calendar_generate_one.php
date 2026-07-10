@@ -10,6 +10,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
+require_once __DIR__ . '/../includes/creative_builder.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
 
 require_login();
