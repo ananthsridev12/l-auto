@@ -281,6 +281,10 @@ require __DIR__ . '/../includes/layout_top.php';
         </label>
         <div id="aiSlidesReview"></div>
         <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
+
+        <button type="button" id="previewImageBtn" class="btn-secondary" style="margin-top:12px;">Generate Image Preview</button>
+        <p id="previewStatus" class="muted"></p>
+        <div id="imagePreviewResult" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
       </div>
     </div>
 
@@ -329,6 +333,7 @@ require __DIR__ . '/../includes/layout_top.php';
 <script>
   window.MENTION_ACCOUNTS = <?= json_encode(fetch_mention_picker_list($userId)) ?>;
   window.AI_GENERATE_PREVIEW_URL = <?= json_encode(app_path('api/ai_generate_preview.php')) ?>;
+  window.IMAGE_PREVIEW_URL = <?= json_encode(app_path('api/new_post_preview_image.php')) ?>;
   window.NEW_POST_CSRF = <?= json_encode($token) ?>;
   window.MAX_SLIDES_PER_CAMPAIGN = <?= (int) MAX_SLIDES_PER_CAMPAIGN ?>;
   (function () {

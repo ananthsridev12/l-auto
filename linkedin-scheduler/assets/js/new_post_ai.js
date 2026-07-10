@@ -185,6 +185,12 @@
 
   function renderReview() {
     reviewEl.innerHTML = '';
+    // Whatever's currently shown in imagePreviewResult no longer matches
+    // the content being edited — clear it rather than leave a stale image.
+    if (previewResult) {
+      previewResult.innerHTML = '';
+      previewStatus.textContent = '';
+    }
     if (!currentCreative || !currentCreative.slides || !currentCreative.slides.length) {
       return;
     }
@@ -256,11 +262,10 @@
     });
   }
 
-  form.addEventListener('submit', function () {
-    if (!mode || !currentCreative) {
-      jsonField.value = '';
-      return;
-    }
+  // Pulls the latest edits out of the review fields and the template
+  // picker into currentCreative — shared by the submit handler and the
+  // "Generate Image Preview" button so both send the exact same shape.
+  function buildFinalCreative() {
     syncFieldsIntoCreative();
     currentCreative.title = titleEl ? titleEl.value : currentCreative.title;
     currentCreative.caption = captionEl ? captionEl.value : currentCreative.caption;
@@ -273,6 +278,59 @@
     } else {
       delete currentCreative.template;
     }
-    jsonField.value = JSON.stringify(currentCreative);
+    return currentCreative;
+  }
+
+  var previewBtn = document.getElementById('previewImageBtn');
+  var previewStatus = document.getElementById('previewStatus');
+  var previewResult = document.getElementById('imagePreviewResult');
+
+  if (previewBtn) {
+    previewBtn.addEventListener('click', function () {
+      if (!mode || !currentCreative) {
+        previewStatus.textContent = 'Generate with AI or fill in the slide content first.';
+        return;
+      }
+      var creative = buildFinalCreative();
+      var fd = new FormData();
+      fd.append('csrf', window.NEW_POST_CSRF);
+      fd.append('creative_json', JSON.stringify(creative));
+
+      previewStatus.textContent = 'Rendering...';
+      previewResult.innerHTML = '';
+      previewBtn.disabled = true;
+      fetch(window.IMAGE_PREVIEW_URL, { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          previewBtn.disabled = false;
+          if (!data.success) {
+            previewStatus.textContent = 'Error: ' + data.error;
+            return;
+          }
+          previewStatus.textContent = 'Preview — this is exactly what will be saved.';
+          data.slides.forEach(function (slide) {
+            var img = document.createElement('img');
+            img.src = slide.url;
+            img.style.width = '220px';
+            img.style.height = '220px';
+            img.style.objectFit = 'cover';
+            img.style.borderRadius = '6px';
+            img.style.border = '1px solid var(--border-color, #ccc)';
+            previewResult.appendChild(img);
+          });
+        })
+        .catch(function (err) {
+          previewBtn.disabled = false;
+          previewStatus.textContent = 'Request failed: ' + err;
+        });
+    });
+  }
+
+  form.addEventListener('submit', function () {
+    if (!mode || !currentCreative) {
+      jsonField.value = '';
+      return;
+    }
+    jsonField.value = JSON.stringify(buildFinalCreative());
   });
 })();
