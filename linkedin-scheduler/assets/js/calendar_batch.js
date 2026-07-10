@@ -103,7 +103,15 @@
             points: fs.querySelector('.points-input').value.split('\n').map(function (p) { return p.trim(); }).filter(function (p) { return p !== ''; }),
           });
         });
-        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides });
+        var templateSelect = card.querySelector('.template-select');
+        var tpl = templateSelect ? templateSelect.value : '';
+        var template = null;
+        if (tpl.indexOf('custom:') === 0) {
+          template = tpl;
+        } else if (tpl) {
+          template = parseInt(tpl, 10);
+        }
+        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template });
       });
       if (!postsData.length) {
         contentStatus.textContent = 'Select at least one post to approve.';

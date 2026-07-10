@@ -38,13 +38,13 @@ function render_palettes(): array
     ];
 }
 
-function render_get_palette_id(array $data): int
+// Auto-detection fallback when there's no explicit template and no
+// custom default palette — unchanged from the original SolidPro-specific
+// keyword matching, kept as the zero-config behavior for anyone who
+// hasn't set up custom brand colors yet.
+function render_get_palette_id_by_series_label(?string $seriesLabel): int
 {
-    $t = $data['template'] ?? null;
-    if (is_int($t) && $t >= 1 && $t <= 4) {
-        return $t;
-    }
-    $sl = strtolower($data['series_label'] ?? '');
+    $sl = strtolower($seriesLabel ?? '');
     foreach (['case study', 'proof engine', 'recap', 'product ip', 'results', 'metrics'] as $k) {
         if (str_contains($sl, $k)) {
             return 4;
@@ -63,16 +63,128 @@ function render_get_palette_id(array $data): int
     return 1;
 }
 
-// Allocates this palette's colors against a specific GD image resource —
-// color indices are per-image in GD, unlike PIL's plain RGB tuples.
-function render_allocate_palette($im, int $paletteId): array
+// ── Color math (for custom brand palettes) ──────────────────────────────
+
+function hex_to_rgb(string $hex): array
 {
-    $palette = render_palettes()[$paletteId];
+    $hex = ltrim($hex, '#');
+    if (strlen($hex) === 3) {
+        $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+    }
+    return [hexdec(substr($hex, 0, 2)), hexdec(substr($hex, 2, 2)), hexdec(substr($hex, 4, 2))];
+}
+
+// WCAG 2.x relative luminance / contrast ratio — used to always pick a
+// readable text color against an arbitrary user-picked background,
+// rather than trusting a fixed role mapping to generalize to any hue.
+function relative_luminance(array $rgb): float
+{
+    $channel = function (int $c) {
+        $c = $c / 255;
+        return $c <= 0.03928 ? $c / 12.92 : (($c + 0.055) / 1.055) ** 2.4;
+    };
+    [$r, $g, $b] = $rgb;
+    return 0.2126 * $channel($r) + 0.7152 * $channel($g) + 0.0722 * $channel($b);
+}
+
+function contrast_ratio(array $rgb1, array $rgb2): float
+{
+    $l1 = relative_luminance($rgb1) + 0.05;
+    $l2 = relative_luminance($rgb2) + 0.05;
+    return $l1 > $l2 ? $l1 / $l2 : $l2 / $l1;
+}
+
+// Returns whichever of $candidates contrasts best against $against.
+function best_contrast(array $candidates, array $against): array
+{
+    $best = $candidates[0];
+    $bestRatio = contrast_ratio($candidates[0], $against);
+    foreach (array_slice($candidates, 1) as $c) {
+        $ratio = contrast_ratio($c, $against);
+        if ($ratio > $bestRatio) {
+            $best = $c;
+            $bestRatio = $ratio;
+        }
+    }
+    return $best;
+}
+
+function mix_colors(array $c1, array $c2, float $pct): array
+{
+    return [
+        (int) round($c1[0] + ($c2[0] - $c1[0]) * $pct),
+        (int) round($c1[1] + ($c2[1] - $c1[1]) * $pct),
+        (int) round($c1[2] + ($c2[2] - $c1[2]) * $pct),
+    ];
+}
+
+// Derives the same 14-role palette shape render_palettes() hardcodes,
+// from just 2 required + 2 optional user-picked hex colors (see
+// pages/settings.php Brand Palettes section). accent_text/cta_text/
+// badge_text are always computed via contrast ratio against whatever
+// they sit on, so no combination of user-picked colors can produce
+// unreadable text.
+function render_derive_palette_colors(string $bgHex, string $textHex, ?string $accentHex = null, ?string $ctaHex = null): array
+{
+    $bg     = hex_to_rgb($bgHex);
+    $text   = hex_to_rgb($textHex);
+    $accent = $accentHex ? hex_to_rgb($accentHex) : mix_colors($bg, $text, 0.08);
+    $cta    = $ctaHex ? hex_to_rgb($ctaHex) : $text;
+    $body   = mix_colors($text, $bg, 0.35);
+
+    return [
+        'bg'          => $bg,
+        'headline'    => $text,
+        'body'        => $body,
+        'accent'      => $accent,
+        'accent_text' => best_contrast([$bg, $text], $accent),
+        'badge_bg'    => $text,
+        'badge_text'  => best_contrast([$bg, $text], $text),
+        'bar'         => $text,
+        'counter'     => $body,
+        'rule'        => $body,
+        'divider'     => $accent,
+        'cta_bg'      => $cta,
+        'cta_text'    => best_contrast([$bg, $text], $cta),
+        'name'        => $body,
+    ];
+}
+
+// Resolves which 14-role RGB color map a slide should use: an explicit
+// template on the creative JSON (int 1-4 = built-in preset, "custom:{id}"
+// = a saved includes/post_helpers.php fetch_brand_palette() row), else
+// the user's default custom palette if they have one, else the original
+// series-label keyword matching against the 4 built-ins (unchanged
+// zero-config behavior for anyone without custom brand colors).
+function render_resolve_palette_colors($templateValue, int $userId, ?string $seriesLabel): array
+{
+    if (is_int($templateValue) && $templateValue >= 1 && $templateValue <= 4) {
+        return render_palettes()[$templateValue];
+    }
+    if (is_string($templateValue) && str_starts_with($templateValue, 'custom:')) {
+        $palette = fetch_brand_palette($userId, (int) substr($templateValue, 7));
+        if ($palette) {
+            return render_derive_palette_colors($palette['bg_color'], $palette['text_color'], $palette['accent_color'], $palette['cta_color']);
+        }
+    }
+
+    $defaultPalette = fetch_default_brand_palette($userId);
+    if ($defaultPalette) {
+        return render_derive_palette_colors($defaultPalette['bg_color'], $defaultPalette['text_color'], $defaultPalette['accent_color'], $defaultPalette['cta_color']);
+    }
+
+    return render_palettes()[render_get_palette_id_by_series_label($seriesLabel)];
+}
+
+// Allocates a resolved 14-role RGB map against a specific GD image
+// resource — color indices are per-image in GD, unlike PIL's plain RGB
+// tuples.
+function render_allocate_palette_colors($im, array $roleColors): array
+{
     $out = [];
-    foreach ($palette as $key => [$r, $g, $b]) {
+    foreach ($roleColors as $key => [$r, $g, $b]) {
         $out[$key] = imagecolorallocate($im, $r, $g, $b);
     }
-    $out['_id'] = $paletteId;
     return $out;
 }
 
@@ -516,13 +628,13 @@ function render_slide_single($im, array $data, array $p, string $name): void
 // in the same ['filename' => ..., 'filepath' => ...] shape
 // includes/zip_import.php produces, so callers can insert post_slides
 // rows identically either way.
-function render_creative_to_slides(array $data, string $outDir, string $footerName, ?string $photoPath = null): array
+function render_creative_to_slides(array $data, string $outDir, string $footerName, ?string $photoPath = null, int $userId = 0): array
 {
     if (!is_dir($outDir) && !mkdir($outDir, 0755, true) && !is_dir($outDir)) {
         throw new RuntimeException("Could not create output directory: {$outDir}");
     }
 
-    $paletteId = render_get_palette_id($data);
+    $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
@@ -533,7 +645,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $result = [];
     if ($isSingle) {
         $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
-        $p = render_allocate_palette($im, $paletteId);
+        $p = render_allocate_palette_colors($im, $paletteColors);
         imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $p['bg']);
         render_slide_single($im, $data, $p, $footerName);
         $filename = 'slide_01.png';
@@ -547,7 +659,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     foreach ($slides as $slide) {
         $n = (int) $slide['slide_number'];
         $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
-        $p = render_allocate_palette($im, $paletteId);
+        $p = render_allocate_palette_colors($im, $paletteColors);
         imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $p['bg']);
 
         if ($n === 1) {

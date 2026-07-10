@@ -110,6 +110,28 @@ CREATE TABLE IF NOT EXISTS cta_library (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Per-user brand colors for rendered images, selectable as a "template"
+-- alongside the 4 built-in SolidPro presets (see includes/image_renderer.php
+-- render_resolve_palette_colors() / render_derive_palette_colors()).
+-- accent_color/cta_color are optional — NULL triggers an auto-derived
+-- tint so a user only ever has to pick 2 colors if they want to keep it
+-- simple. Only one palette per user should have is_default = 1 (enforced
+-- in application code, not a DB constraint — see
+-- includes/post_helpers.php set_default_brand_palette()).
+CREATE TABLE IF NOT EXISTS brand_palettes (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  user_id       INT NOT NULL,
+  name          VARCHAR(255) NOT NULL,
+  bg_color      VARCHAR(7) NOT NULL,
+  text_color    VARCHAR(7) NOT NULL,
+  accent_color  VARCHAR(7) DEFAULT NULL,
+  cta_color     VARCHAR(7) DEFAULT NULL,
+  is_default    TINYINT(1) NOT NULL DEFAULT 0,
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_user_palette_name (user_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow

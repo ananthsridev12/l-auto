@@ -35,6 +35,7 @@ foreach ($posts as &$post) {
 unset($post);
 
 $accounts = fetch_user_accounts($userId);
+$brandPalettes = fetch_brand_palettes($userId);
 
 $pageTitle  = 'Calendar Batch';
 $activePage = 'content_calendar';
@@ -90,6 +91,18 @@ require __DIR__ . '/../includes/layout_top.php';
                 <?php endforeach; ?>
               </div>
             <?php endif; ?>
+            <label class="field-row">Image Template
+              <select class="template-select">
+                <option value="">Auto</option>
+                <option value="1"<?= ($p['creative']['template'] ?? '') === 1 ? ' selected' : '' ?>>Cream</option>
+                <option value="2"<?= ($p['creative']['template'] ?? '') === 2 ? ' selected' : '' ?>>Dark Green</option>
+                <option value="3"<?= ($p['creative']['template'] ?? '') === 3 ? ' selected' : '' ?>>Olive</option>
+                <option value="4"<?= ($p['creative']['template'] ?? '') === 4 ? ' selected' : '' ?>>Medium Green</option>
+                <?php foreach ($brandPalettes as $bp): ?>
+                  <option value="custom:<?= (int) $bp['id'] ?>"<?= ($p['creative']['template'] ?? '') === "custom:{$bp['id']}" ? ' selected' : '' ?>><?= h($bp['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
             <button type="button" class="btn-tiny regenerate-btn">Regenerate</button>
           <?php endif; ?>
         </div>

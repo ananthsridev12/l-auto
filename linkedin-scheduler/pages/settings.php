@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
+require_once __DIR__ . '/../includes/zip_import.php';
 
 require_login();
 $userId = current_user_id();
@@ -132,6 +133,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'palette_add') {
+        $name = trim($_POST['palette_name'] ?? '');
+        $bg = trim($_POST['palette_bg'] ?? '');
+        $text = trim($_POST['palette_text'] ?? '');
+        $accent = trim($_POST['palette_accent'] ?? '') ?: null;
+        $cta = trim($_POST['palette_cta'] ?? '') ?: null;
+        if ($name === '' || !preg_match('/^#[0-9A-Fa-f]{6}$/', $bg) || !preg_match('/^#[0-9A-Fa-f]{6}$/', $text)) {
+            flash('error', 'Enter a palette name and valid Background/Text colors.');
+            redirect('pages/settings.php');
+        }
+        $stmt = db()->prepare(
+            'INSERT INTO brand_palettes (user_id, name, bg_color, text_color, accent_color, cta_color) VALUES (?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE bg_color = VALUES(bg_color), text_color = VALUES(text_color), accent_color = VALUES(accent_color), cta_color = VALUES(cta_color)'
+        );
+        $stmt->execute([$userId, $name, $bg, $text, $accent, $cta]);
+        flash('success', "Palette \"{$name}\" saved.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'palette_delete') {
+        $stmt = db()->prepare('DELETE FROM brand_palettes WHERE id = ? AND user_id = ?');
+        $stmt->execute([(int) ($_POST['palette_id'] ?? 0), $userId]);
+        flash('success', 'Palette removed.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'palette_set_default') {
+        set_default_brand_palette($userId, (int) ($_POST['palette_id'] ?? 0));
+        flash('success', 'Default palette updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'footer_image_upload') {
+        $slot = ($_POST['image_slot'] ?? '') === 'logo' ? 'logo' : 'photo';
+        if (empty($_FILES['footer_image']['tmp_name']) || $_FILES['footer_image']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose an image file to upload.');
+            redirect('pages/settings.php');
+        }
+        $contents = file_get_contents($_FILES['footer_image']['tmp_name']);
+        $mime = zip_sniff_image_mime($contents);
+        if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
+            flash('error', 'Image must be a PNG or JPEG file.');
+            redirect('pages/settings.php');
+        }
+        $ext = $mime === 'image/png' ? 'png' : 'jpg';
+        $dir = UPLOAD_DIR . "/{$userId}/branding";
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        foreach (['png', 'jpg', 'jpeg'] as $existingExt) {
+            @unlink("{$dir}/{$slot}.{$existingExt}");
+        }
+        file_put_contents("{$dir}/{$slot}.{$ext}", $contents);
+        flash('success', ucfirst($slot) . ' updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'footer_image_remove') {
+        $slot = ($_POST['image_slot'] ?? '') === 'logo' ? 'logo' : 'photo';
+        $dir = UPLOAD_DIR . "/{$userId}/branding";
+        foreach (['png', 'jpg', 'jpeg'] as $ext) {
+            @unlink("{$dir}/{$slot}.{$ext}");
+        }
+        flash('success', ucfirst($slot) . ' removed.');
+        redirect('pages/settings.php');
+    }
+
     $name = trim($_POST['name'] ?? '');
     $newPassword = $_POST['new_password'] ?? '';
 
@@ -163,6 +231,19 @@ $personas = fetch_personas($userId);
 $contentPillars = fetch_content_pillars($userId);
 $ctaLibrary = fetch_cta_library($userId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
+$brandPalettes = fetch_brand_palettes($userId);
+
+$footerImages = [];
+foreach (['logo', 'photo'] as $slot) {
+    $footerImages[$slot] = null;
+    foreach (['png', 'jpg', 'jpeg'] as $ext) {
+        $path = UPLOAD_DIR . "/{$userId}/branding/{$slot}.{$ext}";
+        if (is_file($path)) {
+            $footerImages[$slot] = slide_public_url($path);
+            break;
+        }
+    }
+}
 
 $pageTitle  = 'Settings';
 $activePage = 'settings';
@@ -246,6 +327,92 @@ require __DIR__ . '/../includes/layout_top.php';
     </label>
     <button type="submit" class="btn-primary">Save Briefs</button>
   </form>
+</section>
+
+<section class="card">
+  <h2>Brand Palettes</h2>
+  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; Accent and CTA color are optional — leave "Auto-generate" checked to derive them automatically with guaranteed-readable contrast.</p>
+  <?php if ($brandPalettes): ?>
+    <?php foreach ($brandPalettes as $bp): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($bp['name']) ?></span>
+          <?php if ($bp['is_default']): ?><span class="badge badge-active">Default</span><?php endif; ?>
+          <span style="display:inline-flex; gap:4px;">
+            <span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['bg_color']) ?>; border:1px solid #0002;"></span>
+            <span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['text_color']) ?>; border:1px solid #0002;"></span>
+            <?php if ($bp['accent_color']): ?><span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['accent_color']) ?>; border:1px solid #0002;"></span><?php endif; ?>
+            <?php if ($bp['cta_color']): ?><span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['cta_color']) ?>; border:1px solid #0002;"></span><?php endif; ?>
+          </span>
+        </div>
+        <div class="inline-form">
+          <?php if (!$bp['is_default']): ?>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="palette_set_default">
+              <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
+              <button type="submit" class="btn-tiny">Set Default</button>
+            </form>
+          <?php endif; ?>
+          <form method="post" onsubmit="return confirm('Remove this palette?');">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="palette_delete">
+            <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No custom palettes yet — the 4 built-in presets are used automatically.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="palette_add">
+    <label>Name
+      <input type="text" name="palette_name" placeholder="e.g. My Brand" required>
+    </label>
+    <label>Background <input type="color" name="palette_bg" value="#FBF5DD"></label>
+    <label>Text <input type="color" name="palette_text" value="#0D530E"></label>
+    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_accent" checked> Auto-generate Accent</label>
+    <label>Accent <input type="color" name="palette_accent" value="#E7E1B1" disabled></label>
+    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_cta" checked> Auto-generate CTA color</label>
+    <label>CTA <input type="color" name="palette_cta" value="#0D530E" disabled></label>
+    <button type="submit" class="btn-secondary">Add Palette</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Footer Images</h2>
+  <p class="muted">Shown in the circular footer on the last (CTA) slide of a carousel. Logo is used for company-category posts, Photo for personal-category posts (see the Company/Personal tag on Content Pillars below). Falls back to a default image until you upload your own.</p>
+  <?php foreach (['logo' => 'Logo (company posts)', 'photo' => 'Photo (personal posts)'] as $slot => $label): ?>
+    <div class="account-row">
+      <div class="account-info">
+        <?php if ($footerImages[$slot]): ?>
+          <img src="<?= h($footerImages[$slot]) ?>" style="width:48px; height:48px; object-fit:cover; border-radius:50%;">
+        <?php endif; ?>
+        <span><?= h($label) ?></span>
+        <span class="muted"><?= $footerImages[$slot] ? 'Set' : 'Using default' ?></span>
+      </div>
+      <div class="inline-form">
+        <form method="post" enctype="multipart/form-data">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="footer_image_upload">
+          <input type="hidden" name="image_slot" value="<?= h($slot) ?>">
+          <input type="file" name="footer_image" accept="image/png,image/jpeg" required>
+          <button type="submit" class="btn-tiny">Upload</button>
+        </form>
+        <?php if ($footerImages[$slot]): ?>
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="footer_image_remove">
+            <input type="hidden" name="image_slot" value="<?= h($slot) ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        <?php endif; ?>
+      </div>
+    </div>
+  <?php endforeach; ?>
 </section>
 
 <section class="card">
@@ -407,5 +574,15 @@ require __DIR__ . '/../includes/layout_top.php';
     <button type="submit" class="btn-secondary">Add to Directory</button>
   </form>
 </section>
+
+<script>
+document.querySelectorAll('.auto-toggle').forEach(function (checkbox) {
+  var target = document.querySelector('input[name="' + checkbox.dataset.target + '"]');
+  if (!target) return;
+  checkbox.addEventListener('change', function () {
+    target.disabled = checkbox.checked;
+  });
+});
+</script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

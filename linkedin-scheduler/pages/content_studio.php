@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/post_helpers.php';
 
 require_login();
 
@@ -10,6 +11,7 @@ $pageScripts = ['content_studio.js'];
 $csrf = csrf_token();
 $previewUrl = app_path('api/content_studio_preview.php');
 $confirmUrl = app_path('api/content_studio_confirm.php');
+$brandPalettes = fetch_brand_palettes(current_user_id());
 require __DIR__ . '/../includes/layout_top.php';
 ?>
 <div class="page-header">
@@ -46,6 +48,7 @@ require __DIR__ . '/../includes/layout_top.php';
 <script>
   window.CONTENT_STUDIO_PREVIEW_URL = <?= json_encode($previewUrl) ?>;
   window.CONTENT_STUDIO_CSRF = <?= json_encode($csrf) ?>;
+  window.BRAND_PALETTES = <?= json_encode(array_map(fn ($p) => ['id' => (int) $p['id'], 'name' => $p['name']], $brandPalettes)) ?>;
 </script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

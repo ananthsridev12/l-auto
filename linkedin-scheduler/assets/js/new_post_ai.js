@@ -153,6 +153,15 @@
     });
     currentCreative.title = titleEl ? titleEl.value : currentCreative.title;
     currentCreative.caption = captionEl ? captionEl.value : currentCreative.caption;
+    var templateSelect = document.getElementById('aiTemplateSelect');
+    var tpl = templateSelect ? templateSelect.value : '';
+    if (tpl.indexOf('custom:') === 0) {
+      currentCreative.template = tpl;
+    } else if (tpl) {
+      currentCreative.template = parseInt(tpl, 10);
+    } else {
+      delete currentCreative.template;
+    }
     jsonField.value = JSON.stringify(currentCreative);
   });
 })();

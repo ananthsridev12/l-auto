@@ -40,9 +40,10 @@ foreach ($postsData as $p) {
         continue;
     }
     $creative = [
-        'title'   => $p['title'] ?? '',
-        'caption' => $p['caption'] ?? '',
-        'slides'  => $p['slides'] ?? [],
+        'title'    => $p['title'] ?? '',
+        'caption'  => $p['caption'] ?? '',
+        'slides'   => $p['slides'] ?? [],
+        'template' => $p['template'] ?? null,
     ];
     // Preserve format/hashtags/series_label from the existing creative_json
     // rather than losing them — merge on top of what's already stored.

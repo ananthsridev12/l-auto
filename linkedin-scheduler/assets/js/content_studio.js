@@ -132,7 +132,11 @@
       templateWrap.textContent = 'Template ';
       var templateSelect = document.createElement('select');
       templateSelect.className = 'template-select';
-      [['', 'Auto'], ['1', 'Cream'], ['2', 'Dark Green'], ['3', 'Olive'], ['4', 'Medium Green']].forEach(function (opt) {
+      var templateOptions = [['', 'Auto'], ['1', 'Cream'], ['2', 'Dark Green'], ['3', 'Olive'], ['4', 'Medium Green']];
+      (window.BRAND_PALETTES || []).forEach(function (p) {
+        templateOptions.push(['custom:' + p.id, p.name]);
+      });
+      templateOptions.forEach(function (opt) {
         var o = document.createElement('option');
         o.value = opt[0];
         o.textContent = opt[1];
@@ -209,7 +213,9 @@
       c.title = card.querySelector('.title-input').value;
       c.caption = card.querySelector('.caption-input').value;
       var tpl = card.querySelector('.template-select').value;
-      if (tpl) {
+      if (tpl.indexOf('custom:') === 0) {
+        c.template = tpl;
+      } else if (tpl) {
         c.template = parseInt(tpl, 10);
       } else {
         delete c.template;

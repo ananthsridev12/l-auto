@@ -115,3 +115,38 @@ function fetch_cta(int $userId, int $id): ?array
     $stmt->execute([$userId, $id]);
     return $stmt->fetch() ?: null;
 }
+
+// Per-user brand color palettes, selectable as a rendering "template"
+// alongside the 4 built-in presets — see includes/image_renderer.php
+// render_resolve_palette_colors().
+
+function fetch_brand_palettes(int $userId): array
+{
+    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, is_default FROM brand_palettes WHERE user_id = ? ORDER BY name');
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_brand_palette(int $userId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, is_default FROM brand_palettes WHERE user_id = ? AND id = ?');
+    $stmt->execute([$userId, $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function fetch_default_brand_palette(int $userId): ?array
+{
+    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, is_default FROM brand_palettes WHERE user_id = ? AND is_default = 1 LIMIT 1');
+    $stmt->execute([$userId]);
+    return $stmt->fetch() ?: null;
+}
+
+// Only one palette per user may be default — clears any existing default
+// before setting the new one (application-level, not a DB constraint,
+// same approach used elsewhere in this app for "only one active X").
+function set_default_brand_palette(int $userId, int $id): void
+{
+    $pdo = db();
+    $pdo->prepare('UPDATE brand_palettes SET is_default = 0 WHERE user_id = ?')->execute([$userId]);
+    $pdo->prepare('UPDATE brand_palettes SET is_default = 1 WHERE user_id = ? AND id = ?')->execute([$userId, $id]);
+}

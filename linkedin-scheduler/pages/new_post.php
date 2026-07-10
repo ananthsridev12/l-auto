@@ -16,6 +16,7 @@ $aiConfig = resolve_ai_config($userId);
 $personas = fetch_personas($userId);
 $contentPillars = fetch_content_pillars($userId);
 $ctaLibrary = fetch_cta_library($userId);
+$brandPalettes = fetch_brand_palettes($userId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
@@ -96,17 +97,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($aiCreative !== null && in_array($format, ['Single Image', 'Carousel'], true)) {
         $user = current_user();
         $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
-        $photoPath = null;
-        foreach (['png', 'jpg', 'jpeg'] as $ext) {
-            $candidate = __DIR__ . "/../assets/img/profile.{$ext}";
-            if (is_file($candidate)) {
-                $photoPath = $candidate;
-                break;
-            }
-        }
+        $photoPath = resolve_footer_image($userId, 'personal');
         $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         try {
-            $slides = render_creative_to_slides($aiCreative, $destDir, $footerName, $photoPath);
+            $slides = render_creative_to_slides($aiCreative, $destDir, $footerName, $photoPath, $userId);
         } catch (Throwable $e) {
             db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
             flash('error', 'Image rendering failed: ' . $e->getMessage());
@@ -259,6 +253,19 @@ require __DIR__ . '/../includes/layout_top.php';
           </select>
         </label>
         <input type="text" id="aiCta" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; display:none;">
+
+        <label>Image Template <span class="muted">(optional)</span>
+          <select id="aiTemplateSelect">
+            <option value="">Auto</option>
+            <option value="1">Cream</option>
+            <option value="2">Dark Green</option>
+            <option value="3">Olive</option>
+            <option value="4">Medium Green</option>
+            <?php foreach ($brandPalettes as $bp): ?>
+              <option value="custom:<?= (int) $bp['id'] ?>"><?= h($bp['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
 
         <button type="button" id="aiGenerateBtn" class="btn-secondary" style="margin-top:8px;">Generate</button>
         <p id="aiGenerateStatus" class="muted"></p>

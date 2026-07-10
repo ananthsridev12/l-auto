@@ -165,6 +165,31 @@ function resolve_brief_for_pillar(int $userId, ?array $pillar): ?string
 // deliberately picked a non-default provider without their own key gets
 // null (not silently billed to the admin's key for a provider they
 // didn't confirm). Model is always the provider's config constant.
+// Resolves the footer logo/photo for a rendered slide (see
+// includes/image_renderer.php render_footer_with_photo()). $category is
+// 'company' or 'personal', matching content_pillars.category — company
+// posts use the uploaded logo, personal posts use the uploaded photo.
+// Falls back to the app-wide assets/img/profile.* (the original single
+// image every deployment already had) if the user hasn't uploaded their
+// own yet, so existing behavior is unchanged until they do.
+function resolve_footer_image(int $userId, string $category): ?string
+{
+    $slot = $category === 'company' ? 'logo' : 'photo';
+    foreach (['png', 'jpg', 'jpeg'] as $ext) {
+        $path = UPLOAD_DIR . "/{$userId}/branding/{$slot}.{$ext}";
+        if (is_file($path)) {
+            return $path;
+        }
+    }
+    foreach (['png', 'jpg', 'jpeg'] as $ext) {
+        $path = __DIR__ . "/../assets/img/profile.{$ext}";
+        if (is_file($path)) {
+            return $path;
+        }
+    }
+    return null;
+}
+
 function resolve_ai_config(int $userId): array
 {
     $provider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;
