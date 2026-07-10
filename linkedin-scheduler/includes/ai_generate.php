@@ -46,18 +46,55 @@ function build_context_block(?string $brandBrief, ?array $persona, ?array $pilla
     return $parts ? implode("\n", $parts) . "\n\n" : '';
 }
 
+// Rules that apply to every generated field regardless of format — ported
+// from the user's own working manual brief (previously pasted by hand
+// into a Claude.ai chat before this app existed), which produced content
+// that reliably fit the rendered image layout. The word limits below
+// match includes/image_renderer.php's actual slide layout budget, so
+// sticking to them is what keeps generated content from overflowing —
+// see also the auto-shrink fallback in render_numbered_card()/
+// render_cta_banner() for cases where a model overshoots anyway.
+const AI_STYLE_RULES = <<<RULES
+STYLE & QUALITY RULES (apply to everything you write):
+- Tone: professional, direct, insight-driven — no fluff, no emojis
+- Write in British/Indian English spelling (organisation, not organization; programme, not program)
+- Do not mention competitor names
+- Do not invent statistics — use phrases like "significantly" or "on average" instead of fabricated numbers
+- Never use the characters | or ;; anywhere in any text field
+- Keep everything specific to the given topic/context — no generic filler
+RULES;
+
+function build_caption_rules(string $cta): string
+{
+    $ctaLine = $cta !== ''
+        ? "End with this exact line: \"{$cta}\""
+        : 'End with a natural closing line inviting engagement (a question or a soft call to action)';
+
+    return <<<RULES
+CAPTION RULES:
+- 100 to 250 words
+- Short paragraphs, 2 to 4 lines each
+- Start directly with a hook line — no greeting or preamble
+- {$ctaLine}
+- Add 4 to 5 relevant hashtags on the final line, space-separated
+RULES;
+}
+
 function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null): string
 {
     $context = build_context_block($brandBrief, $persona, $pillar);
+    $styleRules = AI_STYLE_RULES;
+    $topic    = trim($row['Topic / Title'] ?? $row['Topic/Title'] ?? '');
+    $personaLabel = trim($row['Target Persona'] ?? '');
+    $type     = trim($row['Type'] ?? '');
+    $cta      = trim($row['CTA'] ?? '');
+    $tagPage  = trim($row['Tag Page'] ?? '');
+    $caption  = trim($row['Post Caption'] ?? '');
 
     if ($format === 'Text Post') {
-        $topic   = trim($row['Topic / Title'] ?? $row['Topic/Title'] ?? '');
-        $personaLabel = trim($row['Target Persona'] ?? '');
-        $type    = trim($row['Type'] ?? '');
-        $caption = trim($row['Post Caption'] ?? '');
         $captionBlock = $caption !== ''
             ? "Use this exact caption (do not change it):\n\"\"\"\n{$caption}\n\"\"\""
-            : 'Write a professional LinkedIn text post matching the topic and tone, including 3-5 relevant hashtags at the end.';
+            : build_caption_rules($cta);
 
         return <<<PROMPT
 {$context}You are a LinkedIn content specialist writing a text-only post for a B2B engineering/manufacturing audience.
@@ -70,9 +107,7 @@ POST DETAILS:
 CAPTION:
 {$captionBlock}
 
-CONSTRAINTS:
-- Tone: professional, direct, insight-driven (not salesy)
-- Length: 3-6 short paragraphs, LinkedIn-native formatting (short lines, no walls of text)
+{$styleRules}
 
 Return ONLY raw JSON — no markdown, no code fences, no explanation:
 {
@@ -84,16 +119,9 @@ Return ONLY raw JSON — no markdown, no code fences, no explanation:
 PROMPT;
     }
 
-    $topic    = trim($row['Topic / Title'] ?? $row['Topic/Title'] ?? '');
-    $personaLabel = trim($row['Target Persona'] ?? '');
-    $type     = trim($row['Type'] ?? '');
-    $cta      = trim($row['CTA'] ?? '');
-    $tagPage  = trim($row['Tag Page'] ?? '');
-    $caption  = trim($row['Post Caption'] ?? '');
-
     $captionBlock = $caption !== ''
         ? "Use this exact caption (do not change it):\n\"\"\"\n{$caption}\n\"\"\""
-        : 'Write a professional LinkedIn caption matching the topic and tone, including 3-5 relevant hashtags at the end.';
+        : build_caption_rules($cta);
 
     if ($format === 'Single Image') {
         return <<<PROMPT
@@ -103,17 +131,22 @@ POST DETAILS:
 - Topic: {$topic}
 - Target Audience: {$personaLabel}
 - Content Style: {$type}
-- CTA Question: {$cta}
+- CTA: {$cta}
 - Tag Page: {$tagPage}
 
 CAPTION:
 {$captionBlock}
 
-IMAGE TEXT GUIDELINES:
-- Headline: bold, max 8 words, states the core idea
-- Body: 1-2 sentences, max 25 words
-- Points: up to 4 short supporting points, max 10 words each (can be empty)
-- Tone: professional, direct, insight-driven (not salesy)
+IMAGE TEXT RULES:
+- Headline: max 8 words, states the core idea
+- Body: exactly 1 sentence, max 25 words
+- Points: exactly 3 to 4 short supporting points, max 10 words each — never leave points empty
+
+EXAMPLE of the right length and style (topic: quoting delays in manufacturing):
+  Body: "Manual quoting creates delays, errors, and lost revenue."
+  Points: "Quote cycle from days to minutes" / "Pricing consistent across every deal" / "Engineering no longer involved in every quote" / "94% sales team adoption post-implementation"
+
+{$styleRules}
 
 Return ONLY raw JSON — no markdown, no code fences, no explanation:
 {
@@ -124,8 +157,8 @@ Return ONLY raw JSON — no markdown, no code fences, no explanation:
     {
       "slide_number": 1,
       "headline": "Headline here",
-      "body": "Body sentence or two.",
-      "points": ["Point one", "Point two"]
+      "body": "Body sentence.",
+      "points": ["Point one", "Point two", "Point three"]
     }
   ]
 }
@@ -140,22 +173,27 @@ POST DETAILS:
 - Target Audience: {$personaLabel}
 - Content Style: {$type}
 - Slide Count: 5
-- CTA Question: {$cta}
+- CTA: {$cta}
 - Tag Page: {$tagPage}
 
 CAPTION:
 {$captionBlock}
 
-SLIDE GUIDELINES:
-- Slide 1 (Hook): Bold attention-grabbing headline (max 8 words). Short teaser body (1-2 sentences). No bullet points.
-- Slides 2-4 (Content): Clear headline, brief body (1-2 sentences), exactly 3 concise bullet points each.
-- Slide 5 (CTA): Summary headline, 1-sentence closing body, CTA question as the single bullet point.
+SLIDE RULES:
+- Slide 1 (Hook): Headline + Body only — NO points
+- Slides 2-4 (Content): Headline + Body + exactly 3 points
+- Slide 5 (CTA): Headline + Body + exactly 1 point, which is the CTA line
+- Headline: max 8 words
+- Body: max 25 words
+- Points: max 10 words each
 
-CONSTRAINTS:
-- Headlines: max 8 words
-- Body text: max 25 words
-- Bullet points: max 10 words each
-- Tone: professional, direct, insight-driven (not salesy)
+EXAMPLE of the right length and style (topic: quoting delays in manufacturing, 4 slides):
+  Slide 1 (Hook): "Your Quote Cycle Is Leaking Revenue" / "When quoting takes too long, deals fall through."
+  Slide 2: "The Hidden Cost of Manual Quoting" / "Most manufacturers never measure the revenue impact." / "Win rate drops when response exceeds 48 hours" / "Pricing errors create discount conversations that shouldn't happen" / "Sales teams avoid complex configs to reduce rework"
+  Slide 3: "What a Fixed Quote Cycle Looks Like" / "CPQ implemented correctly changes the entire sales dynamic." / "Configuration logic in the system not in individuals" / "Pricing rules automated and consistently applied" / "Quotes generated in minutes not days"
+  Slide 4 (CTA): "A Faster Quote Cycle Starts With an Assessment" / "The CPQ Readiness Checklist gives you a clear starting point." / "Comment CPQ and I will send you the checklist free"
+
+{$styleRules}
 
 Return ONLY raw JSON — no markdown, no code fences, no explanation:
 {
@@ -163,11 +201,11 @@ Return ONLY raw JSON — no markdown, no code fences, no explanation:
   "caption": "full LinkedIn caption text including hashtags",
   "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
   "slides": [
-    {"slide_number": 1, "headline": "Hook headline here", "body": "Teaser sentence or two.", "points": []},
+    {"slide_number": 1, "headline": "Hook headline here", "body": "Teaser sentence.", "points": []},
     {"slide_number": 2, "headline": "Slide 2 headline", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
     {"slide_number": 3, "headline": "Slide 3 headline", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
     {"slide_number": 4, "headline": "Slide 4 headline", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
-    {"slide_number": 5, "headline": "Closing headline", "body": "One closing sentence.", "points": ["CTA question here?"]}
+    {"slide_number": 5, "headline": "Closing headline", "body": "One closing sentence.", "points": ["Exact CTA line here"]}
   ]
 }
 PROMPT;
