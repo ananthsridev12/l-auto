@@ -3,6 +3,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/zip_import.php';
+require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
 $userId = current_user_id();
@@ -200,6 +201,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'font_add') {
+        $fontName = trim($_POST['font_name'] ?? '');
+        if ($fontName === '') {
+            flash('error', 'Enter a name for this font.');
+            redirect('pages/settings.php');
+        }
+        if (
+            empty($_FILES['font_regular']['tmp_name']) || $_FILES['font_regular']['error'] !== UPLOAD_ERR_OK
+            || empty($_FILES['font_bold']['tmp_name']) || $_FILES['font_bold']['error'] !== UPLOAD_ERR_OK
+        ) {
+            flash('error', 'Upload both a Regular and a Bold font file (.ttf or .otf).');
+            redirect('pages/settings.php');
+        }
+        $regularContents = file_get_contents($_FILES['font_regular']['tmp_name']);
+        $boldContents = file_get_contents($_FILES['font_bold']['tmp_name']);
+        $regularExt = sniff_font_ext($regularContents);
+        $boldExt = sniff_font_ext($boldContents);
+        if (!$regularExt || !$boldExt) {
+            flash('error', 'Both files must be valid TTF or OTF fonts.');
+            redirect('pages/settings.php');
+        }
+        $dir = UPLOAD_DIR . "/{$userId}/fonts";
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        $slug = bin2hex(random_bytes(8));
+        $regularPath = "{$dir}/{$slug}_regular.{$regularExt}";
+        $boldPath = "{$dir}/{$slug}_bold.{$boldExt}";
+        file_put_contents($regularPath, $regularContents);
+        file_put_contents($boldPath, $boldContents);
+        try {
+            $stmt = db()->prepare('INSERT INTO brand_fonts (user_id, name, regular_path, bold_path) VALUES (?, ?, ?, ?)');
+            $stmt->execute([$userId, $fontName, $regularPath, $boldPath]);
+        } catch (PDOException $e) {
+            @unlink($regularPath);
+            @unlink($boldPath);
+            if ((string) $e->getCode() === '23000') {
+                flash('error', "A font named \"{$fontName}\" already exists — remove it first or pick a different name.");
+                redirect('pages/settings.php');
+            }
+            throw $e;
+        }
+        flash('success', "Font \"{$fontName}\" uploaded.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'font_delete') {
+        $fontId = (int) ($_POST['font_id'] ?? 0);
+        $font = fetch_brand_font($userId, $fontId);
+        if ($font) {
+            @unlink($font['regular_path']);
+            @unlink($font['bold_path']);
+            db()->prepare('DELETE FROM brand_fonts WHERE id = ? AND user_id = ?')->execute([$fontId, $userId]);
+        }
+        flash('success', 'Font removed.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'font_set_default') {
+        set_default_brand_font($userId, (int) ($_POST['font_id'] ?? 0));
+        flash('success', 'Default font updated.');
+        redirect('pages/settings.php');
+    }
+
     $name = trim($_POST['name'] ?? '');
     $newPassword = $_POST['new_password'] ?? '';
 
@@ -232,6 +297,7 @@ $contentPillars = fetch_content_pillars($userId);
 $ctaLibrary = fetch_cta_library($userId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 $brandPalettes = fetch_brand_palettes($userId);
+$brandFonts = fetch_brand_fonts($userId);
 
 $footerImages = [];
 foreach (['logo', 'photo'] as $slot) {
@@ -413,6 +479,53 @@ require __DIR__ . '/../includes/layout_top.php';
       </div>
     </div>
   <?php endforeach; ?>
+</section>
+
+<section class="card">
+  <h2>Brand Fonts</h2>
+  <p class="muted">Upload your own typeface (Regular + Bold, .ttf or .otf) and set it as default to use it on every rendered post image instead of the built-in Inter font. Upload as many as you like and switch the default any time — only one is active at once.</p>
+  <?php if ($brandFonts): ?>
+    <?php foreach ($brandFonts as $bf): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($bf['name']) ?></span>
+          <?php if ($bf['is_default']): ?><span class="badge badge-active">Default</span><?php endif; ?>
+        </div>
+        <div class="inline-form">
+          <?php if (!$bf['is_default']): ?>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="font_set_default">
+              <input type="hidden" name="font_id" value="<?= (int) $bf['id'] ?>">
+              <button type="submit" class="btn-tiny">Set Default</button>
+            </form>
+          <?php endif; ?>
+          <form method="post" onsubmit="return confirm('Remove this font?');">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="font_delete">
+            <input type="hidden" name="font_id" value="<?= (int) $bf['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No custom fonts yet — Inter is used by default.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="font_add">
+    <label>Name
+      <input type="text" name="font_name" placeholder="e.g. My Brand Font" required>
+    </label>
+    <label>Regular weight <span class="muted">(.ttf or .otf)</span>
+      <input type="file" name="font_regular" accept=".ttf,.otf,font/ttf,font/otf" required>
+    </label>
+    <label>Bold weight <span class="muted">(.ttf or .otf)</span>
+      <input type="file" name="font_bold" accept=".ttf,.otf,font/ttf,font/otf" required>
+    </label>
+    <button type="submit" class="btn-secondary">Upload Font</button>
+  </form>
 </section>
 
 <section class="card">

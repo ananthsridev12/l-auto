@@ -150,3 +150,37 @@ function set_default_brand_palette(int $userId, int $id): void
     $pdo->prepare('UPDATE brand_palettes SET is_default = 0 WHERE user_id = ?')->execute([$userId]);
     $pdo->prepare('UPDATE brand_palettes SET is_default = 1 WHERE user_id = ? AND id = ?')->execute([$userId, $id]);
 }
+
+// Per-user uploaded fonts (Regular + Bold TTF/OTF pair), selectable as
+// the renderer's typeface — see includes/image_renderer.php
+// render_font_path()/render_resolve_font_paths().
+
+function fetch_brand_fonts(int $userId): array
+{
+    $stmt = db()->prepare('SELECT id, name, regular_path, bold_path, is_default FROM brand_fonts WHERE user_id = ? ORDER BY name');
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_brand_font(int $userId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT id, name, regular_path, bold_path, is_default FROM brand_fonts WHERE user_id = ? AND id = ?');
+    $stmt->execute([$userId, $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function fetch_default_brand_font(int $userId): ?array
+{
+    $stmt = db()->prepare('SELECT id, name, regular_path, bold_path, is_default FROM brand_fonts WHERE user_id = ? AND is_default = 1 LIMIT 1');
+    $stmt->execute([$userId]);
+    return $stmt->fetch() ?: null;
+}
+
+// Only one font per user may be default — clears any existing default
+// before setting the new one, same approach as set_default_brand_palette().
+function set_default_brand_font(int $userId, int $id): void
+{
+    $pdo = db();
+    $pdo->prepare('UPDATE brand_fonts SET is_default = 0 WHERE user_id = ?')->execute([$userId]);
+    $pdo->prepare('UPDATE brand_fonts SET is_default = 1 WHERE user_id = ? AND id = ?')->execute([$userId, $id]);
+}

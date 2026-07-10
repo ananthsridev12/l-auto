@@ -190,8 +190,46 @@ function render_allocate_palette_colors($im, array $roleColors): array
 
 // ── Fonts ─────────────────────────────────────────────────────────────
 
+// Magic-byte check for a font upload (see pages/settings.php Brand Fonts
+// section) — mirrors includes/zip_import.php zip_sniff_image_mime()'s
+// approach. Returns the file extension to save it under, or null if the
+// contents don't look like a real TTF/OTF file.
+function sniff_font_ext(string $contents): ?string
+{
+    $sig = substr($contents, 0, 4);
+    if ($sig === "\x00\x01\x00\x00" || $sig === 'true' || $sig === 'ttcf') {
+        return 'ttf';
+    }
+    if ($sig === 'OTTO') {
+        return 'otf';
+    }
+    return null;
+}
+
+// Set once per render_creative_to_slides() call (see below) from the
+// user's default includes/post_helpers.php fetch_default_brand_font(),
+// if they have one — render_font_path() checks this before falling back
+// to the bundled Inter/DejaVu chain. A single render call only ever uses
+// one font throughout, so this doesn't need per-call-site plumbing.
+function render_font_override(?array $paths = null, bool $set = false): ?array
+{
+    static $override = null;
+    if ($set) {
+        $override = $paths;
+    }
+    return $override;
+}
+
 function render_font_path(bool $bold): string
 {
+    $override = render_font_override();
+    if ($override) {
+        $path = $override[$bold ? 'bold' : 'regular'] ?? null;
+        if ($path && is_file($path)) {
+            return $path;
+        }
+    }
+
     $fontsDir = __DIR__ . '/../assets/fonts';
     // Accepts either a plain rename (Inter-Bold.ttf) or Google Fonts'
     // "static" export as-is, which ships one file per optical size
@@ -663,6 +701,9 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     if (!is_dir($outDir) && !mkdir($outDir, 0755, true) && !is_dir($outDir)) {
         throw new RuntimeException("Could not create output directory: {$outDir}");
     }
+
+    $userFont = $userId ? fetch_default_brand_font($userId) : null;
+    render_font_override($userFont ? ['regular' => $userFont['regular_path'], 'bold' => $userFont['bold_path']] : null, true);
 
     $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
     $slides = $data['slides'] ?? [];

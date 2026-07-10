@@ -132,6 +132,25 @@ CREATE TABLE IF NOT EXISTS brand_palettes (
   UNIQUE KEY uniq_user_palette_name (user_id, name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Per-user uploaded fonts (Regular + Bold TTF/OTF pair), selectable as
+-- the renderer's typeface — see includes/image_renderer.php
+-- render_font_path(). The bundled Inter (assets/fonts/) is used until a
+-- user sets one of these as their default. Only one font per user should
+-- have is_default = 1 (enforced in application code, same approach as
+-- brand_palettes.is_default — see includes/post_helpers.php
+-- set_default_brand_font()).
+CREATE TABLE IF NOT EXISTS brand_fonts (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  user_id       INT NOT NULL,
+  name          VARCHAR(255) NOT NULL,
+  regular_path  VARCHAR(500) NOT NULL,
+  bold_path     VARCHAR(500) NOT NULL,
+  is_default    TINYINT(1) NOT NULL DEFAULT 0,
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_user_font_name (user_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow
