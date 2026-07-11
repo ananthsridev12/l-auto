@@ -84,11 +84,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     try {
+        // creative_json is stored (when the image is generated rather than
+        // uploaded) so it can be re-edited later from the post page.
+        $storedCreative = ($aiCreative !== null && in_array($format, ['Single Image', 'Carousel'], true))
+            ? json_encode($aiCreative) : null;
         $stmt = db()->prepare(
-            'INSERT INTO posts (user_id, linkedin_account_id, campaign_id, title, format, caption, status, scheduled_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO posts (user_id, linkedin_account_id, campaign_id, title, format, caption, status, scheduled_at, creative_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$userId, $accountId, $campaignId, $title, $format, $caption, $status, $scheduledAt]);
+        $stmt->execute([$userId, $accountId, $campaignId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
     } catch (PDOException $e) {
         if ((string) $e->getCode() === '23000') {
             flash('error', "Campaign ID \"{$campaignId}\" is already in use — choose another.");
@@ -218,7 +222,7 @@ require __DIR__ . '/../includes/layout_top.php';
         <?php if (!ai_configured($aiConfig)): ?>
           <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> to use this.</p>
         <?php endif; ?>
-        <label class="checkbox-row">
+        <label class="checkbox-row" id="manualToggleLabel">
           <input type="checkbox" id="manualCreativeToggle">
           Write content directly (no AI) — auto-generate the image from text you type in
         </label>

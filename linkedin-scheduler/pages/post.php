@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
+require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
 $userId = current_user_id();
@@ -87,9 +88,19 @@ if (!$post) {
 $accounts = fetch_user_accounts($userId);
 $formatDisabled = !in_array($post['format'], get_enabled_formats($userId), true);
 
+// Posts whose image was generated from creative JSON (AI or "write
+// content directly", any of the three generation flows) can have that
+// content re-edited and the image re-rendered — see api/post_rerender.php.
+// Uploaded images have no stored content, so they get no editor.
+$creative = json_decode((string) ($post['creative_json'] ?? ''), true);
+$canReedit = $post['status'] !== 'posted'
+    && in_array($post['format'], ['Single Image', 'Carousel'], true)
+    && is_array($creative) && !empty($creative['slides']);
+$brandPalettes = $canReedit ? fetch_brand_palettes($userId) : [];
+
 $pageTitle   = $post['campaign_id'] ?: 'Edit Post';
 $activePage  = 'calendar';
-$pageScripts = ['formatter.js', 'app.js'];
+$pageScripts = $canReedit ? ['formatter.js', 'app.js', 'post_reedit.js'] : ['formatter.js', 'app.js'];
 $token = csrf_token();
 require __DIR__ . '/../includes/layout_top.php';
 
@@ -191,10 +202,54 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
   </div>
 </div>
 
+<?php if ($canReedit): ?>
+<section class="card" id="reeditCard">
+  <h2>Edit Image Content</h2>
+  <p class="muted">This image was generated from the content below — edit it and re-render to replace the image. The caption above is separate and saves with the form as usual.</p>
+  <?php foreach ($creative['slides'] as $si => $slide): ?>
+    <fieldset class="slide-fieldset">
+      <legend>Slide <?= $si + 1 ?></legend>
+      <label class="field-row">Headline
+        <input type="text" class="reedit-headline" value="<?= h($slide['headline'] ?? '') ?>">
+      </label>
+      <label class="field-row">Body
+        <textarea class="reedit-body" rows="2"><?= h($slide['body'] ?? '') ?></textarea>
+      </label>
+      <label class="field-row">Points (one per line)
+        <textarea class="reedit-points" rows="3"><?= h(implode("\n", $slide['points'] ?? [])) ?></textarea>
+      </label>
+    </fieldset>
+  <?php endforeach; ?>
+  <label>Color Palette
+    <select id="reeditTemplateSelect">
+      <?= render_palette_select_options($creative['template'] ?? null, $brandPalettes, true) ?>
+    </select>
+  </label>
+  <label>Design Template</label>
+  <?= render_template_picker_html($creative['layout'] ?? 'classic', '_reedit') ?>
+  <label>Background
+    <select id="reeditBackgroundSelect">
+      <option value="flat"<?= ($creative['background'] ?? 'flat') === 'flat' ? ' selected' : '' ?>>Flat</option>
+      <option value="gradient"<?= ($creative['background'] ?? '') === 'gradient' ? ' selected' : '' ?>>Gradient</option>
+      <option value="image"<?= ($creative['background'] ?? '') === 'image' ? ' selected' : '' ?>>Image (needs a palette with a background photo uploaded)</option>
+    </select>
+  </label>
+  <button type="button" id="reeditRenderBtn" class="btn-secondary" style="margin-top:12px;">Re-render Image</button>
+  <p id="reeditStatus" class="muted"></p>
+</section>
+<?php endif; ?>
+
 <script>
   window.SLIDES = <?= json_encode(array_column($post['slides'], 'url')) ?>;
   window.POST_NOW_URL = <?= json_encode(app_path('api/post_now.php')) ?>;
   window.MENTION_ACCOUNTS = <?= json_encode(fetch_mention_picker_list($userId)) ?>;
+  <?php if ($canReedit): ?>
+  window.POST_REEDIT = {
+    url: <?= json_encode(app_path('api/post_rerender.php')) ?>,
+    csrf: <?= json_encode($token) ?>,
+    postId: <?= (int) $post['id'] ?>
+  };
+  <?php endif; ?>
 </script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

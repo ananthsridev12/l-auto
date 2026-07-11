@@ -10,7 +10,6 @@
   var reviewEl = document.getElementById('aiSlidesReview');
   var addSlideBtn = document.getElementById('addSlideBtn');
   var formatSelect = document.getElementById('formatSelect');
-  var creativeToggleRow = document.getElementById('creativeToggleRow');
   var captionEl = document.getElementById('caption');
   var titleEl = document.getElementById('titleField');
   var jsonField = document.getElementById('aiCreativeJsonField');
@@ -47,23 +46,30 @@
     };
   }
 
-  // A Text Post has no image, so "Generate with AI" / "Write content
-  // directly" (both image-generation paths) don't apply — hide the
-  // toggles entirely rather than leaving them clickable for a format
-  // that can't use them, and drop out of whichever mode was active if
-  // the format switches to Text Post while one was on.
+  // "Generate with AI" works for every format (for a Text Post it writes
+  // the caption — the API returns a slide-less, format:"text" creative).
+  // "Write content directly" exists only to auto-generate an image from
+  // typed text, so that one is hidden for Text Post, along with the whole
+  // slides/palette/preview panel — none of it applies without an image.
   function updatePanels() {
     var isTextPost = formatSelect.value === 'Text Post';
-    if (creativeToggleRow) creativeToggleRow.style.display = isTextPost ? 'none' : '';
-    if (isTextPost && mode) {
-      if (aiToggle) aiToggle.checked = false;
+    var manualLabel = document.getElementById('manualToggleLabel');
+    if (manualLabel) manualLabel.style.display = isTextPost ? 'none' : '';
+    if (isTextPost && mode === 'manual') {
       if (manualToggle) manualToggle.checked = false;
       mode = null;
       currentCreative = null;
       if (reviewEl) reviewEl.innerHTML = '';
     }
+    // A creative generated for an image format doesn't carry over to a
+    // Text Post (its slides would be submitted with nothing to render) —
+    // drop it, the AI panel stays open for a fresh caption-only Generate.
+    if (isTextPost && mode === 'ai' && currentCreative && currentCreative.slides && currentCreative.slides.length) {
+      currentCreative = null;
+      if (reviewEl) reviewEl.innerHTML = '';
+    }
     if (aiFields) aiFields.style.display = mode === 'ai' ? 'block' : 'none';
-    if (slidesPanel) slidesPanel.style.display = mode ? 'block' : 'none';
+    if (slidesPanel) slidesPanel.style.display = (mode && !isTextPost) ? 'block' : 'none';
     if (addSlideBtn) {
       addSlideBtn.style.display = (mode === 'manual' && formatSelect.value === 'Carousel') ? 'inline-block' : 'none';
     }
