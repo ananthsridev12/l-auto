@@ -474,7 +474,10 @@ function render_draw_logo($im, ?string $logoPath, float $cx, float $y): float
 
     $sw = imagesx($src);
     $sh = imagesy($src);
-    $dh = 36;
+    // 56, not the original 36 — a wordmark with any fine detail (thin
+    // strokes, small text) turned soft at 36px after resampling; this is
+    // still a small top-left mark, just no longer aggressively shrunk.
+    $dh = 56;
     $dw = (int) round($sw * ($dh / $sh));
 
     imagealphablending($im, true);
