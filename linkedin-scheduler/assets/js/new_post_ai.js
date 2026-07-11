@@ -10,6 +10,7 @@
   var reviewEl = document.getElementById('aiSlidesReview');
   var addSlideBtn = document.getElementById('addSlideBtn');
   var formatSelect = document.getElementById('formatSelect');
+  var creativeToggleRow = document.getElementById('creativeToggleRow');
   var captionEl = document.getElementById('caption');
   var titleEl = document.getElementById('titleField');
   var jsonField = document.getElementById('aiCreativeJsonField');
@@ -46,7 +47,21 @@
     };
   }
 
+  // A Text Post has no image, so "Generate with AI" / "Write content
+  // directly" (both image-generation paths) don't apply — hide the
+  // toggles entirely rather than leaving them clickable for a format
+  // that can't use them, and drop out of whichever mode was active if
+  // the format switches to Text Post while one was on.
   function updatePanels() {
+    var isTextPost = formatSelect.value === 'Text Post';
+    if (creativeToggleRow) creativeToggleRow.style.display = isTextPost ? 'none' : '';
+    if (isTextPost && mode) {
+      if (aiToggle) aiToggle.checked = false;
+      if (manualToggle) manualToggle.checked = false;
+      mode = null;
+      currentCreative = null;
+      if (reviewEl) reviewEl.innerHTML = '';
+    }
     if (aiFields) aiFields.style.display = mode === 'ai' ? 'block' : 'none';
     if (slidesPanel) slidesPanel.style.display = mode ? 'block' : 'none';
     if (addSlideBtn) {
@@ -56,6 +71,7 @@
       window.newPostUpdateUploadFields();
     }
   }
+  updatePanels();
 
   if (aiToggle) {
     aiToggle.addEventListener('change', function () {

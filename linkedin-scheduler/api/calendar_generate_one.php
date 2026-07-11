@@ -57,6 +57,10 @@ try {
     // Same auto-assignment Content Studio's CSV upload uses — see
     // includes/post_helpers.php resolve_default_layout().
     $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null);
+    $paletteDefault = resolve_default_palette($userId, $creative['format'], $pillar['name'] ?? null);
+    if ($paletteDefault !== null && empty($creative['template'])) {
+        $creative['template'] = str_starts_with($paletteDefault, 'custom:') ? $paletteDefault : (int) $paletteDefault;
+    }
 } catch (Throwable $e) {
     // Persisted (not just returned in this response) so the failure
     // reason survives to the content-review screen even after the

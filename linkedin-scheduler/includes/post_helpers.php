@@ -90,14 +90,14 @@ function fetch_persona(int $userId, int $id): ?array
 
 function fetch_content_pillars(int $userId): array
 {
-    $stmt = db()->prepare('SELECT id, name, description, category, default_layout FROM content_pillars WHERE user_id = ? ORDER BY name');
+    $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? ORDER BY name');
     $stmt->execute([$userId]);
     return $stmt->fetchAll();
 }
 
 function fetch_content_pillar(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT id, name, description, category, default_layout FROM content_pillars WHERE user_id = ? AND id = ?');
+    $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? AND id = ?');
     $stmt->execute([$userId, $id]);
     return $stmt->fetch() ?: null;
 }
@@ -127,6 +127,35 @@ function resolve_default_layout(int $userId, string $format, ?string $pillarName
     $row = $stmt->fetch();
     $layout = $format === 'carousel' ? ($row['default_layout_carousel'] ?? null) : ($row['default_layout_single'] ?? null);
     return $layout ?: 'classic';
+}
+
+// Same auto-assignment idea as resolve_default_layout() above, but for
+// the Color Palette ("template" creative-JSON field) instead of the
+// Design Template. Returns null (not a hardcoded fallback) when nothing
+// is configured at any tier — callers should leave the creative JSON's
+// "template" key unset in that case, so render_resolve_palette_colors()'s
+// own existing fallback (the user's default custom palette, else
+// series-label keyword matching) decides, exactly as it did before this
+// feature existed. The returned string is already in the same format the
+// "template" field expects: a digit string ("1"-"4") for a built-in
+// preset or "custom:{id}" for a saved brand_palettes row — callers should
+// cast digit strings to int before assigning, same as every other call
+// site that sets "template".
+function resolve_default_palette(int $userId, string $format, ?string $pillarName = null): ?string
+{
+    if ($pillarName) {
+        $stmt = db()->prepare('SELECT default_palette FROM content_pillars WHERE user_id = ? AND name = ? LIMIT 1');
+        $stmt->execute([$userId, $pillarName]);
+        $pillarPalette = $stmt->fetchColumn();
+        if ($pillarPalette) {
+            return $pillarPalette;
+        }
+    }
+    $stmt = db()->prepare('SELECT default_palette_single, default_palette_carousel FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch();
+    $palette = $format === 'carousel' ? ($row['default_palette_carousel'] ?? null) : ($row['default_palette_single'] ?? null);
+    return $palette ?: null;
 }
 
 function fetch_cta_library(int $userId): array

@@ -39,6 +39,73 @@ function render_template_picker_html(string $selected = 'classic', string $field
     return $html . '</div>';
 }
 
+// Shared <option> markup for a Color Palette <select> — the 4 built-in
+// presets plus every saved brand_palettes row, matching the format the
+// "template" creative-JSON field takes (int 1-4, or "custom:{id}"). See
+// pages/calendar_batch.php for the hand-written version of this same
+// list that predates this helper. $selected accepts any of int 1-4,
+// digit string, "custom:{id}", or null. $includeAuto adds a leading
+// empty-value "Auto" option, for defaults where "no override" is valid
+// (unlike per-post pickers, which always resolve to a concrete value).
+function render_palette_select_options($selected, array $brandPalettes, bool $includeAuto = false): string
+{
+    $selected = $selected === null ? '' : (string) $selected;
+    $html = '';
+    if ($includeAuto) {
+        $html .= '<option value=""' . ($selected === '' ? ' selected' : '') . '>Auto</option>';
+    }
+    $builtins = ['1' => 'Cream', '2' => 'Dark Green', '3' => 'Olive', '4' => 'Medium Green'];
+    foreach ($builtins as $value => $label) {
+        // Numeric-string array keys ('1'..'4') are auto-cast to int by
+        // PHP, so $value here is an int — cast back before comparing
+        // against $selected, which is always a string.
+        $html .= '<option value="' . $value . '"' . ($selected === (string) $value ? ' selected' : '') . '>' . $label . '</option>';
+    }
+    foreach ($brandPalettes as $bp) {
+        $value = 'custom:' . $bp['id'];
+        $html .= '<option value="' . h($value) . '"' . ($selected === $value ? ' selected' : '') . '>' . h($bp['name']) . '</option>';
+    }
+    return $html;
+}
+
+// Display name for a "template" value ("1"-"4" or "custom:{id}"), for
+// badges/labels — pairs with render_palette_select_options() above.
+function palette_display_name(string $value, array $brandPalettes): string
+{
+    $builtins = ['1' => 'Cream', '2' => 'Dark Green', '3' => 'Olive', '4' => 'Medium Green'];
+    if (isset($builtins[$value])) {
+        return $builtins[$value];
+    }
+    if (preg_match('/^custom:(\d+)$/', $value, $m)) {
+        foreach ($brandPalettes as $bp) {
+            if ((int) $bp['id'] === (int) $m[1]) {
+                return $bp['name'];
+            }
+        }
+    }
+    return $value;
+}
+
+// Validates a raw palette-select POST value against what "template"
+// accepts: "" (no override), a built-in digit "1"-"4", or "custom:{id}"
+// where {id} is a brand_palettes row owned by $userId. Returns the
+// value unchanged if valid, or null (caller treats null as "clear the
+// override") otherwise — mirrors the render_design_templates() lookup
+// pattern used to validate the layout selects.
+function validate_palette_select_value(int $userId, string $value): ?string
+{
+    if ($value === '') {
+        return null;
+    }
+    if (preg_match('/^[1-4]$/', $value)) {
+        return $value;
+    }
+    if (preg_match('/^custom:(\d+)$/', $value, $m) && fetch_brand_palette($userId, (int) $m[1])) {
+        return $value;
+    }
+    return null;
+}
+
 // Accepts a bare numeric org ID ("12345"), a full URN
 // ("urn:li:organization:12345"), or a LinkedIn company URL that uses
 // the numeric ID form ("linkedin.com/company/12345/") — LinkedIn vanity
@@ -210,6 +277,36 @@ function get_default_layout_carousel(int $userId): ?string
 function set_default_layout_carousel(int $userId, ?string $layout): void
 {
     db()->prepare('UPDATE users SET default_layout_carousel = ? WHERE id = ?')->execute([$layout ?: null, $userId]);
+}
+
+// Per-user, per-format Color Palette defaults — same idea as
+// default_layout_single/carousel above, used by
+// includes/post_helpers.php resolve_default_palette(). $palette is the
+// same string a "template" creative-JSON value takes: a digit string
+// ("1"-"4") or "custom:{id}" — pages/settings.php validates against the
+// user's actual palette list before calling the setter.
+function get_default_palette_single(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT default_palette_single FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    return $stmt->fetchColumn() ?: null;
+}
+
+function set_default_palette_single(int $userId, ?string $palette): void
+{
+    db()->prepare('UPDATE users SET default_palette_single = ? WHERE id = ?')->execute([$palette ?: null, $userId]);
+}
+
+function get_default_palette_carousel(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT default_palette_carousel FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    return $stmt->fetchColumn() ?: null;
+}
+
+function set_default_palette_carousel(int $userId, ?string $palette): void
+{
+    db()->prepare('UPDATE users SET default_palette_carousel = ? WHERE id = ?')->execute([$palette ?: null, $userId]);
 }
 
 function get_brand_brief(int $userId): ?string

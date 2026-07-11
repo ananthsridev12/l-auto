@@ -57,6 +57,13 @@ foreach ($preview['rows'] as &$entry) {
     // visible for override, it's just pre-selected sensibly now. See
     // includes/post_helpers.php resolve_default_layout().
     $entry['creative']['layout'] = resolve_default_layout($userId, $entry['creative']['format'], $row['Pillar'] ?? null);
+    // Same idea for the Color Palette. Null means no override configured
+    // at any tier — leave "template" unset so render_resolve_palette_colors()'s
+    // own existing fallback decides, same as before this feature existed.
+    $paletteDefault = resolve_default_palette($userId, $entry['creative']['format'], $row['Pillar'] ?? null);
+    if ($paletteDefault !== null && empty($entry['creative']['template'])) {
+        $entry['creative']['template'] = str_starts_with($paletteDefault, 'custom:') ? $paletteDefault : (int) $paletteDefault;
+    }
 }
 unset($entry);
 

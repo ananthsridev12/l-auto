@@ -95,15 +95,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $category = ($_POST['pillar_category'] ?? '') === 'personal' ? 'personal' : 'company';
         $layout = $_POST['pillar_layout'] ?? '';
         $layout = array_key_exists($layout, render_design_templates()) ? $layout : null;
+        $palette = validate_palette_select_value($userId, trim($_POST['pillar_palette'] ?? ''));
         if ($name === '') {
             flash('error', 'Enter a content pillar name.');
             redirect('pages/settings.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO content_pillars (user_id, name, description, category, default_layout) VALUES (?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout)'
+            'INSERT INTO content_pillars (user_id, name, description, category, default_layout, default_palette) VALUES (?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout), default_palette = VALUES(default_palette)'
         );
-        $stmt->execute([$userId, $name, $desc, $category, $layout]);
+        $stmt->execute([$userId, $name, $desc, $category, $layout, $palette]);
         flash('success', "Content pillar \"{$name}\" saved.");
         redirect('pages/settings.php');
     }
@@ -121,6 +122,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $carousel = $_POST['design_template_carousel'] ?? '';
         set_default_layout_single($userId, array_key_exists($single, $templates) ? $single : null);
         set_default_layout_carousel($userId, array_key_exists($carousel, $templates) ? $carousel : null);
+        set_default_palette_single($userId, validate_palette_select_value($userId, trim($_POST['default_palette_single'] ?? '')));
+        set_default_palette_carousel($userId, validate_palette_select_value($userId, trim($_POST['default_palette_carousel'] ?? '')));
         flash('success', 'Default Design Templates updated.');
         redirect('pages/settings.php');
     }
@@ -473,6 +476,8 @@ $personas = fetch_personas($userId);
 $contentPillars = fetch_content_pillars($userId);
 $defaultLayoutSingle = get_default_layout_single($userId);
 $defaultLayoutCarousel = get_default_layout_carousel($userId);
+$defaultPaletteSingle = get_default_palette_single($userId);
+$defaultPaletteCarousel = get_default_palette_carousel($userId);
 $ctaLibrary = fetch_cta_library($userId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 $brandPalettes = fetch_brand_palettes($userId);
@@ -920,6 +925,7 @@ require __DIR__ . '/../includes/layout_top.php';
           <span><?= h($cp['name']) ?></span>
           <span class="badge <?= $cp['category'] === 'personal' ? 'badge-format' : 'badge-active' ?>"><?= $cp['category'] === 'personal' ? 'Personal' : 'Company' ?></span>
           <?php if ($cp['default_layout']): ?><span class="badge badge-campaign"><?= h(render_design_templates()[$cp['default_layout']]['name'] ?? $cp['default_layout']) ?></span><?php endif; ?>
+          <?php if ($cp['default_palette']): ?><span class="badge badge-campaign"><?= h(palette_display_name($cp['default_palette'], $brandPalettes)) ?></span><?php endif; ?>
           <span class="muted"><?= h(mb_strimwidth($cp['description'] ?? '', 0, 80, '…')) ?></span>
         </div>
         <form method="post" onsubmit="return confirm('Remove this content pillar?');">
@@ -956,20 +962,35 @@ require __DIR__ . '/../includes/layout_top.php';
         <?php endforeach; ?>
       </select>
     </label>
+    <label>Color Palette for this pillar <span class="muted">(optional — overrides your Single Image/Carousel palette defaults below for posts tagged with this pillar)</span>
+      <select name="pillar_palette">
+        <?= render_palette_select_options('', $brandPalettes, true) ?>
+      </select>
+    </label>
     <button type="submit" class="btn-secondary">Add Content Pillar</button>
   </form>
 </section>
 
 <section class="card">
   <h2>Default Design Templates</h2>
-  <p class="muted">Auto-assigns a Design Template during bulk generation (Content Studio CSV upload, Content Calendar Generator) so you don't have to pick one for every row by hand — the picker still shows on each row for a manual override, it's just already set sensibly. A Content Pillar's own Design Template above takes priority over these when a row/post is tagged with that pillar.</p>
+  <p class="muted">Auto-assigns a Design Template and Color Palette during bulk generation (Content Studio CSV upload, Content Calendar Generator) so you don't have to pick them for every row by hand — the pickers still show on each row for a manual override, it's just already set sensibly. A Content Pillar's own Design Template/Color Palette above takes priority over these when a row/post is tagged with that pillar.</p>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="default_layout_formats">
     <label>Single Image posts</label>
     <?= render_template_picker_html($defaultLayoutSingle ?: 'classic', '_single') ?>
+    <label>Color Palette for Single Image posts
+      <select name="default_palette_single">
+        <?= render_palette_select_options($defaultPaletteSingle, $brandPalettes, true) ?>
+      </select>
+    </label>
     <label>Carousel posts</label>
     <?= render_template_picker_html($defaultLayoutCarousel ?: 'classic', '_carousel') ?>
+    <label>Color Palette for Carousel posts
+      <select name="default_palette_carousel">
+        <?= render_palette_select_options($defaultPaletteCarousel, $brandPalettes, true) ?>
+      </select>
+    </label>
     <button type="submit" class="btn-secondary">Save Defaults</button>
   </form>
 </section>

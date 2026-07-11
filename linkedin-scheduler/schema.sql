@@ -233,6 +233,21 @@ ALTER TABLE users
   ADD COLUMN default_layout_single VARCHAR(50) DEFAULT NULL,
   ADD COLUMN default_layout_carousel VARCHAR(50) DEFAULT NULL;
 
+-- Same auto-assignment idea as default_layout above, but for the Color
+-- Palette (the "template" creative-JSON field — an int 1-4 for a
+-- built-in preset, or "custom:{id}" for a saved brand_palettes row —
+-- see includes/image_renderer.php render_resolve_palette_colors()). NULL
+-- at every tier means "no override" — leaves render_resolve_palette_colors()'s
+-- own existing fallback (user's default custom palette, else series-
+-- label keyword matching) to decide, same as before this feature existed.
+-- See includes/post_helpers.php resolve_default_palette().
+ALTER TABLE content_pillars
+  ADD COLUMN default_palette VARCHAR(50) DEFAULT NULL;
+
+ALTER TABLE users
+  ADD COLUMN default_palette_single VARCHAR(50) DEFAULT NULL,
+  ADD COLUMN default_palette_carousel VARCHAR(50) DEFAULT NULL;
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow

@@ -210,7 +210,7 @@ require __DIR__ . '/../includes/layout_top.php';
         </label>
       </div>
 
-      <div style="width:100%; margin-top:12px;">
+      <div style="width:100%; margin-top:12px;" id="creativeToggleRow">
         <label class="checkbox-row">
           <input type="checkbox" id="aiGenerateToggle" <?= ai_configured($aiConfig) ? '' : 'disabled' ?>>
           Generate with AI instead
