@@ -573,6 +573,45 @@ body.centered-page {
 .stacked-form { text-align: left; display: flex; flex-direction: column; gap: var(--space-4); }
 .stacked-form label { display: block; font-size: 13px; font-weight: 600; color: var(--gray-700); margin-bottom: 6px; }
 
+/* Color picker: a real swatch (not the generic 100%-width input rule,
+   which stretched the native input[type=color] into an illegible gray
+   bar) paired with a hex text field so the current value is always
+   readable and directly editable, not just guessable from a tiny chip. */
+.color-field { display: flex; align-items: center; gap: var(--space-2); }
+.color-field input[type="color"] {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.color-field input[type="color"]:disabled { cursor: not-allowed; opacity: 0.5; }
+.color-field input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.color-field input[type="color"]::-webkit-color-swatch { border: none; border-radius: var(--radius-sm); }
+.color-field .hex-input {
+  width: 110px;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  text-transform: uppercase;
+  color: var(--gray-900);
+}
+.color-field .hex-input:disabled { background: var(--gray-50); color: var(--gray-400); }
+.color-field .hex-input:focus { border-color: var(--color-brand); box-shadow: var(--focus-ring); outline: none; }
+
+.palette-swatches { display: inline-flex; gap: 4px; }
+.palette-swatches span {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  border: 1px solid var(--gray-200);
+}
+
 .card {
   background: white;
   border-radius: var(--radius-lg);

@@ -604,15 +604,22 @@ require __DIR__ . '/../includes/layout_top.php';
           <?php endif; ?>
           <span><?= h($bp['name']) ?></span>
           <?php if ($bp['is_default']): ?><span class="badge badge-active">Default</span><?php endif; ?>
-          <span style="display:inline-flex; gap:4px;">
-            <span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['bg_color']) ?>; border:1px solid #0002;"></span>
-            <span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['text_color']) ?>; border:1px solid #0002;"></span>
-            <?php if ($bp['accent_color']): ?><span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['accent_color']) ?>; border:1px solid #0002;"></span><?php endif; ?>
-            <?php if ($bp['cta_color']): ?><span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['cta_color']) ?>; border:1px solid #0002;"></span><?php endif; ?>
-            <?php if ($bp['signature_color']): ?><span title="Signature color" style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['signature_color']) ?>; border:1px solid #0002;"></span><?php endif; ?>
+          <span class="palette-swatches">
+            <span title="Background <?= h($bp['bg_color']) ?>" style="background:<?= h($bp['bg_color']) ?>"></span>
+            <span title="Text <?= h($bp['text_color']) ?>" style="background:<?= h($bp['text_color']) ?>"></span>
+            <?php if ($bp['accent_color']): ?><span title="Accent <?= h($bp['accent_color']) ?>" style="background:<?= h($bp['accent_color']) ?>"></span><?php endif; ?>
+            <?php if ($bp['cta_color']): ?><span title="CTA <?= h($bp['cta_color']) ?>" style="background:<?= h($bp['cta_color']) ?>"></span><?php endif; ?>
+            <?php if ($bp['signature_color']): ?><span title="Signature <?= h($bp['signature_color']) ?>" style="background:<?= h($bp['signature_color']) ?>"></span><?php endif; ?>
           </span>
         </div>
         <div class="inline-form">
+          <button type="button" class="btn-tiny palette-edit-btn"
+            data-name="<?= h($bp['name']) ?>"
+            data-bg="<?= h($bp['bg_color']) ?>"
+            data-text="<?= h($bp['text_color']) ?>"
+            data-accent="<?= h($bp['accent_color'] ?? '') ?>"
+            data-cta="<?= h($bp['cta_color'] ?? '') ?>"
+            data-signature="<?= h($bp['signature_color'] ?? '') ?>">Edit</button>
           <?php if (!$bp['is_default']): ?>
             <form method="post">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -648,23 +655,34 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php else: ?>
     <p class="muted">No custom palettes yet — the 4 built-in presets are used automatically.</p>
   <?php endif; ?>
-  <form method="post" class="stacked-form" style="margin-top:16px;">
+  <form method="post" class="stacked-form" id="paletteForm" style="margin-top:16px;">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="palette_add">
     <label>Name
-      <input type="text" name="palette_name" placeholder="e.g. My Brand" required>
+      <input type="text" name="palette_name" id="palette_name" placeholder="e.g. My Brand" required>
     </label>
-    <label>Background <input type="color" name="palette_bg" value="#FBF5DD"></label>
-    <label>Text <input type="color" name="palette_text" value="#0D530E"></label>
+    <label>Background
+      <span class="color-field"><input type="color" name="palette_bg" id="palette_bg" value="#FBF5DD"><input type="text" class="hex-input" data-for="palette_bg" value="#FBF5DD" maxlength="7"></span>
+    </label>
+    <label>Text
+      <span class="color-field"><input type="color" name="palette_text" id="palette_text" value="#0D530E"><input type="text" class="hex-input" data-for="palette_text" value="#0D530E" maxlength="7"></span>
+    </label>
     <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_accent" checked> Auto-generate Accent</label>
-    <label>Accent <input type="color" name="palette_accent" value="#E7E1B1" disabled></label>
+    <label>Accent
+      <span class="color-field"><input type="color" name="palette_accent" id="palette_accent" value="#E7E1B1" disabled><input type="text" class="hex-input" data-for="palette_accent" value="#E7E1B1" maxlength="7" disabled></span>
+    </label>
     <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_cta" checked> Auto-generate CTA color</label>
-    <label>CTA <input type="color" name="palette_cta" value="#0D530E" disabled></label>
+    <label>CTA
+      <span class="color-field"><input type="color" name="palette_cta" id="palette_cta" value="#0D530E" disabled><input type="text" class="hex-input" data-for="palette_cta" value="#0D530E" maxlength="7" disabled></span>
+    </label>
     <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_signature" checked> Auto-generate Signature color</label>
-    <label>Signature <input type="color" name="palette_signature" value="#0D530E" disabled></label>
-    <button type="submit" class="btn-secondary">Add Palette</button>
+    <label>Signature
+      <span class="color-field"><input type="color" name="palette_signature" id="palette_signature" value="#0D530E" disabled><input type="text" class="hex-input" data-for="palette_signature" value="#0D530E" maxlength="7" disabled></span>
+    </label>
+    <button type="submit" class="btn-secondary" id="paletteSubmitBtn">Add Palette</button>
+    <button type="button" class="btn-tiny" id="paletteCancelEdit" style="display:none; align-self:flex-start;">Cancel edit</button>
   </form>
-  <p class="muted" style="margin-top:8px;">To edit an existing palette's colors, re-add it with the same name — this updates it in place rather than creating a duplicate. Note this form doesn't pre-fill an existing palette's current colors, so you're setting all fields fresh each time (Auto-generate wins for any left unchecked).</p>
+  <p class="muted" style="margin-top:8px;">Click "Edit" on a palette above to load its current colors into this form and update it in place — submitting a name that matches an existing palette always updates that palette rather than creating a duplicate.</p>
 </section>
 
 <section class="card">
@@ -1074,10 +1092,88 @@ require __DIR__ . '/../includes/layout_top.php';
 document.querySelectorAll('.auto-toggle').forEach(function (checkbox) {
   var target = document.querySelector('input[name="' + checkbox.dataset.target + '"]');
   if (!target) return;
+  var hexInput = document.querySelector('.hex-input[data-for="' + checkbox.dataset.target + '"]');
   checkbox.addEventListener('change', function () {
     target.disabled = checkbox.checked;
+    if (hexInput) hexInput.disabled = checkbox.checked;
   });
 });
+
+// Color picker <-> hex text field, kept in sync both directions so the
+// current value is always readable (the native swatch alone gives no
+// text feedback of what's selected).
+document.querySelectorAll('.color-field').forEach(function (field) {
+  var colorInput = field.querySelector('input[type="color"]');
+  var hexInput = field.querySelector('.hex-input');
+  if (!colorInput || !hexInput) return;
+  colorInput.addEventListener('input', function () {
+    hexInput.value = colorInput.value.toUpperCase();
+  });
+  hexInput.addEventListener('input', function () {
+    var v = hexInput.value.trim();
+    if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+      colorInput.value = v;
+    }
+  });
+});
+
+// "Edit" on a saved palette loads its current colors into the Add form
+// instead of leaving it blank, so updating a palette no longer means
+// re-guessing every hex value from scratch.
+(function () {
+  var form = document.getElementById('paletteForm');
+  var submitBtn = document.getElementById('paletteSubmitBtn');
+  var cancelBtn = document.getElementById('paletteCancelEdit');
+  if (!form || !submitBtn || !cancelBtn) return;
+
+  function setField(name, value) {
+    var colorInput = document.getElementById(name);
+    var hexInput = document.querySelector('.hex-input[data-for="' + name + '"]');
+    var toggle = document.querySelector('.auto-toggle[data-target="' + name + '"]');
+    var hasValue = !!value;
+    if (toggle) {
+      toggle.checked = !hasValue;
+      if (colorInput) colorInput.disabled = !hasValue;
+      if (hexInput) hexInput.disabled = !hasValue;
+    }
+    if (hasValue && colorInput) {
+      colorInput.value = value;
+      if (hexInput) hexInput.value = value.toUpperCase();
+    }
+  }
+
+  document.querySelectorAll('.palette-edit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.getElementById('palette_name').value = btn.dataset.name;
+      setField('palette_bg', btn.dataset.bg);
+      setField('palette_text', btn.dataset.text);
+      setField('palette_accent', btn.dataset.accent);
+      setField('palette_cta', btn.dataset.cta);
+      setField('palette_signature', btn.dataset.signature);
+      submitBtn.textContent = 'Update Palette';
+      cancelBtn.style.display = 'inline-block';
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+
+  cancelBtn.addEventListener('click', function () {
+    form.reset();
+    document.querySelectorAll('.color-field').forEach(function (field) {
+      var colorInput = field.querySelector('input[type="color"]');
+      var hexInput = field.querySelector('.hex-input');
+      if (colorInput && hexInput) hexInput.value = colorInput.value.toUpperCase();
+    });
+    document.querySelectorAll('.auto-toggle').forEach(function (checkbox) {
+      var target = document.querySelector('input[name="' + checkbox.dataset.target + '"]');
+      var hexInput = document.querySelector('.hex-input[data-for="' + checkbox.dataset.target + '"]');
+      checkbox.checked = true;
+      if (target) target.disabled = true;
+      if (hexInput) hexInput.disabled = true;
+    });
+    submitBtn.textContent = 'Add Palette';
+    cancelBtn.style.display = 'none';
+  });
+})();
 </script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>
