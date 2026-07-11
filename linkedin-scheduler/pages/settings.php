@@ -140,15 +140,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $text = trim($_POST['palette_text'] ?? '');
         $accent = trim($_POST['palette_accent'] ?? '') ?: null;
         $cta = trim($_POST['palette_cta'] ?? '') ?: null;
+        $signature = trim($_POST['palette_signature'] ?? '') ?: null;
         if ($name === '' || !preg_match('/^#[0-9A-Fa-f]{6}$/', $bg) || !preg_match('/^#[0-9A-Fa-f]{6}$/', $text)) {
             flash('error', 'Enter a palette name and valid Background/Text colors.');
             redirect('pages/settings.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO brand_palettes (user_id, name, bg_color, text_color, accent_color, cta_color) VALUES (?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE bg_color = VALUES(bg_color), text_color = VALUES(text_color), accent_color = VALUES(accent_color), cta_color = VALUES(cta_color)'
+            'INSERT INTO brand_palettes (user_id, name, bg_color, text_color, accent_color, cta_color, signature_color) VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE bg_color = VALUES(bg_color), text_color = VALUES(text_color), accent_color = VALUES(accent_color), cta_color = VALUES(cta_color), signature_color = VALUES(signature_color)'
         );
-        $stmt->execute([$userId, $name, $bg, $text, $accent, $cta]);
+        $stmt->execute([$userId, $name, $bg, $text, $accent, $cta, $signature]);
         flash('success', "Palette \"{$name}\" saved.");
         redirect('pages/settings.php');
     }
@@ -369,18 +370,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'footer_name_style') {
-        $color = trim($_POST['footer_name_color'] ?? '');
-        set_footer_name_color($userId, $color !== '' ? $color : null);
         $sizeRaw = trim($_POST['footer_name_size'] ?? '');
         set_footer_name_size($userId, $sizeRaw !== '' ? (int) $sizeRaw : null);
-        flash('success', 'Signature style updated.');
+        flash('success', 'Signature size updated.');
         redirect('pages/settings.php');
     }
 
     if (($_POST['form'] ?? '') === 'footer_name_style_reset') {
-        set_footer_name_color($userId, null);
         set_footer_name_size($userId, null);
-        flash('success', 'Signature color and size reset to automatic.');
+        flash('success', 'Signature size reset to automatic.');
         redirect('pages/settings.php');
     }
 
@@ -423,7 +421,6 @@ $footerFontId = (int) (fetch_footer_font($userId)['id'] ?? 0);
 $ownedFontNames = array_map(fn ($bf) => strtolower($bf['name']), $brandFonts);
 $siteFonts = array_filter(scan_site_fonts(), fn ($sf) => !in_array(strtolower($sf['name']), $ownedFontNames, true));
 $footerFontRole = get_footer_font_role($userId);
-$footerNameColor = get_footer_name_color($userId);
 $footerNameSize = get_footer_name_size($userId);
 
 $footerImages = [];
@@ -530,7 +527,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card">
   <h2>Brand Palettes</h2>
-  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; Accent and CTA color are optional — leave "Auto-generate" checked to derive them automatically with guaranteed-readable contrast.</p>
+  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; Accent, CTA, and Signature colors are optional — leave "Auto-generate" checked to derive them automatically with guaranteed-readable contrast. Signature specifically controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes.</p>
   <?php if ($brandPalettes): ?>
     <?php foreach ($brandPalettes as $bp): ?>
       <div class="account-row">
@@ -542,6 +539,7 @@ require __DIR__ . '/../includes/layout_top.php';
             <span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['text_color']) ?>; border:1px solid #0002;"></span>
             <?php if ($bp['accent_color']): ?><span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['accent_color']) ?>; border:1px solid #0002;"></span><?php endif; ?>
             <?php if ($bp['cta_color']): ?><span style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['cta_color']) ?>; border:1px solid #0002;"></span><?php endif; ?>
+            <?php if ($bp['signature_color']): ?><span title="Signature color" style="width:16px; height:16px; border-radius:3px; display:inline-block; background:<?= h($bp['signature_color']) ?>; border:1px solid #0002;"></span><?php endif; ?>
           </span>
         </div>
         <div class="inline-form">
@@ -577,8 +575,11 @@ require __DIR__ . '/../includes/layout_top.php';
     <label>Accent <input type="color" name="palette_accent" value="#E7E1B1" disabled></label>
     <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_cta" checked> Auto-generate CTA color</label>
     <label>CTA <input type="color" name="palette_cta" value="#0D530E" disabled></label>
+    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_signature" checked> Auto-generate Signature color</label>
+    <label>Signature <input type="color" name="palette_signature" value="#0D530E" disabled></label>
     <button type="submit" class="btn-secondary">Add Palette</button>
   </form>
+  <p class="muted" style="margin-top:8px;">To edit an existing palette's colors, re-add it with the same name — this updates it in place rather than creating a duplicate. Note this form doesn't pre-fill an existing palette's current colors, so you're setting all fields fresh each time (Auto-generate wins for any left unchecked).</p>
 </section>
 
 <section class="card">
@@ -771,18 +772,16 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form" style="margin-top:16px;">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="footer_name_style">
-    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="footer_name_color" <?= $footerNameColor === null ? 'checked' : '' ?>> Auto-generate Signature color</label>
-    <label>Signature color <input type="color" name="footer_name_color" value="<?= h($footerNameColor ?: '#000000') ?>" <?= $footerNameColor === null ? 'disabled' : '' ?>></label>
-    <label>Signature size <span class="muted">(px, applies to Hook/Content/Single slides — the CTA slide's signature stays proportionally larger, same as today)</span>
+    <label>Signature size <span class="muted">(px, applies to Hook/Content/Single slides — the CTA slide's signature stays proportionally larger, same as today. For Signature color, see Brand Palettes above — it's set per palette so it stays in sync with whichever palette a post uses.)</span>
       <input type="number" name="footer_name_size" min="16" max="80" placeholder="Auto (33px)" value="<?= h($footerNameSize !== null ? (string) $footerNameSize : '') ?>">
     </label>
     <button type="submit" class="btn-secondary">Save</button>
   </form>
-  <?php if ($footerNameColor !== null || $footerNameSize !== null): ?>
+  <?php if ($footerNameSize !== null): ?>
     <form method="post" style="margin-top:8px;">
       <input type="hidden" name="csrf" value="<?= h($token) ?>">
       <input type="hidden" name="form" value="footer_name_style_reset">
-      <button type="submit" class="btn-tiny btn-danger">Reset Signature color/size to Auto</button>
+      <button type="submit" class="btn-tiny btn-danger">Reset Signature size to Auto</button>
     </form>
   <?php endif; ?>
 </section>

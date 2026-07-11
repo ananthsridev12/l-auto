@@ -122,21 +122,21 @@ function fetch_cta(int $userId, int $id): ?array
 
 function fetch_brand_palettes(int $userId): array
 {
-    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, is_default FROM brand_palettes WHERE user_id = ? ORDER BY name');
+    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, signature_color, is_default FROM brand_palettes WHERE user_id = ? ORDER BY name');
     $stmt->execute([$userId]);
     return $stmt->fetchAll();
 }
 
 function fetch_brand_palette(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, is_default FROM brand_palettes WHERE user_id = ? AND id = ?');
+    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, signature_color, is_default FROM brand_palettes WHERE user_id = ? AND id = ?');
     $stmt->execute([$userId, $id]);
     return $stmt->fetch() ?: null;
 }
 
 function fetch_default_brand_palette(int $userId): ?array
 {
-    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, is_default FROM brand_palettes WHERE user_id = ? AND is_default = 1 LIMIT 1');
+    $stmt = db()->prepare('SELECT id, name, bg_color, text_color, accent_color, cta_color, signature_color, is_default FROM brand_palettes WHERE user_id = ? AND is_default = 1 LIMIT 1');
     $stmt->execute([$userId]);
     return $stmt->fetch() ?: null;
 }

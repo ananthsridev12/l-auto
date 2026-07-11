@@ -174,16 +174,33 @@ ALTER TABLE users
   ADD COLUMN footer_font_id INT DEFAULT NULL,
   ADD FOREIGN KEY (footer_font_id) REFERENCES brand_fonts(id) ON DELETE SET NULL;
 
--- Manual overrides for the footer signature's color and size — see
--- includes/image_renderer.php render_footer_simple()/render_footer_with_photo().
--- NULL keeps the existing auto-derived palette color / auto size for
--- both, i.e. unchanged default behavior for anyone who hasn't touched
--- these Settings fields. footer_name_size is stored as a literal
+-- Manual size override for the footer signature — a brand-wide
+-- typography choice, not tied to any one palette, so it stays a single
+-- global per-user setting (unlike signature_color below, which is
+-- per-palette). NULL keeps the built-in auto size. Stored as a literal
 -- rendered pixel size (not the internal 1080-design-basis unit render.php
--- scales from) so what a user types is exactly what they get.
+-- scales from) so what a user types is exactly what they get. See
+-- includes/image_renderer.php render_footer_simple()/render_footer_with_photo().
 ALTER TABLE users
-  ADD COLUMN footer_name_color VARCHAR(7) DEFAULT NULL,
   ADD COLUMN footer_name_size INT DEFAULT NULL;
+
+-- Earlier revision of this feature added a global footer_name_color on
+-- users — dropped in favor of a per-palette signature_color below, since
+-- a single flat color doesn't harmonize across different palettes the
+-- way each palette's own derived color does. No data migration: this
+-- column was added and dropped within the same development pass, before
+-- any real user data depended on it.
+ALTER TABLE users DROP COLUMN footer_name_color;
+
+-- Optional per-palette override for the footer signature's color — same
+-- optional/auto-generate pattern as accent_color/cta_color above. NULL
+-- keeps the palette's existing auto-derived color (role 'name'/
+-- 'accent_text'/'headline' depending on layout — see
+-- render_footer_simple()/render_footer_with_photo()). Only meaningful on
+-- custom palettes; the 4 built-in presets (render_palettes()) are fixed
+-- and don't get a settable signature color.
+ALTER TABLE brand_palettes
+  ADD COLUMN signature_color VARCHAR(7) DEFAULT NULL;
 
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks

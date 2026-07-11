@@ -158,24 +158,6 @@ function set_footer_font_role(int $userId, string $role): void
     $stmt->execute([$role, $userId]);
 }
 
-// Manual hex color override for the footer signature — NULL keeps the
-// auto-derived palette color (role 'name'/'accent_text'/'headline'
-// depending on layout — see render_footer_simple()/render_footer_with_photo()).
-function get_footer_name_color(int $userId): ?string
-{
-    $stmt = db()->prepare('SELECT footer_name_color FROM users WHERE id = ?');
-    $stmt->execute([$userId]);
-    $color = $stmt->fetchColumn();
-    return $color ?: null;
-}
-
-function set_footer_name_color(int $userId, ?string $hex): void
-{
-    $hex = ($hex && preg_match('/^#[0-9A-Fa-f]{6}$/', $hex)) ? strtoupper($hex) : null;
-    $stmt = db()->prepare('UPDATE users SET footer_name_color = ? WHERE id = ?');
-    $stmt->execute([$hex, $userId]);
-}
-
 // Manual pixel-size override for the footer signature — a literal
 // rendered pixel size (see schema.sql comment on this column), used as
 // the base for Hook/Content/Single slides; the CTA/photo-footer slide

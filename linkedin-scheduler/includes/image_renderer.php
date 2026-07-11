@@ -136,12 +136,17 @@ function mix_colors(array $c1, array $c2, float $pct): array
 }
 
 // Derives the same 14-role palette shape render_palettes() hardcodes,
-// from just 2 required + 2 optional user-picked hex colors (see
+// from just 2 required + 3 optional user-picked hex colors (see
 // pages/settings.php Brand Palettes section). accent_text/cta_text/
 // badge_text are always computed via contrast ratio against whatever
 // they sit on, so no combination of user-picked colors can produce
-// unreadable text.
-function render_derive_palette_colors(string $bgHex, string $textHex, ?string $accentHex = null, ?string $ctaHex = null): array
+// unreadable text. $signatureHex is an optional manual override for the
+// footer name specifically — unlike the other roles it has no computed
+// fallback baked into this map; when unset, callers keep using the
+// existing auto-derived 'name'/'accent_text'/'headline' roles for the
+// footer (see render_creative_to_slides()), so it's only present in the
+// returned array's 'signature' key when the user actually set one.
+function render_derive_palette_colors(string $bgHex, string $textHex, ?string $accentHex = null, ?string $ctaHex = null, ?string $signatureHex = null): array
 {
     $bg     = hex_to_rgb($bgHex);
     $text   = hex_to_rgb($textHex);
@@ -149,7 +154,7 @@ function render_derive_palette_colors(string $bgHex, string $textHex, ?string $a
     $cta    = $ctaHex ? hex_to_rgb($ctaHex) : $text;
     $body   = mix_colors($text, $bg, 0.35);
 
-    return [
+    $colors = [
         'bg'          => $bg,
         'headline'    => $text,
         'body'        => $body,
@@ -165,6 +170,10 @@ function render_derive_palette_colors(string $bgHex, string $textHex, ?string $a
         'cta_text'    => best_contrast([$bg, $text], $cta),
         'name'        => $body,
     ];
+    if ($signatureHex) {
+        $colors['signature'] = hex_to_rgb($signatureHex);
+    }
+    return $colors;
 }
 
 // Resolves which 14-role RGB color map a slide should use: an explicit
@@ -181,13 +190,13 @@ function render_resolve_palette_colors($templateValue, int $userId, ?string $ser
     if (is_string($templateValue) && str_starts_with($templateValue, 'custom:')) {
         $palette = fetch_brand_palette($userId, (int) substr($templateValue, 7));
         if ($palette) {
-            return render_derive_palette_colors($palette['bg_color'], $palette['text_color'], $palette['accent_color'], $palette['cta_color']);
+            return render_derive_palette_colors($palette['bg_color'], $palette['text_color'], $palette['accent_color'], $palette['cta_color'], $palette['signature_color'] ?? null);
         }
     }
 
     $defaultPalette = fetch_default_brand_palette($userId);
     if ($defaultPalette) {
-        return render_derive_palette_colors($defaultPalette['bg_color'], $defaultPalette['text_color'], $defaultPalette['accent_color'], $defaultPalette['cta_color']);
+        return render_derive_palette_colors($defaultPalette['bg_color'], $defaultPalette['text_color'], $defaultPalette['accent_color'], $defaultPalette['cta_color'], $defaultPalette['signature_color'] ?? null);
     }
 
     return render_palettes()[render_get_palette_id_by_series_label($seriesLabel)];
@@ -1121,9 +1130,10 @@ function render_fit_footer_name_size(string $name, float $maxPx, int $preferredS
 // the user assigned a dedicated Signature font) is the per-user Settings
 // choice for which typeface the footer *name* uses — see
 // includes/helpers.php get_footer_font_role() and
-// includes/post_helpers.php fetch_footer_font(). $nameColorRgb/
-// $nameSizeOverride are the manual Settings overrides for the name's
-// color/size (see includes/helpers.php get_footer_name_color()/
+// includes/post_helpers.php fetch_footer_font(). $nameColorRgb is the
+// resolved palette's optional per-palette signature color override (see
+// render_derive_palette_colors()'s 'signature' key); $nameSizeOverride
+// is the manual Settings size override (see includes/helpers.php
 // get_footer_name_size()) — null for either keeps today's auto-derived
 // palette color / auto size, so existing users see no change.
 function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null): void
@@ -1475,11 +1485,15 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         render_font_override_role('footer', ['regular' => $footerFont['regular_path'], 'bold' => $footerFont['bold_path']], true);
         $footerFontRole = 'footer';
     }
-    $footerNameColorHex = $userId ? get_footer_name_color($userId) : null;
-    $footerNameColorRgb = $footerNameColorHex ? hex_to_rgb($footerNameColorHex) : null;
     $footerNameSizeOverride = $userId ? get_footer_name_size($userId) : null;
 
     $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
+    // Signature color is a per-palette override (see pages/settings.php
+    // Brand Palettes' Signature field), not a global one — it only comes
+    // through here if the resolved palette actually set it, so it
+    // switches along with whatever palette a post uses instead of
+    // clashing with palettes that don't specify one.
+    $footerNameColorRgb = $paletteColors['signature'] ?? null;
     $layout = array_key_exists($data['layout'] ?? '', render_design_templates()) ? $data['layout'] : 'classic';
     $bgStyle = ($data['background'] ?? '') === 'gradient' ? 'gradient' : 'flat';
     $logoPath = $userId ? resolve_brand_logo($userId) : null;
