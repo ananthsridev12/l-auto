@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
+require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
 
@@ -49,6 +50,11 @@ require __DIR__ . '/../includes/layout_top.php';
   window.CONTENT_STUDIO_PREVIEW_URL = <?= json_encode($previewUrl) ?>;
   window.CONTENT_STUDIO_CSRF = <?= json_encode($csrf) ?>;
   window.BRAND_PALETTES = <?= json_encode(array_map(fn ($p) => ['id' => (int) $p['id'], 'name' => $p['name']], $brandPalettes)) ?>;
+  window.DESIGN_TEMPLATES = <?= json_encode(array_map(
+      fn ($id, $t) => ['id' => $id, 'name' => $t['name'], 'thumb' => app_path('assets/img/template-thumbs/' . $id . '.png')],
+      array_keys(render_design_templates()),
+      render_design_templates()
+  )) ?>;
 </script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

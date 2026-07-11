@@ -278,8 +278,8 @@
     } else {
       delete currentCreative.template;
     }
-    var layoutSelect = document.getElementById('aiLayoutSelect');
-    var layout = layoutSelect ? layoutSelect.value : 'classic';
+    var layoutChecked = document.querySelector('input[name="design_template_ai"]:checked');
+    var layout = layoutChecked ? layoutChecked.value : 'classic';
     if (layout && layout !== 'classic') {
       currentCreative.layout = layout;
     } else {

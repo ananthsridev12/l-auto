@@ -279,13 +279,8 @@ require __DIR__ . '/../includes/layout_top.php';
             <?php endforeach; ?>
           </select>
         </label>
-        <label>Design Template <span class="muted">(optional)</span>
-          <select id="aiLayoutSelect">
-            <option value="classic">Classic</option>
-            <option value="minimal">Minimal</option>
-            <option value="bold">Bold Blocks</option>
-          </select>
-        </label>
+        <label>Design Template <span class="muted">(optional)</span></label>
+        <?= render_template_picker_html('classic', '_ai') ?>
         <label>Background <span class="muted">(optional)</span>
           <select id="aiBackgroundSelect">
             <option value="flat">Flat</option>

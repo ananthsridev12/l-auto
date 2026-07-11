@@ -680,3 +680,42 @@ body.centered-page {
   .button-row { flex-direction: column; }
   .cal-weekdays, .cal-grid { min-width: 480px; }
 }
+
+/* Design Template visual picker — a thumbnail grid replacing the old
+   plain <select> so users see what each template looks like before
+   generating. Same control across Content Studio / New Post / Calendar. */
+.template-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0 14px;
+}
+.template-option {
+  width: 92px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  padding: 3px;
+  text-align: center;
+}
+.template-option input { position: absolute; opacity: 0; pointer-events: none; }
+.template-option img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 5px;
+  display: block;
+  border: 1px solid #E0DED8;
+}
+.template-option span {
+  display: block;
+  font-size: 11px;
+  color: #666;
+  margin-top: 4px;
+  line-height: 1.2;
+}
+.template-option.selected,
+.template-option:has(input:checked) { border-color: #3B6EF5; }
+.template-option.selected img,
+.template-option:has(input:checked) img { border-color: #3B6EF5; }
+.template-option:hover img { border-color: #B7C6F7; }

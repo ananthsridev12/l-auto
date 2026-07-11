@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
+require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
 $userId = current_user_id();
@@ -103,13 +104,10 @@ require __DIR__ . '/../includes/layout_top.php';
                 <?php endforeach; ?>
               </select>
             </label>
-            <label class="field-row">Design Template
-              <select class="layout-select">
-                <option value="classic"<?= ($p['creative']['layout'] ?? 'classic') === 'classic' ? ' selected' : '' ?>>Classic</option>
-                <option value="minimal"<?= ($p['creative']['layout'] ?? '') === 'minimal' ? ' selected' : '' ?>>Minimal</option>
-                <option value="bold"<?= ($p['creative']['layout'] ?? '') === 'bold' ? ' selected' : '' ?>>Bold Blocks</option>
-              </select>
-            </label>
+            <label class="field-row">Design Template</label>
+            <div class="template-picker-wrap" data-role="template-picker">
+              <?= render_template_picker_html($p['creative']['layout'] ?? 'classic', '_' . (int) $p['id']) ?>
+            </div>
             <label class="field-row">Background
               <select class="background-select">
                 <option value="flat"<?= ($p['creative']['background'] ?? 'flat') === 'flat' ? ' selected' : '' ?>>Flat</option>

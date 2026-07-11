@@ -16,6 +16,29 @@ function h(?string $value): string
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
 
+// Shared thumbnail-grid markup for the Design Template picker — used by
+// both New Post (static, one picker on the page) and Calendar Batch (one
+// per review card, hence $fieldSuffix to keep radio group names unique
+// per card). Content Studio builds its cards in JS instead, so it reads
+// window.DESIGN_TEMPLATES (see pages/content_studio.php) rather than
+// calling this. Requires includes/image_renderer.php to already be
+// loaded (render_design_templates()) — every caller already requires it
+// for actual rendering anyway.
+function render_template_picker_html(string $selected = 'classic', string $fieldSuffix = ''): string
+{
+    $groupName = 'design_template' . $fieldSuffix;
+    $html = '<div class="template-grid">';
+    foreach (render_design_templates() as $id => $t) {
+        $checked = $id === $selected;
+        $html .= '<label class="template-option' . ($checked ? ' selected' : '') . '">'
+            . '<input type="radio" name="' . h($groupName) . '" value="' . h($id) . '"' . ($checked ? ' checked' : '') . '>'
+            . '<img src="' . h(app_path('assets/img/template-thumbs/' . $id . '.png')) . '" alt="' . h($t['name']) . '" loading="lazy">'
+            . '<span>' . h($t['name']) . '</span>'
+            . '</label>';
+    }
+    return $html . '</div>';
+}
+
 // Accepts a bare numeric org ID ("12345"), a full URN
 // ("urn:li:organization:12345"), or a LinkedIn company URL that uses
 // the numeric ID form ("linkedin.com/company/12345/") — LinkedIn vanity

@@ -258,6 +258,16 @@ function render_font_override_role(string $role, ?array $paths = null, bool $set
 
 function render_font_path(bool $bold, string $role = 'body'): string
 {
+    // Bundled, not overridable — a serif-styled design template should
+    // always look serif regardless of what the user set as their brand
+    // Heading/Body font, so templates stay visually predictable.
+    if ($role === 'serif') {
+        $path = __DIR__ . '/../assets/fonts/LiberationSerif-' . ($bold ? 'Bold' : 'Regular') . '.ttf';
+        if (is_file($path)) {
+            return $path;
+        }
+    }
+
     $override = render_font_override_role($role);
     if ($override) {
         $path = $override[$bold ? 'bold' : 'regular'] ?? null;
@@ -369,6 +379,19 @@ function render_rrect($im, float $x1, float $y1, float $x2, float $y2, int $colo
     imagefilledellipse($im, $x2 - $radius, $y1 + $radius, $radius * 2, $radius * 2, $color);
     imagefilledellipse($im, $x1 + $radius, $y2 - $radius, $radius * 2, $radius * 2, $color);
     imagefilledellipse($im, $x2 - $radius, $y2 - $radius, $radius * 2, $radius * 2, $color);
+}
+
+// Stroke-only rectangle for the 'outline' CTA style — deliberately
+// sharp-cornered rather than fully rounded (matching Savvy Finance's
+// bordered "CLAIM THE OFFER" button): a true rounded *stroke* needs arc
+// geometry GD doesn't offer directly, while a sharp border via
+// imagerectangle() preserves whatever's underneath (works over a
+// gradient background) with no risk of a mismatched fill color.
+function render_rect_outline($im, float $x1, float $y1, float $x2, float $y2, int $color, int $thickness = 2): void
+{
+    imagesetthickness($im, $thickness);
+    imagerectangle($im, (int) round($x1), (int) round($y1), (int) round($x2), (int) round($y2), $color);
+    imagesetthickness($im, 1);
 }
 
 // Center-crops $photoPath to a square then masks it into a circle —
@@ -548,6 +571,9 @@ function render_numbered_card_height(string $text, int $fontSize, string $layout
     if ($layout === 'minimal') {
         return render_minimal_point_height($text, $fontSize);
     }
+    if ($layout === 'divider') {
+        return render_divider_point_height($text, $fontSize);
+    }
     [, , $cw] = render_content_edges();
     $badge = 44; $px = 20; $py = 15;
     $lines = render_wrap_clamped($text, $fontSize, false, $cw - $badge - $px * 2 - 18, 2);
@@ -566,6 +592,16 @@ function render_minimal_point_height(string $text, int $fontSize): float
     return count($lines) * render_lh($fontSize) + 6 + 20; // top pad + gap below
 }
 
+// Divider-style point (Borcelle/Cloudlet reference): arrow + text with a
+// thin rule below, no card fill — the icon-plus-hairline list style.
+function render_divider_point_height(string $text, int $fontSize): float
+{
+    [, , $cw] = render_content_edges();
+    $aw = render_text_width('↘  ', $fontSize, true);
+    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $aw, 2);
+    return count($lines) * render_lh($fontSize) + 28; // text height + rule + gap below
+}
+
 // Pure measurement, no drawing — mirrors render_cta_banner()'s height math.
 function render_cta_banner_height(string $text, int $fontSize, string $layout = 'classic'): float
 {
@@ -574,6 +610,12 @@ function render_cta_banner_height(string $text, int $fontSize, string $layout = 
     if ($layout === 'minimal') {
         $lines = render_wrap_clamped($text, $fontSize, true, $cw - $aw, 2);
         return count($lines) * render_lh($fontSize) + 16; // no box, just the gap below
+    }
+    if ($layout === 'pill' || $layout === 'outline') {
+        // Single line, kept compact rather than stretched full-width —
+        // a real pill/outline button, not a banner (see render_cta_banner()).
+        $pad = 24;
+        return render_lh($fontSize) + $pad * 2 + 16;
     }
     $pad = $layout === 'bold' ? 28 : 20;
     $lines = render_wrap_clamped($text, $fontSize, true, $cw - $aw - $pad * 2, 2);
@@ -606,6 +648,11 @@ function render_fit_font_size(array $items, float $startY, float $ceiling, array
 // under $maxLines, falling back to the smallest candidate otherwise.
 function render_fit_headline_size(string $text, float $maxPx, array $candidateSizes, int $maxLines, bool $bold = true, string $role = 'heading'): int
 {
+    // Strip **emphasis** markers before measuring — even on a template
+    // that won't color them, drawing always strips them too (see
+    // render_draw_headline()), so leaving them in here would measure
+    // width the actual output never has.
+    $text = render_strip_emphasis_markers($text);
     foreach ($candidateSizes as $size) {
         if (count(render_wrap($text, $size, $bold, $maxPx, $role)) <= $maxLines) {
             return $size;
@@ -631,6 +678,187 @@ function render_wrap_clamped(string $text, int $size, bool $bold, float $maxPx, 
     $lines = array_slice($lines, 0, $maxLines);
     $lines[$maxLines - 1] = rtrim($lines[$maxLines - 1]) . '…';
     return $lines;
+}
+
+// ── Headline color emphasis ──────────────────────────────────────────
+// A handful of reference designs (Arbor, Savvy Finance, "Creative
+// Business") color specific words within one headline to highlight them.
+// Reuses a familiar **word** marker syntax right inside the headline
+// string — no new JSON field, works everywhere headline text already
+// flows (AI generation, manual typing, review-card edits). Only design
+// templates with emphasis=true in render_design_templates() actually
+// color the marked runs; every other template strips markers via
+// render_strip_emphasis_markers() and draws plain text, so typing ** on
+// a non-emphasis template degrades safely instead of showing literal
+// asterisks.
+
+function render_strip_emphasis_markers(string $text): string
+{
+    return str_replace('**', '', $text);
+}
+
+// Splits headline text on **marker** spans into a flat word list tagged
+// with whether each word should be drawn in the accent color.
+function render_tokenize_emphasis(string $text): array
+{
+    $parts = preg_split('/\*\*(.+?)\*\*/', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+    $words = [];
+    foreach ($parts as $i => $part) {
+        $emphasized = $i % 2 === 1; // odd indices are the captured **...** groups
+        foreach (preg_split('/\s+/', trim($part)) as $word) {
+            if ($word !== '') {
+                $words[] = ['text' => $word, 'emphasized' => $emphasized];
+            }
+        }
+    }
+    return $words;
+}
+
+// Emphasis-aware counterpart to render_wrap() — same greedy word-wrap
+// algorithm, but each line is an array of word structs (not a plain
+// string) so render_text_emphasized() knows which words to color.
+function render_wrap_emphasized(string $text, int $size, bool $bold, float $maxPx, string $role = 'body'): array
+{
+    $words = render_tokenize_emphasis($text);
+    if (!$words) {
+        return [[]];
+    }
+    $lines = [];
+    $current = [];
+    foreach ($words as $word) {
+        $test = implode(' ', array_map(fn ($w) => $w['text'], array_merge($current, [$word])));
+        if ($current && render_text_width($test, $size, $bold, $role) > $maxPx) {
+            $lines[] = $current;
+            $current = [$word];
+        } else {
+            $current[] = $word;
+        }
+    }
+    if ($current) {
+        $lines[] = $current;
+    }
+    return $lines;
+}
+
+// Hard line-count cap, mirroring render_wrap_clamped()'s guarantee for
+// the plain-text path.
+function render_wrap_emphasized_clamped(string $text, int $size, bool $bold, float $maxPx, int $maxLines, string $role = 'body'): array
+{
+    $lines = render_wrap_emphasized($text, $size, $bold, $maxPx, $role);
+    if (count($lines) <= $maxLines) {
+        return $lines;
+    }
+    $lines = array_slice($lines, 0, $maxLines);
+    $last = $lines[$maxLines - 1];
+    if ($last) {
+        $last[count($last) - 1]['text'] = rtrim($last[count($last) - 1]['text']) . '…';
+    }
+    $lines[$maxLines - 1] = $last;
+    return $lines;
+}
+
+// Draws one render_wrap_emphasized() line, switching color per word.
+function render_text_emphasized($im, float $x, float $topY, array $line, int $size, bool $bold, int $normalColor, int $accentColor, string $role = 'body'): void
+{
+    $cx = $x;
+    $spaceW = render_text_width(' ', $size, $bold, $role);
+    foreach ($line as $word) {
+        render_text($im, $cx, $topY, $word['text'], $size, $bold, $word['emphasized'] ? $accentColor : $normalColor, $role);
+        $cx += render_text_width($word['text'], $size, $bold, $role) + $spaceW;
+    }
+}
+
+// Shared by all 4 slide types — resolves candidate font size, wraps, and
+// draws the headline, branching on the active design template's font
+// role (sans/serif) and whether it colors emphasized **word** spans.
+// Centralizing this here (rather than repeating the branch in every
+// render_slide_*()) is what keeps adding more templates cheap.
+function render_draw_headline($im, string $headline, float $cx, float $cw, float $y, array $candidateSizes, int $maxLines, array $p, array $preset): float
+{
+    $fontRole = $preset['font'] === 'serif' ? 'serif' : 'heading';
+    if ($preset['emphasis']) {
+        $hs = render_fit_headline_size($headline, $cw, $candidateSizes, $maxLines, true, $fontRole);
+        $lh = render_lh($hs);
+        // body, not accent, for the emphasized color — same reasoning as
+        // every other legibility fix this session: accent is only ever a
+        // guaranteed-safe fill/tint, not guaranteed readable as text
+        // (it's deliberately close to bg on some palettes, e.g. Cream).
+        // body is already relied on for all point/body copy, so it's a
+        // proven-legible second tone at large display sizes too.
+        foreach (render_wrap_emphasized_clamped($headline, $hs, true, $cw, $maxLines, $fontRole) as $line) {
+            render_text_emphasized($im, $cx, $y, $line, $hs, true, $p['headline'], $p['body'], $fontRole);
+            $y += $lh;
+        }
+        return $y;
+    }
+    $plain = render_strip_emphasis_markers($headline);
+    $hs = render_fit_headline_size($plain, $cw, $candidateSizes, $maxLines, true, $fontRole);
+    $lh = render_lh($hs);
+    foreach (render_wrap_clamped($plain, $hs, true, $cw, $maxLines, $fontRole) as $line) {
+        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], $fontRole);
+        $y += $lh;
+    }
+    return $y;
+}
+
+// ── Corner decorations ───────────────────────────────────────────────
+// Solid/dotted shapes anchored to a corner, approximating the recurring
+// "decorative shape bleeding off the edge" pattern in the reference
+// designs (Arbor's halftone blob, Borcelle's corner texture, the bleed
+// circles behind photos/headlines) without needing true blob/bezier
+// geometry — all 3 are deliberately confined to a corner zone that stays
+// clear of where headline text and the footer normally sit, called once
+// near the top of render_slide_*() (after the background, before text)
+// so text always draws on top if anything overlaps.
+
+function render_decoration_bleed_circle($im, array $p): void
+{
+    imagefilledellipse($im, RENDER_SIZE - 60, -60, 480, 480, $p['accent']);
+}
+
+function render_decoration_halftone($im, array $p): void
+{
+    $rgb = imagecolorsforindex($im, $p['accent']);
+    $tint = imagecolorallocatealpha($im, $rgb['red'], $rgb['green'], $rgb['blue'], 55);
+    $cols = 9; $rows = 7; $spacing = 24; $dotR = 7;
+    $x0 = RENDER_SIZE - 30; $y0 = -10;
+    for ($row = 0; $row < $rows; $row++) {
+        for ($col = 0; $col < $cols; $col++) {
+            // Diagonal falloff so the grid reads as a blob tapering
+            // toward the bottom-left, not a hard rectangle.
+            if ($row + $col > ($rows + $cols) * 0.6) {
+                continue;
+            }
+            $x = $x0 - $col * $spacing;
+            $y = $y0 + $row * $spacing + ($col % 2 === 0 ? 0 : $spacing / 2);
+            imagefilledellipse($im, (int) $x, (int) $y, $dotR, $dotR, $tint);
+        }
+    }
+}
+
+function render_decoration_triangles($im, array $p): void
+{
+    $rgb = imagecolorsforindex($im, $p['accent']);
+    $tint = imagecolorallocatealpha($im, $rgb['red'], $rgb['green'], $rgb['blue'], 70);
+    $size = 20; $rows = 5;
+    $x0 = 0; $y0 = RENDER_SIZE;
+    for ($row = 0; $row < $rows; $row++) {
+        for ($col = 0; $col < $rows - $row; $col++) {
+            $x = $x0 + $col * $size;
+            $y = $y0 - $row * $size;
+            imagefilledpolygon($im, [$x, $y, (int) ($x + $size), $y, $x, (int) ($y - $size)], 3, $tint);
+        }
+    }
+}
+
+function render_draw_decoration($im, array $p, ?string $decoration): void
+{
+    match ($decoration) {
+        'bleed_circle' => render_decoration_bleed_circle($im, $p),
+        'halftone'     => render_decoration_halftone($im, $p),
+        'triangles'    => render_decoration_triangles($im, $p),
+        default        => null,
+    };
 }
 
 // Big, faint number watermark in a card's right side — 'bold' layout's
@@ -679,10 +907,35 @@ function render_minimal_point($im, int $num, string $text, float $y, array $p, i
     return $y + $py + $textH + 20;
 }
 
+// Divider-style point: arrow + text + a thin rule below, no card fill —
+// matches render_divider_point_height()'s measurement exactly.
+function render_divider_point($im, int $num, string $text, float $y, array $p, int $fontSize): float
+{
+    [$cx, $rx, $cw] = render_content_edges();
+    $aw = render_text_width('↘  ', $fontSize, true);
+    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $aw, 2);
+    $lh = render_lh($fontSize);
+
+    // headline, not accent — same reasoning as render_minimal_point()'s
+    // number label: this arrow sits directly on bg, so it needs
+    // guaranteed contrast, not a decorative tint.
+    render_text($im, $cx, $y, '↘', $fontSize, true, $p['headline']);
+    foreach ($lines as $i => $line) {
+        render_text($im, $cx + $aw, $y + $i * $lh, $line, $fontSize, false, $p['body']);
+    }
+    $textH = count($lines) * $lh;
+    $ruleY = $y + $textH + 14;
+    imagefilledrectangle($im, (int) $cx, (int) $ruleY, (int) $rx, (int) $ruleY + 1, $p['divider']);
+    return $ruleY + 14;
+}
+
 function render_numbered_card($im, int $num, string $text, float $y, array $p, int $fontSize = 26, string $layout = 'classic'): float
 {
     if ($layout === 'minimal') {
         return render_minimal_point($im, $num, $text, $y, $p, $fontSize);
+    }
+    if ($layout === 'divider') {
+        return render_divider_point($im, $num, $text, $y, $p, $fontSize);
     }
     [$cx, $rx, $cw] = render_content_edges();
     $fs = $fontSize; $badge = 44; $px = 20; $py = 15;
@@ -731,6 +984,28 @@ function render_cta_banner($im, string $text, float $y, array $p, int $fontSize 
             render_text($im, $cx + $aw, $y + $i * $lh, $line, $fs, true, $p['headline']);
         }
         return $y + count($lines) * $lh + 16;
+    }
+
+    if ($layout === 'pill' || $layout === 'outline') {
+        // Single line, sized to its own text rather than stretched full
+        // width — a compact button (Wildlife Watch's "Download now",
+        // Savvy Finance's "CLAIM THE OFFER"), not a full-width banner.
+        $pad = 24;
+        $lines = render_wrap_clamped($text, $fs, true, $cw - $aw - $pad * 2, 1);
+        $lineW = render_text_width($lines[0], $fs, true);
+        $ph = $lh + $pad * 2;
+        $pw = (int) min($cw, $aw + $lineW + $pad * 2);
+        $radius = (int) ($ph / 2);
+        if ($layout === 'pill') {
+            render_rrect($im, $cx, $y, $cx + $pw, $y + $ph, $p['cta_bg'], $radius);
+            render_text($im, $cx + $pad, $y + $pad, '→', $fs, true, $p['cta_text']);
+            render_text($im, $cx + $pad + $aw, $y + $pad, $lines[0], $fs, true, $p['cta_text']);
+        } else {
+            render_rect_outline($im, $cx, $y, $cx + $pw, $y + $ph, $p['headline'], 2);
+            render_text($im, $cx + $pad, $y + $pad, '→', $fs, true, $p['headline']);
+            render_text($im, $cx + $pad + $aw, $y + $pad, $lines[0], $fs, true, $p['headline']);
+        }
+        return $y + $ph + 16;
     }
 
     $pad = $layout === 'bold' ? 28 : 20;
@@ -838,17 +1113,71 @@ function render_body_freestanding($im, string $body, float $y, array $p, float $
     return $y;
 }
 
-// ── Slide renderers ──────────────────────────────────────────────────
-// $layout is 'classic' (default), 'minimal', or 'bold' — see the "Design
-// Template" pickers in Content Studio / New Post / Calendar and
+// ── Design template gallery ──────────────────────────────────────────
+// $layout selects one of these presets — see the "Design Template"
+// pickers in Content Studio / New Post / Calendar and
 // render_creative_to_slides() below, which resolves it from the
 // creative JSON's "layout" field (a separate axis from "template", the
-// color palette selector).
+// color palette selector). Reaching 10-20 distinct-looking templates
+// without writing 10-20x the rendering code means composing them from a
+// small set of building blocks rather than bespoke code per template:
+// - legacyBase: which of the 3 original layouts (classic/minimal/bold)
+//   this preset inherits its bar weight, headline-rule style, body
+//   boxing, and footer treatment from — those 4 things already have
+//   exactly 3 well-tested shapes, so new templates just pick one rather
+//   than re-deriving a 4th/5th/6th variant of each.
+// - font/emphasis/decoration/listOverride/ctaOverride: the newer,
+//   independent axes (serif vs sans, colored **word** headline spans,
+//   a corner decoration, and optional list/CTA style swaps) that give
+//   each preset its distinct identity on top of its legacyBase.
+// classic/minimal/bold keep the exact field values that reproduce their
+// pre-gallery behavior byte-for-byte.
+function render_design_templates(): array
+{
+    return [
+        'classic' => ['name' => 'Classic', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
+        'minimal' => ['name' => 'Minimal', 'legacyBase' => 'minimal', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
+        'bold'    => ['name' => 'Bold Blocks', 'legacyBase' => 'bold', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
+
+        'editorial_serif'    => ['name' => 'Editorial Serif', 'legacyBase' => 'minimal', 'font' => 'serif', 'emphasis' => true, 'decoration' => null, 'listOverride' => 'divider', 'ctaOverride' => null],
+        'serif_spotlight'    => ['name' => 'Serif Spotlight', 'legacyBase' => 'classic', 'font' => 'serif', 'emphasis' => true, 'decoration' => 'bleed_circle', 'listOverride' => null, 'ctaOverride' => null],
+        'halftone_pop'       => ['name' => 'Halftone Pop', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => true, 'decoration' => 'halftone', 'listOverride' => 'divider', 'ctaOverride' => 'pill'],
+        'corner_accent'      => ['name' => 'Corner Accent', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => 'triangles', 'listOverride' => 'divider', 'ctaOverride' => 'outline'],
+        'bold_serif'         => ['name' => 'Bold Serif', 'legacyBase' => 'bold', 'font' => 'serif', 'emphasis' => true, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
+        'pill_editorial'     => ['name' => 'Pill Editorial', 'legacyBase' => 'minimal', 'font' => 'serif', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => 'pill'],
+        'spotlight_bold'     => ['name' => 'Spotlight Bold', 'legacyBase' => 'bold', 'font' => 'sans', 'emphasis' => false, 'decoration' => 'bleed_circle', 'listOverride' => null, 'ctaOverride' => null],
+        'clean_divider'      => ['name' => 'Clean Divider', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => 'divider', 'ctaOverride' => 'outline'],
+        'outline_frame'      => ['name' => 'Outline Frame', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => 'triangles', 'listOverride' => null, 'ctaOverride' => 'outline'],
+        'halftone_editorial' => ['name' => 'Halftone Editorial', 'legacyBase' => 'minimal', 'font' => 'serif', 'emphasis' => true, 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
+        'dotted_bold'        => ['name' => 'Dotted Bold', 'legacyBase' => 'bold', 'font' => 'sans', 'emphasis' => true, 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
+    ];
+}
+
+// Resolves a preset id into its full computed form — barStyle/listStyle/
+// ctaStyle/footerStyle are what actually get passed to the existing
+// render_draw_bar()/render_headline_rule()/render_numbered_card()/
+// render_cta_banner()/render_footer_*() functions, which is what lets
+// this whole gallery reuse those functions unchanged (they only ever
+// see one of the handful of style-key strings they already understood
+// before this gallery existed, plus 'divider'/'pill'/'outline').
+function render_resolve_design_preset(string $id): array
+{
+    $templates = render_design_templates();
+    $preset = $templates[$id] ?? $templates['classic'];
+    $preset['barStyle'] = $preset['legacyBase'];
+    $preset['listStyle'] = $preset['listOverride'] ?? $preset['legacyBase'];
+    $preset['ctaStyle'] = $preset['ctaOverride'] ?? $preset['legacyBase'];
+    return $preset;
+}
+
+// ── Slide renderers ──────────────────────────────────────────────────
 
 function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
 {
+    $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
-    render_draw_bar($im, $p, $layout);
+    render_draw_decoration($im, $p, $preset['decoration']);
+    render_draw_bar($im, $p, $preset['barStyle']);
     render_draw_counter($im, 1, $total, $p);
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
@@ -856,41 +1185,33 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
         render_text($im, $cx, $y, strtoupper($seriesLabel), 16, false, $p['counter']);
         $y += render_lh(16) + 8;
     }
-    $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [78, 68, 58, 50, 44], 2);
-    $lh = render_lh($hs);
-    foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 2, 'heading') as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
-        $y += $lh;
-    }
+    $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [78, 68, 58, 50, 44], 2, $p, $preset);
 
-    $y = render_headline_rule($im, $y, $p, $layout);
+    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
 
     $body = $slide['body'] ?? '';
-    $y = $layout === 'minimal'
+    $y = $preset['barStyle'] === 'minimal'
         ? render_body_freestanding($im, $body, $y, $p, $cx, $cw)
         : render_body_boxed($im, $body, $y, $p, $cx, $cw);
 
-    render_footer_simple($im, $y, $p, $name, $layout, $footerFontRole);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole);
 }
 
 function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
 {
+    $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
-    render_draw_bar($im, $p, $layout);
+    render_draw_decoration($im, $p, $preset['decoration']);
+    render_draw_bar($im, $p, $preset['barStyle']);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
-    $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [54, 48, 42, 38, 34], 2);
-    $lh = render_lh($hs);
-    foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 2, 'heading') as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
-        $y += $lh;
-    }
+    $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [54, 48, 42, 38, 34], 2, $p, $preset);
 
-    $y = render_headline_rule($im, $y, $p, $layout);
+    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
 
     $body = $slide['body'] ?? '';
-    $y = $layout === 'bold'
+    $y = $preset['barStyle'] === 'bold'
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
         : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
     if ($body !== '') {
@@ -902,32 +1223,29 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     // downstream should trust an LLM (or a manual edit) to actually
     // honor that; this is what keeps the fit-size ceiling below honest.
     $points = array_slice($slide['points'] ?? [], 0, 3);
-    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], fn ($item, $size) => render_numbered_card_height($item, $size, $layout));
+    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     foreach ($points as $i => $point) {
-        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $layout);
+        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
 
-    render_footer_simple($im, $y, $p, $name, $layout, $footerFontRole);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole);
 }
 
 function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
 {
+    $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
-    render_draw_bar($im, $p, $layout);
+    render_draw_decoration($im, $p, $preset['decoration']);
+    render_draw_bar($im, $p, $preset['barStyle']);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
-    $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [52, 46, 40, 36, 32], 2);
-    $lh = render_lh($hs);
-    foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 2, 'heading') as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
-        $y += $lh;
-    }
+    $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [52, 46, 40, 36, 32], 2, $p, $preset);
 
-    $y = render_headline_rule($im, $y, $p, $layout);
+    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
 
     $body = $slide['body'] ?? '';
-    $y = $layout === 'bold'
+    $y = $preset['barStyle'] === 'bold'
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
         : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
     if ($body !== '') {
@@ -937,34 +1255,31 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     // CTA is spec'd as a single "Exact CTA line" — cap defensively to 1
     // for the same reason Content/Single cap points to 3.
     $points = array_slice($slide['points'] ?? [], 0, 1);
-    $bannerSize = render_fit_font_size($points, $y, 802, [27, 24, 21, 19], fn ($item, $size) => render_cta_banner_height($item, $size, $layout));
+    $bannerSize = render_fit_font_size($points, $y, 802, [27, 24, 21, 19], fn ($item, $size) => render_cta_banner_height($item, $size, $preset['ctaStyle']));
     foreach ($points as $point) {
-        $y = render_cta_banner($im, $point, $y, $p, $bannerSize, $layout);
+        $y = render_cta_banner($im, $point, $y, $p, $bannerSize, $preset['ctaStyle']);
     }
 
-    render_footer_with_photo($im, $y, $p, $name, $photoPath, $layout, $footerFontRole);
+    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole);
 }
 
 function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
 {
+    $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
-    render_draw_bar($im, $p, $layout);
+    render_draw_decoration($im, $p, $preset['decoration']);
+    render_draw_bar($im, $p, $preset['barStyle']);
     $slide = $data['slides'][0];
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
-    $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [68, 60, 52, 46, 40], 3);
-    $lh = render_lh($hs);
-    foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 3, 'heading') as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
-        $y += $lh;
-    }
+    $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [68, 60, 52, 46, 40], 3, $p, $preset);
 
-    $y = render_headline_rule($im, $y, $p, $layout);
+    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
 
     // Boxed in classic (Single shares Hook's spec row) and bold (always
     // boxed); freestanding only in minimal.
     $body = $slide['body'] ?? '';
-    $y = $layout === 'minimal'
+    $y = $preset['barStyle'] === 'minimal'
         ? render_body_freestanding($im, $body, $y, $p, $cx, $cw)
         : render_body_boxed($im, $body, $y, $p, $cx, $cw);
     if ($body !== '') {
@@ -972,12 +1287,12 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     }
 
     $points = array_slice($slide['points'] ?? [], 0, 3);
-    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], fn ($item, $size) => render_numbered_card_height($item, $size, $layout));
+    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     foreach ($points as $i => $point) {
-        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $layout);
+        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
 
-    render_footer_simple($im, $y, $p, $name, $layout, $footerFontRole);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole);
 }
 
 // ── Main entry point ─────────────────────────────────────────────────
@@ -1000,7 +1315,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $footerFontRole = $userId ? get_footer_font_role($userId) : 'body';
 
     $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
-    $layout = in_array($data['layout'] ?? '', ['minimal', 'bold'], true) ? $data['layout'] : 'classic';
+    $layout = array_key_exists($data['layout'] ?? '', render_design_templates()) ? $data['layout'] : 'classic';
     $bgStyle = ($data['background'] ?? '') === 'gradient' ? 'gradient' : 'flat';
     $logoPath = $userId ? resolve_brand_logo($userId) : null;
     $slides = $data['slides'] ?? [];

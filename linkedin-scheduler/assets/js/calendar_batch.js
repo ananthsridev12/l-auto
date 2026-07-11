@@ -111,8 +111,8 @@
         } else if (tpl) {
           template = parseInt(tpl, 10);
         }
-        var layoutSelect = card.querySelector('.layout-select');
-        var layout = layoutSelect && layoutSelect.value !== 'classic' ? layoutSelect.value : null;
+        var layoutChecked = card.querySelector('.template-picker-wrap input:checked');
+        var layout = layoutChecked && layoutChecked.value !== 'classic' ? layoutChecked.value : null;
         var backgroundSelect = card.querySelector('.background-select');
         var background = backgroundSelect && backgroundSelect.value !== 'flat' ? backgroundSelect.value : null;
         postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background });

@@ -146,19 +146,32 @@
       templateWrap.appendChild(templateSelect);
       card.appendChild(templateWrap);
 
-      var layoutWrap = document.createElement('label');
-      layoutWrap.textContent = 'Design Template ';
-      var layoutSelect = document.createElement('select');
-      layoutSelect.className = 'layout-select';
-      [['classic', 'Classic'], ['minimal', 'Minimal'], ['bold', 'Bold Blocks']].forEach(function (opt) {
-        var o = document.createElement('option');
-        o.value = opt[0];
-        o.textContent = opt[1];
-        if ((c.layout || 'classic') === opt[0]) o.selected = true;
-        layoutSelect.appendChild(o);
+      var layoutLabel = document.createElement('label');
+      layoutLabel.textContent = 'Design Template';
+      card.appendChild(layoutLabel);
+      var layoutGrid = document.createElement('div');
+      layoutGrid.className = 'template-grid';
+      (window.DESIGN_TEMPLATES || []).forEach(function (t) {
+        var selected = (c.layout || 'classic') === t.id;
+        var opt = document.createElement('label');
+        opt.className = 'template-option' + (selected ? ' selected' : '');
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'design_template_' + idx;
+        input.value = t.id;
+        if (selected) input.checked = true;
+        var img = document.createElement('img');
+        img.src = t.thumb;
+        img.alt = t.name;
+        img.loading = 'lazy';
+        var span = document.createElement('span');
+        span.textContent = t.name;
+        opt.appendChild(input);
+        opt.appendChild(img);
+        opt.appendChild(span);
+        layoutGrid.appendChild(opt);
       });
-      layoutWrap.appendChild(layoutSelect);
-      card.appendChild(layoutWrap);
+      card.appendChild(layoutGrid);
 
       var backgroundWrap = document.createElement('label');
       backgroundWrap.textContent = 'Background ';
@@ -248,7 +261,8 @@
       } else {
         delete c.template;
       }
-      var layout = card.querySelector('.layout-select').value;
+      var layoutChecked = card.querySelector('.template-grid input:checked');
+      var layout = layoutChecked ? layoutChecked.value : 'classic';
       if (layout && layout !== 'classic') {
         c.layout = layout;
       } else {
