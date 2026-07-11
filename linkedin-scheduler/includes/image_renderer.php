@@ -341,13 +341,188 @@ function render_font_path(bool $bold, string $role = 'body'): string
     throw new RuntimeException('No usable TTF font found — upload an Inter Bold/Regular .ttf file to assets/fonts/.');
 }
 
+// ── Missing-glyph fallback ───────────────────────────────────────────
+// GD draws one font per imagettftext() call with no substitution, so a
+// character the font lacks (₹ was the reported case — many fonts,
+// including some Inter builds and the Liberation family, don't carry
+// U+20B9) renders as a tofu box. The fix: read each font's cmap table
+// to know exactly which codepoints it covers, and draw uncovered runs
+// with the bundled DejaVu Sans (broad currency/symbol coverage)
+// instead. Only render_text()/render_text_width() need to know — every
+// wrap/fit/emphasis helper is built on those two primitives.
+
+// Sorted [start, end] codepoint ranges the font can draw, parsed from
+// its cmap (format 12 preferred, else format 4). Returns null when the
+// table can't be parsed (font collections, exotic formats) — callers
+// treat null as "assume full coverage", preserving old behavior.
+function render_font_codepoint_ranges(string $fontPath): ?array
+{
+    static $cache = [];
+    if (array_key_exists($fontPath, $cache)) {
+        return $cache[$fontPath];
+    }
+    $cache[$fontPath] = null;
+    $data = @file_get_contents($fontPath);
+    if ($data === false || strlen($data) < 12) {
+        return null;
+    }
+    $sfnt = substr($data, 0, 4);
+    if (!in_array($sfnt, ["\x00\x01\x00\x00", 'OTTO', 'true'], true)) {
+        return null;
+    }
+    $numTables = unpack('n', substr($data, 4, 2))[1];
+    $cmapOffset = null;
+    for ($i = 0; $i < $numTables; $i++) {
+        $rec = 12 + $i * 16;
+        if (substr($data, $rec, 4) === 'cmap') {
+            $cmapOffset = unpack('N', substr($data, $rec + 8, 4))[1];
+            break;
+        }
+    }
+    if ($cmapOffset === null || $cmapOffset + 4 > strlen($data)) {
+        return null;
+    }
+    $numSubtables = unpack('n', substr($data, $cmapOffset + 2, 2))[1];
+    // Prefer a full-Unicode subtable (platform 3 encoding 10, or 0/4+),
+    // else the BMP one (3/1, or 0/3 and below).
+    $best = null;
+    $bestScore = -1;
+    for ($i = 0; $i < $numSubtables; $i++) {
+        $rec = $cmapOffset + 4 + $i * 8;
+        $platform = unpack('n', substr($data, $rec, 2))[1];
+        $encoding = unpack('n', substr($data, $rec + 2, 2))[1];
+        $offset = unpack('N', substr($data, $rec + 4, 4))[1];
+        $score = match (true) {
+            $platform === 3 && $encoding === 10 => 4,
+            $platform === 0 && $encoding >= 4   => 4,
+            $platform === 3 && $encoding === 1  => 3,
+            $platform === 0                     => 2,
+            default                             => 0,
+        };
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $best = $cmapOffset + $offset;
+        }
+    }
+    if ($best === null || $best + 2 > strlen($data)) {
+        return null;
+    }
+    $format = unpack('n', substr($data, $best, 2))[1];
+    $ranges = [];
+    if ($format === 12) {
+        $numGroups = unpack('N', substr($data, $best + 12, 4))[1];
+        for ($g = 0; $g < $numGroups; $g++) {
+            $rec = $best + 16 + $g * 12;
+            $start = unpack('N', substr($data, $rec, 4))[1];
+            $end = unpack('N', substr($data, $rec + 4, 4))[1];
+            $ranges[] = [$start, $end];
+        }
+    } elseif ($format === 4) {
+        $segCount = unpack('n', substr($data, $best + 6, 2))[1] / 2;
+        $endBase = $best + 14;
+        $startBase = $endBase + $segCount * 2 + 2;
+        for ($s = 0; $s < $segCount; $s++) {
+            $start = unpack('n', substr($data, $startBase + $s * 2, 2))[1];
+            $end = unpack('n', substr($data, $endBase + $s * 2, 2))[1];
+            if ($start === 0xFFFF) {
+                continue; // final sentinel segment, not real coverage
+            }
+            $ranges[] = [$start, $end];
+        }
+    } else {
+        return null;
+    }
+    usort($ranges, fn ($a, $b) => $a[0] <=> $b[0]);
+    $cache[$fontPath] = $ranges;
+    return $ranges;
+}
+
+function render_font_has_glyph(string $fontPath, int $codepoint): bool
+{
+    $ranges = render_font_codepoint_ranges($fontPath);
+    if ($ranges === null) {
+        return true; // unparseable font — assume coverage (old behavior)
+    }
+    $lo = 0;
+    $hi = count($ranges) - 1;
+    while ($lo <= $hi) {
+        $mid = ($lo + $hi) >> 1;
+        if ($codepoint < $ranges[$mid][0]) {
+            $hi = $mid - 1;
+        } elseif ($codepoint > $ranges[$mid][1]) {
+            $lo = $mid + 1;
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The font that covers characters the primary font lacks — bundled
+// DejaVu Sans first (present on any deploy of this repo), system DejaVu
+// as a dev-box fallback, null if neither exists (no substitution, boxes
+// stay — same as before this feature).
+function render_fallback_font_path(bool $bold): ?string
+{
+    $candidates = $bold
+        ? [__DIR__ . '/../assets/fonts/DejaVuSans-Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']
+        : [__DIR__ . '/../assets/fonts/DejaVuSans-Regular.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'];
+    foreach ($candidates as $path) {
+        if (is_file($path)) {
+            return $path;
+        }
+    }
+    return null;
+}
+
+// Splits $text into runs of [text, useFallback] — consecutive chars the
+// primary font covers stay in one run, chars it lacks (but the fallback
+// has) go to fallback runs. ASCII-only strings short-circuit to a single
+// primary run, so the per-character scan only ever runs on text that
+// actually contains non-ASCII characters.
+function render_split_font_runs(string $text, string $fontPath, bool $bold): array
+{
+    if (!preg_match('/[^\x00-\x7F]/', $text)) {
+        return [[$text, false]];
+    }
+    $fallback = render_fallback_font_path($bold);
+    if ($fallback === null) {
+        return [[$text, false]];
+    }
+    $runs = [];
+    $current = '';
+    $currentIsFallback = false;
+    foreach (preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $char) {
+        $cp = mb_ord($char, 'UTF-8');
+        $useFallback = $cp !== false && $cp > 0x7F
+            && !render_font_has_glyph($fontPath, $cp)
+            && render_font_has_glyph($fallback, $cp);
+        if ($current !== '' && $useFallback !== $currentIsFallback) {
+            $runs[] = [$current, $currentIsFallback];
+            $current = '';
+        }
+        $current .= $char;
+        $currentIsFallback = $useFallback;
+    }
+    if ($current !== '') {
+        $runs[] = [$current, $currentIsFallback];
+    }
+    return $runs;
+}
+
 function render_text_width(string $text, int $size, bool $bold, string $role = 'body'): float
 {
     if ($text === '') {
         return 0.0;
     }
-    $bbox = imagettfbbox($size, 0, render_font_path($bold, $role), $text);
-    return abs($bbox[2] - $bbox[0]);
+    $font = render_font_path($bold, $role);
+    $width = 0.0;
+    foreach (render_split_font_runs($text, $font, $bold) as [$run, $useFallback]) {
+        $runFont = $useFallback ? render_fallback_font_path($bold) : $font;
+        $bbox = imagettfbbox($size, 0, $runFont, $run);
+        $width += abs($bbox[2] - $bbox[0]);
+    }
+    return $width;
 }
 
 function render_ascent(int $size, bool $bold, string $role = 'body'): float
@@ -363,12 +538,22 @@ function render_ascent(int $size, bool $bold, string $role = 'body'): float
 
 // Draws text with $topY as the TOP of the text (like PIL's draw.text),
 // converting to GD's baseline-relative imagettftext() internally.
+// Characters the resolved font can't draw are rendered in the bundled
+// fallback font at the same size/baseline — see render_split_font_runs().
 function render_text($im, float $x, float $topY, string $text, int $size, bool $bold, int $color, string $role = 'body'): void
 {
     if ($text === '') {
         return;
     }
-    imagettftext($im, $size, 0, (int) round($x), (int) round($topY + render_ascent($size, $bold, $role)), $color, render_font_path($bold, $role), $text);
+    $font = render_font_path($bold, $role);
+    $baseline = (int) round($topY + render_ascent($size, $bold, $role));
+    $curX = $x;
+    foreach (render_split_font_runs($text, $font, $bold) as [$run, $useFallback]) {
+        $runFont = $useFallback ? render_fallback_font_path($bold) : $font;
+        imagettftext($im, $size, 0, (int) round($curX), $baseline, $color, $runFont, $run);
+        $bbox = imagettfbbox($size, 0, $runFont, $run);
+        $curX += abs($bbox[2] - $bbox[0]);
+    }
 }
 
 // ── Text utilities ───────────────────────────────────────────────────
