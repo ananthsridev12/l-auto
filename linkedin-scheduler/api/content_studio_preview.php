@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/csv_parser.php';
 require_once __DIR__ . '/../includes/content_studio_parser.php';
 require_once __DIR__ . '/../includes/creative_builder.php';
@@ -36,20 +37,26 @@ foreach ($preview['rows'] as &$entry) {
     if ($mechanical !== null) {
         $entry['source'] = 'written';
         $entry['creative'] = $mechanical;
-        continue;
-    }
-    if (!ai_configured($aiConfig)) {
+    } elseif (!ai_configured($aiConfig)) {
         $entry['skip'] = true;
         $entry['skip_reason'] = 'No Creative Content, and no AI provider configured in Settings';
         continue;
+    } else {
+        try {
+            $entry['source'] = 'ai';
+            $entry['creative'] = generate_creative_via_ai($row, $aiConfig, $brandBrief);
+        } catch (Throwable $e) {
+            $entry['skip'] = true;
+            $entry['skip_reason'] = 'AI generation failed: ' . $e->getMessage();
+            continue;
+        }
     }
-    try {
-        $entry['source'] = 'ai';
-        $entry['creative'] = generate_creative_via_ai($row, $aiConfig, $brandBrief);
-    } catch (Throwable $e) {
-        $entry['skip'] = true;
-        $entry['skip_reason'] = 'AI generation failed: ' . $e->getMessage();
-    }
+    // Auto-assign a Design Template (pillar match, else the user's
+    // per-format default, else 'classic') so the review step doesn't
+    // require picking one by hand for every row — the picker stays
+    // visible for override, it's just pre-selected sensibly now. See
+    // includes/post_helpers.php resolve_default_layout().
+    $entry['creative']['layout'] = resolve_default_layout($userId, $entry['creative']['format'], $row['Pillar'] ?? null);
 }
 unset($entry);
 

@@ -181,6 +181,37 @@ function set_footer_name_size(int $userId, ?int $size): void
     $stmt->execute([$size, $userId]);
 }
 
+// Per-user, per-format Design Template defaults, used by
+// includes/post_helpers.php resolve_default_layout() to auto-assign a
+// layout during bulk generation (Content Studio CSV upload, Content
+// Calendar Generator) instead of requiring one pick per row. Callers
+// are expected to validate $layout against render_design_templates()
+// before calling the setters (pages/settings.php does, since only it
+// has includes/image_renderer.php loaded at this point).
+function get_default_layout_single(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT default_layout_single FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    return $stmt->fetchColumn() ?: null;
+}
+
+function set_default_layout_single(int $userId, ?string $layout): void
+{
+    db()->prepare('UPDATE users SET default_layout_single = ? WHERE id = ?')->execute([$layout ?: null, $userId]);
+}
+
+function get_default_layout_carousel(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT default_layout_carousel FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    return $stmt->fetchColumn() ?: null;
+}
+
+function set_default_layout_carousel(int $userId, ?string $layout): void
+{
+    db()->prepare('UPDATE users SET default_layout_carousel = ? WHERE id = ?')->execute([$layout ?: null, $userId]);
+}
+
 function get_brand_brief(int $userId): ?string
 {
     $stmt = db()->prepare('SELECT brand_brief FROM users WHERE id = ?');

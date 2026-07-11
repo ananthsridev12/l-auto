@@ -90,16 +90,43 @@ function fetch_persona(int $userId, int $id): ?array
 
 function fetch_content_pillars(int $userId): array
 {
-    $stmt = db()->prepare('SELECT id, name, description, category FROM content_pillars WHERE user_id = ? ORDER BY name');
+    $stmt = db()->prepare('SELECT id, name, description, category, default_layout FROM content_pillars WHERE user_id = ? ORDER BY name');
     $stmt->execute([$userId]);
     return $stmt->fetchAll();
 }
 
 function fetch_content_pillar(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT id, name, description, category FROM content_pillars WHERE user_id = ? AND id = ?');
+    $stmt = db()->prepare('SELECT id, name, description, category, default_layout FROM content_pillars WHERE user_id = ? AND id = ?');
     $stmt->execute([$userId, $id]);
     return $stmt->fetch() ?: null;
+}
+
+// Auto-assigns a Design Template for bulk generation (Content Studio CSV
+// upload, Content Calendar Generator) so the review step doesn't need a
+// manual pick for every row — see schema.sql's comment on
+// content_pillars.default_layout / users.default_layout_single/_carousel.
+// $pillarName matches by name (the CSV's free-text "Pillar" column and a
+// content pillar's name share the same string, same convention
+// includes/creative_builder.php's series_label already relies on) rather
+// than ID, since Content Studio rows aren't linked to a content_pillars
+// row the way Calendar-generated posts are. A pillar match wins over the
+// per-user format default, which wins over 'classic'.
+function resolve_default_layout(int $userId, string $format, ?string $pillarName = null): string
+{
+    if ($pillarName) {
+        $stmt = db()->prepare('SELECT default_layout FROM content_pillars WHERE user_id = ? AND name = ? LIMIT 1');
+        $stmt->execute([$userId, $pillarName]);
+        $pillarLayout = $stmt->fetchColumn();
+        if ($pillarLayout) {
+            return $pillarLayout;
+        }
+    }
+    $stmt = db()->prepare('SELECT default_layout_single, default_layout_carousel FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch();
+    $layout = $format === 'carousel' ? ($row['default_layout_carousel'] ?? null) : ($row['default_layout_single'] ?? null);
+    return $layout ?: 'classic';
 }
 
 function fetch_cta_library(int $userId): array

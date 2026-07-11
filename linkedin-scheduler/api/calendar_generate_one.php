@@ -54,6 +54,9 @@ $brief = resolve_brief_for_pillar($userId, $pillar);
 
 try {
     $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar);
+    // Same auto-assignment Content Studio's CSV upload uses — see
+    // includes/post_helpers.php resolve_default_layout().
+    $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null);
 } catch (Throwable $e) {
     // Persisted (not just returned in this response) so the failure
     // reason survives to the content-review screen even after the

@@ -214,6 +214,25 @@ ALTER TABLE brand_palettes
 ALTER TABLE brand_palettes
   ADD COLUMN background_image_path VARCHAR(500) DEFAULT NULL;
 
+-- Auto-assigns a Design Template so bulk generation (Content Studio CSV
+-- upload, Content Calendar Generator) doesn't require picking one by
+-- hand for every row/post — see includes/post_helpers.php
+-- resolve_default_layout(), called from api/content_studio_preview.php
+-- and api/calendar_generate_one.php right after a row's creative JSON is
+-- built. Resolution order: a pillar match (this column) beats the
+-- per-user format default (users.default_layout_single/_carousel)
+-- beats 'classic'. NULL means "no pillar-specific override" — falls
+-- through to the format default.
+ALTER TABLE content_pillars
+  ADD COLUMN default_layout VARCHAR(50) DEFAULT NULL;
+
+-- Per-user format-level Design Template defaults — the fallback tier
+-- below content_pillars.default_layout above. NULL keeps today's
+-- 'classic' default.
+ALTER TABLE users
+  ADD COLUMN default_layout_single VARCHAR(50) DEFAULT NULL,
+  ADD COLUMN default_layout_carousel VARCHAR(50) DEFAULT NULL;
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow

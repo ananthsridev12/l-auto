@@ -93,15 +93,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim($_POST['pillar_name'] ?? '');
         $desc = trim($_POST['pillar_description'] ?? '');
         $category = ($_POST['pillar_category'] ?? '') === 'personal' ? 'personal' : 'company';
+        $layout = $_POST['pillar_layout'] ?? '';
+        $layout = array_key_exists($layout, render_design_templates()) ? $layout : null;
         if ($name === '') {
             flash('error', 'Enter a content pillar name.');
             redirect('pages/settings.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO content_pillars (user_id, name, description, category) VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category)'
+            'INSERT INTO content_pillars (user_id, name, description, category, default_layout) VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout)'
         );
-        $stmt->execute([$userId, $name, $desc, $category]);
+        $stmt->execute([$userId, $name, $desc, $category, $layout]);
         flash('success', "Content pillar \"{$name}\" saved.");
         redirect('pages/settings.php');
     }
@@ -110,6 +112,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = db()->prepare('DELETE FROM content_pillars WHERE id = ? AND user_id = ?');
         $stmt->execute([(int) ($_POST['pillar_id'] ?? 0), $userId]);
         flash('success', 'Content pillar removed.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'default_layout_formats') {
+        $templates = render_design_templates();
+        $single = $_POST['design_template_single'] ?? '';
+        $carousel = $_POST['design_template_carousel'] ?? '';
+        set_default_layout_single($userId, array_key_exists($single, $templates) ? $single : null);
+        set_default_layout_carousel($userId, array_key_exists($carousel, $templates) ? $carousel : null);
+        flash('success', 'Default Design Templates updated.');
         redirect('pages/settings.php');
     }
 
@@ -459,6 +471,8 @@ $brandBrief = get_brand_brief($userId);
 $selfBrief = get_self_brief($userId);
 $personas = fetch_personas($userId);
 $contentPillars = fetch_content_pillars($userId);
+$defaultLayoutSingle = get_default_layout_single($userId);
+$defaultLayoutCarousel = get_default_layout_carousel($userId);
 $ctaLibrary = fetch_cta_library($userId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 $brandPalettes = fetch_brand_palettes($userId);
@@ -905,6 +919,7 @@ require __DIR__ . '/../includes/layout_top.php';
         <div class="account-info">
           <span><?= h($cp['name']) ?></span>
           <span class="badge <?= $cp['category'] === 'personal' ? 'badge-format' : 'badge-active' ?>"><?= $cp['category'] === 'personal' ? 'Personal' : 'Company' ?></span>
+          <?php if ($cp['default_layout']): ?><span class="badge badge-campaign"><?= h(render_design_templates()[$cp['default_layout']]['name'] ?? $cp['default_layout']) ?></span><?php endif; ?>
           <span class="muted"><?= h(mb_strimwidth($cp['description'] ?? '', 0, 80, '…')) ?></span>
         </div>
         <form method="post" onsubmit="return confirm('Remove this content pillar?');">
@@ -933,7 +948,29 @@ require __DIR__ . '/../includes/layout_top.php';
     <label>Description <span class="muted">(optional)</span>
       <textarea name="pillar_description" rows="2"></textarea>
     </label>
+    <label>Design Template for this pillar <span class="muted">(optional — overrides your Single Image/Carousel defaults below for posts tagged with this pillar; re-saving this pillar without picking one clears the override back to Auto)</span>
+      <select name="pillar_layout">
+        <option value="">Auto (use my Single Image/Carousel default)</option>
+        <?php foreach (render_design_templates() as $tid => $t): ?>
+          <option value="<?= h($tid) ?>"<?= ($cp['default_layout'] ?? '') === $tid ? ' selected' : '' ?>><?= h($t['name']) ?></option>
+        <?php endforeach; ?>
+      </select>
+    </label>
     <button type="submit" class="btn-secondary">Add Content Pillar</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Default Design Templates</h2>
+  <p class="muted">Auto-assigns a Design Template during bulk generation (Content Studio CSV upload, Content Calendar Generator) so you don't have to pick one for every row by hand — the picker still shows on each row for a manual override, it's just already set sensibly. A Content Pillar's own Design Template above takes priority over these when a row/post is tagged with that pillar.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="default_layout_formats">
+    <label>Single Image posts</label>
+    <?= render_template_picker_html($defaultLayoutSingle ?: 'classic', '_single') ?>
+    <label>Carousel posts</label>
+    <?= render_template_picker_html($defaultLayoutCarousel ?: 'classic', '_carousel') ?>
+    <button type="submit" class="btn-secondary">Save Defaults</button>
   </form>
 </section>
 
