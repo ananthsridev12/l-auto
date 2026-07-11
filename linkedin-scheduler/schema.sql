@@ -248,6 +248,45 @@ ALTER TABLE users
   ADD COLUMN default_palette_single VARCHAR(50) DEFAULT NULL,
   ADD COLUMN default_palette_carousel VARCHAR(50) DEFAULT NULL;
 
+-- News-driven auto content (see includes/news_fetch.php, cron/news_daily.php,
+-- pages/news_studio.php). Topics = extra Google News search queries beyond
+-- the Content Pillar names that are always searched; items = fetched
+-- headlines, deduped per user by url_hash, each usable once as a draft.
+CREATE TABLE IF NOT EXISTS news_topics (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT NOT NULL,
+  query      VARCHAR(255) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_user_query (user_id, query)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS news_items (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  user_id           INT NOT NULL,
+  topic_query       VARCHAR(255) NOT NULL,
+  content_pillar_id INT NULL,
+  title             VARCHAR(500) NOT NULL,
+  url               VARCHAR(1000) NOT NULL,
+  url_hash          CHAR(40) NOT NULL,
+  source            VARCHAR(255) NULL,
+  published_at      DATETIME NULL,
+  fetched_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  status            ENUM('new','used','dismissed') NOT NULL DEFAULT 'new',
+  post_id           INT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (content_pillar_id) REFERENCES content_pillars(id) ON DELETE SET NULL,
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE SET NULL,
+  UNIQUE KEY uniq_user_url (user_id, url_hash),
+  INDEX idx_user_status (user_id, status, published_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 0 = news auto-drafting off (News Studio still works manually);
+-- news_drafts_per_day caps what cron/news_daily.php generates.
+ALTER TABLE users
+  ADD COLUMN news_auto_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN news_drafts_per_day TINYINT NOT NULL DEFAULT 2;
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow

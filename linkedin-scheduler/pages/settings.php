@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/zip_import.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
+require_once __DIR__ . '/../includes/news_fetch.php';
 
 require_login();
 $userId = current_user_id();
@@ -125,6 +126,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         set_default_palette_single($userId, validate_palette_select_value($userId, trim($_POST['default_palette_single'] ?? '')));
         set_default_palette_carousel($userId, validate_palette_select_value($userId, trim($_POST['default_palette_carousel'] ?? '')));
         flash('success', 'Default Design Templates updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'news_settings') {
+        $enabled = !empty($_POST['news_auto_enabled']) ? 1 : 0;
+        $perDay = max(1, min(5, (int) ($_POST['news_drafts_per_day'] ?? 2)));
+        db()->prepare('UPDATE users SET news_auto_enabled = ?, news_drafts_per_day = ? WHERE id = ?')
+            ->execute([$enabled, $perDay, $userId]);
+        flash('success', 'News auto-content settings saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'news_topic_add') {
+        $query = trim($_POST['news_query'] ?? '');
+        if ($query === '') {
+            flash('error', 'Enter a search keyword or phrase.');
+        } else {
+            add_news_topic($userId, $query);
+            flash('success', "News keyword \"{$query}\" added.");
+        }
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'news_topic_delete') {
+        delete_news_topic($userId, (int) ($_POST['topic_id'] ?? 0));
+        flash('success', 'News keyword removed.');
         redirect('pages/settings.php');
     }
 
@@ -478,6 +505,10 @@ $defaultLayoutSingle = get_default_layout_single($userId);
 $defaultLayoutCarousel = get_default_layout_carousel($userId);
 $defaultPaletteSingle = get_default_palette_single($userId);
 $defaultPaletteCarousel = get_default_palette_carousel($userId);
+$newsTopics = fetch_news_topics($userId);
+$newsSettingsStmt = db()->prepare('SELECT news_auto_enabled, news_drafts_per_day FROM users WHERE id = ?');
+$newsSettingsStmt->execute([$userId]);
+$newsSettings = $newsSettingsStmt->fetch() ?: ['news_auto_enabled' => 0, 'news_drafts_per_day' => 2];
 $ctaLibrary = fetch_cta_library($userId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 $brandPalettes = fetch_brand_palettes($userId);
@@ -1010,6 +1041,52 @@ require __DIR__ . '/../includes/layout_top.php';
       </select>
     </label>
     <button type="submit" class="btn-secondary">Save Defaults</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>News Auto-Content</h2>
+  <p class="muted">The <a href="<?= h(app_path('pages/news_studio.php')) ?>">News Studio</a> searches Google News for every Content Pillar name above, plus the extra keywords below, and turns trending headlines into draft posts written in your voice. With auto-drafting on, the daily cron generates drafts each morning for you to review — nothing is ever posted without your approval.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="news_settings">
+    <label class="checkbox-row">
+      <input type="checkbox" name="news_auto_enabled" value="1" <?= !empty($newsSettings['news_auto_enabled']) ? 'checked' : '' ?>>
+      Auto-generate news drafts daily (requires the news cron job — see cron/news_daily.php)
+    </label>
+    <label>Drafts per day
+      <select name="news_drafts_per_day">
+        <?php for ($n = 1; $n <= 5; $n++): ?>
+          <option value="<?= $n ?>"<?= (int) $newsSettings['news_drafts_per_day'] === $n ? ' selected' : '' ?>><?= $n ?></option>
+        <?php endfor; ?>
+      </select>
+    </label>
+    <button type="submit" class="btn-secondary">Save News Settings</button>
+  </form>
+  <h3 style="margin-top:20px;">Extra news keywords</h3>
+  <p class="muted">Searched in addition to your Content Pillar names — use these for topics you follow but don't have a pillar for (e.g. a competitor, a technology, an industry event).</p>
+  <?php if ($newsTopics): ?>
+    <?php foreach ($newsTopics as $nt): ?>
+      <div class="account-row">
+        <div class="account-info"><span><?= h($nt['query']) ?></span></div>
+        <form method="post">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="news_topic_delete">
+          <input type="hidden" name="topic_id" value="<?= (int) $nt['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No extra keywords yet — your Content Pillar names are always searched.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:12px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="news_topic_add">
+    <label>Keyword / phrase
+      <input type="text" name="news_query" placeholder="e.g. predictive maintenance India" required>
+    </label>
+    <button type="submit" class="btn-secondary">Add Keyword</button>
   </form>
 </section>
 

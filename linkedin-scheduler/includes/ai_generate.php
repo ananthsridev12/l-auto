@@ -83,6 +83,26 @@ RULES;
 function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null): string
 {
     $context = build_context_block($brandBrief, $persona, $pillar);
+
+    // News-reaction posts (includes/news_fetch.php news_generate_draft())
+    // pass the headline/source/date in the row's "News" field. Only the
+    // headline is ever shown to the model — the post must be the user's
+    // own commentary, not a rewrite of an article nobody pasted in.
+    $news = trim($row['News'] ?? '');
+    if ($news !== '') {
+        $context .= <<<NEWSBLOCK
+THIS POST IS A REACTION TO A CURRENT NEWS STORY:
+{$news}
+
+NEWS REACTION RULES:
+- Write the author's own first-person take: what this news means for their audience, a lesson from their experience it confirms or challenges, or a prediction — an opinion, not a news report
+- Reference the story in one short phrase early on so readers have context; assume they haven't seen the article
+- You only know the headline above. Do NOT invent details, quotes, or figures from the article — everything beyond the headline must come from the author's expertise
+- Do not copy or paraphrase the headline as the post's hook; lead with the author's angle on it
+
+
+NEWSBLOCK;
+    }
     $styleRules = AI_STYLE_RULES;
     $topic    = trim($row['Topic / Title'] ?? $row['Topic/Title'] ?? '');
     $personaLabel = trim($row['Target Persona'] ?? '');
