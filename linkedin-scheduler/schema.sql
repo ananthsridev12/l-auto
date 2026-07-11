@@ -287,6 +287,19 @@ ALTER TABLE users
   ADD COLUMN news_auto_enabled TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN news_drafts_per_day TINYINT NOT NULL DEFAULT 2;
 
+-- Trusted publishers for Google News results — when a user has any rows
+-- here, only headlines whose <source> matches an entry (domain or name,
+-- see includes/news_fetch.php news_source_is_trusted()) are stored.
+-- Empty = no filtering. Direct feed URLs in news_topics bypass this.
+CREATE TABLE IF NOT EXISTS news_trusted_sources (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT NOT NULL,
+  source     VARCHAR(255) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_user_source (user_id, source)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow

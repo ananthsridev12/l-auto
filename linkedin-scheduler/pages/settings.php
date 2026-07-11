@@ -141,11 +141,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'news_topic_add') {
         $query = trim($_POST['news_query'] ?? '');
         if ($query === '') {
-            flash('error', 'Enter a search keyword or phrase.');
+            flash('error', 'Enter a search keyword, phrase, or RSS feed URL.');
+        } elseif (news_topic_is_feed($query) && !filter_var($query, FILTER_VALIDATE_URL)) {
+            flash('error', 'That looks like a URL but isn\'t a valid one — check it and try again.');
         } else {
             add_news_topic($userId, $query);
-            flash('success', "News keyword \"{$query}\" added.");
+            flash('success', news_topic_is_feed($query) ? 'RSS feed added — it will be fetched directly.' : "News keyword \"{$query}\" added.");
         }
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'news_source_add') {
+        $source = trim($_POST['news_source'] ?? '');
+        if ($source === '') {
+            flash('error', 'Enter a publisher domain or name.');
+        } else {
+            add_news_trusted_source($userId, $source);
+            flash('success', "Trusted source \"{$source}\" added — Google News results are now limited to your trusted list.");
+        }
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'news_source_delete') {
+        delete_news_trusted_source($userId, (int) ($_POST['source_id'] ?? 0));
+        flash('success', 'Trusted source removed.');
         redirect('pages/settings.php');
     }
 
@@ -506,6 +525,7 @@ $defaultLayoutCarousel = get_default_layout_carousel($userId);
 $defaultPaletteSingle = get_default_palette_single($userId);
 $defaultPaletteCarousel = get_default_palette_carousel($userId);
 $newsTopics = fetch_news_topics($userId);
+$newsTrustedSources = fetch_news_trusted_sources($userId);
 $newsSettingsStmt = db()->prepare('SELECT news_auto_enabled, news_drafts_per_day FROM users WHERE id = ?');
 $newsSettingsStmt->execute([$userId]);
 $newsSettings = $newsSettingsStmt->fetch() ?: ['news_auto_enabled' => 0, 'news_drafts_per_day' => 2];
@@ -1063,12 +1083,15 @@ require __DIR__ . '/../includes/layout_top.php';
     </label>
     <button type="submit" class="btn-secondary">Save News Settings</button>
   </form>
-  <h3 style="margin-top:20px;">Extra news keywords</h3>
-  <p class="muted">Searched in addition to your Content Pillar names — use these for topics you follow but don't have a pillar for (e.g. a competitor, a technology, an industry event).</p>
+  <h3 style="margin-top:20px;">Extra news keywords &amp; RSS feeds</h3>
+  <p class="muted">Searched in addition to your Content Pillar names — use these for topics you follow but don't have a pillar for (e.g. a competitor, a technology, an industry event). You can also paste a publication's own <strong>RSS feed URL</strong> to fetch that feed directly instead of searching Google News — direct feeds skip the trusted-sources filter below, since adding one is itself the trust decision.</p>
   <?php if ($newsTopics): ?>
     <?php foreach ($newsTopics as $nt): ?>
       <div class="account-row">
-        <div class="account-info"><span><?= h($nt['query']) ?></span></div>
+        <div class="account-info">
+          <span><?= h($nt['query']) ?></span>
+          <?php if (news_topic_is_feed($nt['query'])): ?><span class="badge badge-scheduled">Direct feed</span><?php endif; ?>
+        </div>
         <form method="post">
           <input type="hidden" name="csrf" value="<?= h($token) ?>">
           <input type="hidden" name="form" value="news_topic_delete">
@@ -1083,10 +1106,36 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form" style="margin-top:12px;">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="news_topic_add">
-    <label>Keyword / phrase
-      <input type="text" name="news_query" placeholder="e.g. predictive maintenance India" required>
+    <label>Keyword, phrase, or RSS feed URL
+      <input type="text" name="news_query" placeholder="e.g. predictive maintenance India — or https://example.com/feed.xml" required>
     </label>
-    <button type="submit" class="btn-secondary">Add Keyword</button>
+    <button type="submit" class="btn-secondary">Add</button>
+  </form>
+
+  <h3 style="margin-top:20px;">Trusted sources</h3>
+  <p class="muted">Restrict Google News results to publishers you trust — enter a domain (<code>economictimes.indiatimes.com</code>) or a name (<code>Reuters</code>). While this list has entries, headlines from anyone else are dropped at fetch time. Leave it empty to allow all sources.</p>
+  <?php if ($newsTrustedSources): ?>
+    <?php foreach ($newsTrustedSources as $ns): ?>
+      <div class="account-row">
+        <div class="account-info"><span><?= h($ns['source']) ?></span></div>
+        <form method="post">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="news_source_delete">
+          <input type="hidden" name="source_id" value="<?= (int) $ns['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No trusted sources set — headlines from any publisher are accepted.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:12px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="news_source_add">
+    <label>Publisher domain or name
+      <input type="text" name="news_source" placeholder="e.g. economictimes.indiatimes.com or Reuters" required>
+    </label>
+    <button type="submit" class="btn-secondary">Add Trusted Source</button>
   </form>
 </section>
 

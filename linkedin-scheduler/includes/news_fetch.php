@@ -45,6 +45,72 @@ function delete_news_topic(int $userId, int $id): void
     db()->prepare('DELETE FROM news_topics WHERE id = ? AND user_id = ?')->execute([$id, $userId]);
 }
 
+// A topic entered as a URL is a direct RSS feed to fetch as-is, rather
+// than a Google News search query — lets the user pull from specific
+// publications they trust instead of (or on top of) open search.
+function news_topic_is_feed(string $query): bool
+{
+    return (bool) preg_match('#^https?://#i', trim($query));
+}
+
+// ── Trusted sources allowlist ────────────────────────────────────────
+// When non-empty, only Google News results whose publisher matches an
+// entry (domain or name) are kept — everything else is dropped at fetch
+// time. Direct feed URLs the user added themselves bypass this: adding
+// the feed IS the trust decision.
+
+function fetch_news_trusted_sources(int $userId): array
+{
+    $stmt = db()->prepare('SELECT id, source FROM news_trusted_sources WHERE user_id = ? ORDER BY source');
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
+}
+
+function add_news_trusted_source(int $userId, string $source): void
+{
+    $source = trim($source);
+    if ($source === '') {
+        return;
+    }
+    db()->prepare('INSERT IGNORE INTO news_trusted_sources (user_id, source) VALUES (?, ?)')->execute([$userId, mb_substr($source, 0, 255)]);
+}
+
+function delete_news_trusted_source(int $userId, int $id): void
+{
+    db()->prepare('DELETE FROM news_trusted_sources WHERE id = ? AND user_id = ?')->execute([$id, $userId]);
+}
+
+// "reuters.com", "www.reuters.com", "https://reuters.com/world" and
+// "Reuters" should all behave the same — reduce an entry (or an item's
+// domain) to a bare lowercase domain when it looks like one, else keep
+// it as a lowercase name for substring matching.
+function news_normalize_source_entry(string $entry): string
+{
+    $entry = mb_strtolower(trim($entry));
+    $entry = preg_replace('#^https?://#', '', $entry);
+    $entry = explode('/', $entry)[0];
+    return preg_replace('/^www\./', '', $entry);
+}
+
+function news_source_is_trusted(array $item, array $trustedEntries): bool
+{
+    $domain = news_normalize_source_entry((string) ($item['source_domain'] ?? ''));
+    $name = mb_strtolower((string) ($item['source'] ?? ''));
+    foreach ($trustedEntries as $entry) {
+        $t = news_normalize_source_entry($entry);
+        if ($t === '') {
+            continue;
+        }
+        if ($domain !== '' && ($domain === $t || str_ends_with($domain, '.' . $t))) {
+            return true;
+        }
+        if ($name !== '' && str_contains($name, $t)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // ── Query building ───────────────────────────────────────────────────
 
 // Every Content Pillar name is searched automatically (that's what the
@@ -55,10 +121,10 @@ function news_build_queries(int $userId): array
 {
     $queries = [];
     foreach (fetch_content_pillars($userId) as $pillar) {
-        $queries[] = ['query' => $pillar['name'], 'pillar_id' => (int) $pillar['id']];
+        $queries[] = ['query' => $pillar['name'], 'pillar_id' => (int) $pillar['id'], 'feed' => false];
     }
     foreach (fetch_news_topics($userId) as $topic) {
-        $queries[] = ['query' => $topic['query'], 'pillar_id' => null];
+        $queries[] = ['query' => $topic['query'], 'pillar_id' => null, 'feed' => news_topic_is_feed($topic['query'])];
     }
     // Dedupe by lowercased query text (a keyword duplicating a pillar
     // name would double-fetch the same feed) — first entry wins, so the
@@ -85,25 +151,30 @@ function news_feed_url(string $query): string
         . '&ceid=' . urlencode(NEWS_FEED_COUNTRY . ':' . $lang);
 }
 
-function news_fetch_feed_xml(string $query): string
+// Fetches raw feed XML — $target is either a search query (turned into
+// a Google News RSS URL) or, for direct feed topics, the feed URL itself.
+function news_fetch_feed_xml(string $target, bool $isFeedUrl = false): string
 {
-    $ch = curl_init(news_feed_url($query));
+    $url = $isFeedUrl ? $target : news_feed_url($target);
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 5,
         CURLOPT_TIMEOUT        => 20,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; LinkedInScheduler/1.0)',
     ]);
     $xml = curl_exec($ch);
+    $label = $isFeedUrl ? 'Feed fetch' : 'Google News fetch';
     if ($xml === false) {
         $err = curl_error($ch);
         curl_close($ch);
-        throw new RuntimeException("Google News fetch failed: {$err}");
+        throw new RuntimeException("{$label} failed: {$err}");
     }
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     if ($status !== 200) {
-        throw new RuntimeException("Google News fetch failed: HTTP {$status}");
+        throw new RuntimeException("{$label} failed: HTTP {$status}");
     }
     return $xml;
 }
@@ -132,13 +203,20 @@ function news_parse_feed(string $xml): array
         if ($source !== '' && str_ends_with($title, ' - ' . $source)) {
             $title = substr($title, 0, -strlen(' - ' . $source));
         }
+        // Publisher domain, for the trusted-sources allowlist: Google
+        // News carries it in <source url="...">; plain publication feeds
+        // have no <source> tag, but there the article link itself points
+        // at the publisher (unlike Google News's redirect links).
+        $sourceUrl = trim((string) ($item->source['url'] ?? ''));
+        $sourceDomain = parse_url($sourceUrl !== '' ? $sourceUrl : $url, PHP_URL_HOST) ?: null;
         $pubDate = trim((string) ($item->pubDate ?? ''));
         $publishedAt = $pubDate !== '' ? date('Y-m-d H:i:s', strtotime($pubDate) ?: time()) : null;
         $items[] = [
-            'title'        => $title,
-            'url'          => $url,
-            'source'       => $source ?: null,
-            'published_at' => $publishedAt,
+            'title'         => $title,
+            'url'           => $url,
+            'source'        => $source ?: null,
+            'source_domain' => $sourceDomain,
+            'published_at'  => $publishedAt,
         ];
     }
     return $items;
@@ -176,15 +254,32 @@ function news_store_items(int $userId, string $query, ?int $pillarId, array $ite
 
 // Fetches every query's feed and stores fresh items. Per-query failures
 // are collected, not fatal — one bad feed shouldn't lose the rest.
+// Google News results are filtered through the trusted-sources
+// allowlist when one is configured; direct feed URLs bypass it (adding
+// the feed was the trust decision).
 // Returns ['fetched' => queries tried, 'stored' => new items, 'errors' => [msg]].
 function news_refresh(int $userId): array
 {
     $stored = 0;
     $errors = [];
     $queries = news_build_queries($userId);
+    $trusted = array_column(fetch_news_trusted_sources($userId), 'source');
     foreach ($queries as $q) {
+        $isFeed = !empty($q['feed']);
         try {
-            $items = news_parse_feed(news_fetch_feed_xml($q['query']));
+            $items = news_parse_feed(news_fetch_feed_xml($q['query'], $isFeed));
+            if ($isFeed) {
+                // Plain publication feeds usually have no <source> tag —
+                // label items with the feed's host so the UI shows where
+                // they came from.
+                $feedHost = news_normalize_source_entry($q['query']);
+                foreach ($items as &$item) {
+                    $item['source'] = $item['source'] ?? $feedHost;
+                }
+                unset($item);
+            } elseif ($trusted) {
+                $items = array_values(array_filter($items, fn ($item) => news_source_is_trusted($item, $trusted)));
+            }
             $stored += news_store_items($userId, $q['query'], $q['pillar_id'], $items);
         } catch (Throwable $e) {
             $errors[] = "\"{$q['query']}\": " . $e->getMessage();
