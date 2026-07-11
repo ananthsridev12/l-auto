@@ -137,10 +137,12 @@ POST DETAILS:
 CAPTION:
 {$captionBlock}
 
-IMAGE TEXT RULES:
-- Headline: max 8 words, states the core idea
+IMAGE TEXT RULES (strict — the renderer truncates anything over these limits with an ellipsis, so staying within them is what keeps the image looking clean):
+- Headline: max 8 words, one line of thought, no trailing punctuation
 - Body: exactly 1 sentence, max 25 words
-- Points: exactly 3 short supporting points, max 10 words each — never leave points empty
+- Points: EXACTLY 3, max 10 words each, never empty
+- All 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — that always belongs in the caption or a CTA slide, never inside the points list.
+- Write like a specific, opinionated LinkedIn post, not a generic corporate summary — concrete nouns and numbers beat vague phrases like "leverage synergies" or "drive results"
 
 EXAMPLE of the right length and style (topic: quoting delays in manufacturing):
   Body: "Manual quoting creates delays, errors, and lost revenue."
@@ -179,13 +181,14 @@ POST DETAILS:
 CAPTION:
 {$captionBlock}
 
-SLIDE RULES:
+SLIDE RULES (strict — the renderer truncates anything over these limits with an ellipsis, so staying within them is what keeps every slide looking clean):
 - Slide 1 (Hook): Headline + Body only — NO points
-- Slides 2-4 (Content): Headline + Body + exactly 3 points
+- Slides 2-4 (Content): Headline + Body + EXACTLY 3 points
 - Slide 5 (CTA): Headline + Body + exactly 1 point, which is the CTA line
-- Headline: max 8 words
-- Body: max 25 words
+- Headline: max 8 words, one line of thought, no trailing punctuation
+- Body: exactly 1 sentence, max 25 words
 - Points: max 10 words each
+- Within one Content slide, all 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — save that for slide 5.
 
 EXAMPLE of the right length and style (topic: quoting delays in manufacturing, 4 slides):
   Slide 1 (Hook): "Your Quote Cycle Is Leaking Revenue" / "When quoting takes too long, deals fall through."

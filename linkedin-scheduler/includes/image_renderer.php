@@ -483,7 +483,7 @@ function render_numbered_card_height(string $text, int $fontSize, string $layout
     }
     [, , $cw] = render_content_edges();
     $badge = 44; $px = 20; $py = 15;
-    $lines = render_wrap($text, $fontSize, false, $cw - $badge - $px * 2 - 18);
+    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $badge - $px * 2 - 18, 2);
     $ch = max($badge + $py * 2, count($lines) * render_lh($fontSize) + $py * 2);
     return $ch + 14; // + the gap render_numbered_card() adds below each card
 }
@@ -495,7 +495,7 @@ function render_minimal_point_height(string $text, int $fontSize): float
     [, , $cw] = render_content_edges();
     $barW = 4; $gap = 16;
     $numW = render_text_width('00  ', $fontSize, true);
-    $lines = render_wrap($text, $fontSize, false, $cw - $barW - $gap - $numW);
+    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $barW - $gap - $numW, 2);
     return count($lines) * render_lh($fontSize) + 6 + 20; // top pad + gap below
 }
 
@@ -505,11 +505,11 @@ function render_cta_banner_height(string $text, int $fontSize, string $layout = 
     [, , $cw] = render_content_edges();
     $aw = render_text_width('→  ', $fontSize, true);
     if ($layout === 'minimal') {
-        $lines = render_wrap($text, $fontSize, true, $cw - $aw);
+        $lines = render_wrap_clamped($text, $fontSize, true, $cw - $aw, 2);
         return count($lines) * render_lh($fontSize) + 16; // no box, just the gap below
     }
     $pad = $layout === 'bold' ? 28 : 20;
-    $lines = render_wrap($text, $fontSize, true, $cw - $aw - $pad * 2);
+    $lines = render_wrap_clamped($text, $fontSize, true, $cw - $aw - $pad * 2, 2);
     return count($lines) * render_lh($fontSize) + $pad * 2 + 16; // + the gap below
 }
 
@@ -547,6 +547,25 @@ function render_fit_headline_size(string $text, float $maxPx, array $candidateSi
     return end($candidateSizes);
 }
 
+// render_fit_headline_size()'s smallest-candidate fallback is "best
+// effort" — a wide production font (real Inter, not this box's DejaVu
+// fallback) or a caption the AI over-length can still wrap past
+// $maxLines at every candidate size. Every drawing loop that iterates a
+// render_wrap() result and feeds the same text into a height-measurement
+// twin (card height, banner height, ...) must call this instead so the
+// two never disagree about how tall the text actually is — that
+// agreement is what keeps the footer clamp further down honest.
+function render_wrap_clamped(string $text, int $size, bool $bold, float $maxPx, int $maxLines, string $role = 'body'): array
+{
+    $lines = render_wrap($text, $size, $bold, $maxPx, $role);
+    if (count($lines) <= $maxLines) {
+        return $lines;
+    }
+    $lines = array_slice($lines, 0, $maxLines);
+    $lines[$maxLines - 1] = rtrim($lines[$maxLines - 1]) . '…';
+    return $lines;
+}
+
 // Big, faint number watermark in a card's right side — 'bold' layout's
 // signature decorative touch. Drawn before the badge/text so it sits
 // behind them. By this point in the pipeline $p holds already-allocated
@@ -573,7 +592,7 @@ function render_minimal_point($im, int $num, string $text, float $y, array $p, i
     $barW = 4; $gap = 16; $py = 6;
     $numLbl = sprintf('%02d', $num) . '  ';
     $numW = render_text_width($numLbl, $fontSize, true);
-    $lines = render_wrap($text, $fontSize, false, $cw - $barW - $gap - $numW);
+    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $barW - $gap - $numW, 2);
     $lineH = render_lh($fontSize);
     $textH = count($lines) * $lineH;
 
@@ -600,7 +619,7 @@ function render_numbered_card($im, int $num, string $text, float $y, array $p, i
     }
     [$cx, $rx, $cw] = render_content_edges();
     $fs = $fontSize; $badge = 44; $px = 20; $py = 15;
-    $lines = render_wrap($text, $fs, false, $cw - $badge - $px * 2 - 18);
+    $lines = render_wrap_clamped($text, $fs, false, $cw - $badge - $px * 2 - 18, 2);
     $lineH = render_lh($fs);
     $textH = count($lines) * $lineH;
     $ch = max($badge + $py * 2, $textH + $py * 2);
@@ -639,7 +658,7 @@ function render_cta_banner($im, string $text, float $y, array $p, int $fontSize 
         // directly on bg with no fill behind it, so it needs the same
         // guaranteed-readable role headline text uses, not a decorative
         // tint that's only ever meant to sit under accent_text.
-        $lines = render_wrap($text, $fs, true, $cw - $aw);
+        $lines = render_wrap_clamped($text, $fs, true, $cw - $aw, 2);
         render_text($im, $cx, $y, '→', $fs, true, $p['headline']);
         foreach ($lines as $i => $line) {
             render_text($im, $cx + $aw, $y + $i * $lh, $line, $fs, true, $p['headline']);
@@ -648,7 +667,7 @@ function render_cta_banner($im, string $text, float $y, array $p, int $fontSize 
     }
 
     $pad = $layout === 'bold' ? 28 : 20;
-    $lines = render_wrap($text, $fs, true, $cw - $aw - $pad * 2);
+    $lines = render_wrap_clamped($text, $fs, true, $cw - $aw - $pad * 2, 2);
     $ph = count($lines) * $lh + $pad * 2;
     render_rrect($im, $cx, $y, $rx, $y + $ph, $p['cta_bg'], 10);
     $ty = $y + ($ph - count($lines) * $lh) / 2;
@@ -724,7 +743,7 @@ function render_body_boxed($im, string $body, float $y, array $p, float $cx, flo
         return $y;
     }
     $blh = render_lh(27);
-    $lines = render_wrap($body, 27, false, $cw - 24);
+    $lines = render_wrap_clamped($body, 27, false, $cw - 24, 5);
     $ph = count($lines) * $blh + 28;
     render_rrect($im, $cx, $y, $cx + $cw, $y + $ph, $p['accent'], 10);
     $ty = $y + 14;
@@ -745,7 +764,7 @@ function render_body_freestanding($im, string $body, float $y, array $p, float $
     }
     $bs = render_fit_headline_size($body, $cw, [26, 23, 20], 3, false, 'body');
     $blh = render_lh($bs);
-    foreach (render_wrap($body, $bs, false, $cw, 'body') as $line) {
+    foreach (render_wrap_clamped($body, $bs, false, $cw, 3, 'body') as $line) {
         render_text($im, $cx, $y, $line, $bs, false, $p['body'], 'body');
         $y += $blh;
     }
@@ -772,7 +791,7 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     }
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [78, 68, 58, 50, 44], 2);
     $lh = render_lh($hs);
-    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw, 'heading') as $line) {
+    foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 2, 'heading') as $line) {
         render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
         $y += $lh;
     }
@@ -796,7 +815,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     $y = RENDER_PAD + 12;
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [54, 48, 42, 38, 34], 2);
     $lh = render_lh($hs);
-    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw, 'heading') as $line) {
+    foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 2, 'heading') as $line) {
         render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
         $y += $lh;
     }
@@ -811,7 +830,11 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
         $y += 22;
     }
 
-    $points = $slide['points'] ?? [];
+    // Defensively cap at exactly 3 regardless of what the AI/user
+    // supplied — the prompt already asks for exactly 3, but nothing
+    // downstream should trust an LLM (or a manual edit) to actually
+    // honor that; this is what keeps the fit-size ceiling below honest.
+    $points = array_slice($slide['points'] ?? [], 0, 3);
     $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], fn ($item, $size) => render_numbered_card_height($item, $size, $layout));
     foreach ($points as $i => $point) {
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $layout);
@@ -829,7 +852,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     $y = RENDER_PAD + 12;
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [52, 46, 40, 36, 32], 2);
     $lh = render_lh($hs);
-    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw, 'heading') as $line) {
+    foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 2, 'heading') as $line) {
         render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
         $y += $lh;
     }
@@ -844,7 +867,9 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
         $y += 22;
     }
 
-    $points = $slide['points'] ?? [];
+    // CTA is spec'd as a single "Exact CTA line" — cap defensively to 1
+    // for the same reason Content/Single cap points to 3.
+    $points = array_slice($slide['points'] ?? [], 0, 1);
     $bannerSize = render_fit_font_size($points, $y, 802, [27, 24, 21, 19], fn ($item, $size) => render_cta_banner_height($item, $size, $layout));
     foreach ($points as $point) {
         $y = render_cta_banner($im, $point, $y, $p, $bannerSize, $layout);
@@ -862,7 +887,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     $y = RENDER_PAD + 12;
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [68, 60, 52, 46, 40], 3);
     $lh = render_lh($hs);
-    foreach (render_wrap($slide['headline'] ?? '', $hs, true, $cw, 'heading') as $line) {
+    foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 3, 'heading') as $line) {
         render_text($im, $cx, $y, $line, $hs, true, $p['headline'], 'heading');
         $y += $lh;
     }
@@ -879,7 +904,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
         $y += 22;
     }
 
-    $points = $slide['points'] ?? [];
+    $points = array_slice($slide['points'] ?? [], 0, 3);
     $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], fn ($item, $size) => render_numbered_card_height($item, $size, $layout));
     foreach ($points as $i => $point) {
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $layout);
