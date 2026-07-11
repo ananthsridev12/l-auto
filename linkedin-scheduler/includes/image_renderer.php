@@ -476,7 +476,14 @@ function render_draw_background($im, array $paletteColors, string $bgStyle): voi
         imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, imagecolorallocate($im, $r, $g, $b));
         return;
     }
-    $bottom = mix_colors($top, $paletteColors['accent'], 0.18);
+    // Mixing toward accent (as opposed to headline/text) was too subtle
+    // to read as a gradient at all on palettes where accent is a close,
+    // low-contrast tint of bg (e.g. Cream) — headline is guaranteed high
+    // contrast against bg by design (it's the primary text color), so
+    // mixing toward it at 32% reliably reads as an intentional gradient
+    // on every palette while staying well short of headline's own
+    // darkness/lightness, so text drawn over it keeps its contrast margin.
+    $bottom = mix_colors($top, $paletteColors['headline'], 0.32);
     for ($y = 0; $y < RENDER_SIZE; $y++) {
         [$r, $g, $b] = mix_colors($top, $bottom, $y / (RENDER_SIZE - 1));
         imagefilledrectangle($im, 0, $y, RENDER_SIZE, $y, imagecolorallocate($im, $r, $g, $b));
