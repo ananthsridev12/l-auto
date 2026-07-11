@@ -204,3 +204,22 @@ function set_body_font(int $userId, ?int $fontId): void
 {
     db()->prepare('UPDATE users SET body_font_id = ? WHERE id = ?')->execute([$fontId ?: null, $userId]);
 }
+
+// Independent "Signature" font role for the footer name — separate from
+// Heading/Body, takes priority over get_footer_font_role()'s Heading/Body
+// toggle when set (see render_creative_to_slides()).
+function fetch_footer_font(int $userId): ?array
+{
+    $stmt = db()->prepare(
+        'SELECT bf.id, bf.name, bf.regular_path, bf.bold_path
+         FROM users u JOIN brand_fonts bf ON bf.id = u.footer_font_id
+         WHERE u.id = ? AND bf.user_id = ?'
+    );
+    $stmt->execute([$userId, $userId]);
+    return $stmt->fetch() ?: null;
+}
+
+function set_footer_font(int $userId, ?int $fontId): void
+{
+    db()->prepare('UPDATE users SET footer_font_id = ? WHERE id = ?')->execute([$fontId ?: null, $userId]);
+}

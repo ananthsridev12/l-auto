@@ -330,34 +330,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['form'] ?? '') === 'font_set_role') {
         $fontId = (int) ($_POST['font_id'] ?? 0);
-        $role = ($_POST['role'] ?? '') === 'body' ? 'body' : 'heading';
+        $role = in_array($_POST['role'] ?? '', ['body', 'footer'], true) ? $_POST['role'] : 'heading';
         if (!fetch_brand_font($userId, $fontId)) {
             flash('error', 'Font not found.');
             redirect('pages/settings.php');
         }
         if ($role === 'heading') {
             set_heading_font($userId, $fontId);
-        } else {
+        } elseif ($role === 'body') {
             set_body_font($userId, $fontId);
+        } else {
+            set_footer_font($userId, $fontId);
         }
-        flash('success', ucfirst($role) . ' font updated.');
+        $roleLabel = $role === 'footer' ? 'Signature' : ucfirst($role);
+        flash('success', "{$roleLabel} font updated.");
         redirect('pages/settings.php');
     }
 
     if (($_POST['form'] ?? '') === 'font_clear_role') {
-        $role = ($_POST['role'] ?? '') === 'body' ? 'body' : 'heading';
+        $role = in_array($_POST['role'] ?? '', ['body', 'footer'], true) ? $_POST['role'] : 'heading';
         if ($role === 'heading') {
             set_heading_font($userId, null);
-        } else {
+        } elseif ($role === 'body') {
             set_body_font($userId, null);
+        } else {
+            set_footer_font($userId, null);
         }
-        flash('success', ucfirst($role) . ' font reset to default (Inter).');
+        $roleLabel = $role === 'footer' ? 'Signature' : ucfirst($role);
+        $resetTo = $role === 'footer' ? 'the Heading/Body toggle' : 'default (Inter)';
+        flash('success', "{$roleLabel} font reset to {$resetTo}.");
         redirect('pages/settings.php');
     }
 
     if (($_POST['form'] ?? '') === 'footer_font_role') {
         set_footer_font_role($userId, $_POST['footer_font_role'] ?? 'body');
         flash('success', 'Footer name font updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'footer_name_style') {
+        $color = trim($_POST['footer_name_color'] ?? '');
+        set_footer_name_color($userId, $color !== '' ? $color : null);
+        $sizeRaw = trim($_POST['footer_name_size'] ?? '');
+        set_footer_name_size($userId, $sizeRaw !== '' ? (int) $sizeRaw : null);
+        flash('success', 'Signature style updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'footer_name_style_reset') {
+        set_footer_name_color($userId, null);
+        set_footer_name_size($userId, null);
+        flash('success', 'Signature color and size reset to automatic.');
         redirect('pages/settings.php');
     }
 
@@ -396,9 +419,12 @@ $brandPalettes = fetch_brand_palettes($userId);
 $brandFonts = fetch_brand_fonts($userId);
 $headingFontId = (int) (fetch_heading_font($userId)['id'] ?? 0);
 $bodyFontId = (int) (fetch_body_font($userId)['id'] ?? 0);
+$footerFontId = (int) (fetch_footer_font($userId)['id'] ?? 0);
 $ownedFontNames = array_map(fn ($bf) => strtolower($bf['name']), $brandFonts);
 $siteFonts = array_filter(scan_site_fonts(), fn ($sf) => !in_array(strtolower($sf['name']), $ownedFontNames, true));
 $footerFontRole = get_footer_font_role($userId);
+$footerNameColor = get_footer_name_color($userId);
+$footerNameSize = get_footer_name_size($userId);
 
 $footerImages = [];
 foreach (['logo', 'photo'] as $slot) {
@@ -618,15 +644,16 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card">
   <h2>Brand Fonts</h2>
-  <p class="muted">Upload your own typefaces (Regular + Bold, .ttf or .otf), or add one already on the server below without uploading — a library to pick from, not a single active font. Assign one to <strong>Heading</strong> (headline text) and one to <strong>Body</strong> (everything else — body text, numbered points, CTA banner, counter, footer) independently. Leave either unassigned to use the built-in Inter for that role.</p>
+  <p class="muted">Upload your own typefaces (Regular + Bold, .ttf or .otf), or add one already on the server below without uploading — a library to pick from, not a single active font. Assign one to <strong>Heading</strong> (headline text), one to <strong>Body</strong> (body text, numbered points, CTA banner, counter), and optionally one to <strong>Signature</strong> (the footer name) independently. Leave any unassigned to fall back to the next rule — Signature falls back to the Heading/Body toggle below, Heading/Body fall back to the built-in Inter.</p>
   <?php if ($brandFonts): ?>
     <?php foreach ($brandFonts as $bf): ?>
-      <?php $isHeading = (int) $bf['id'] === $headingFontId; $isBody = (int) $bf['id'] === $bodyFontId; ?>
+      <?php $isHeading = (int) $bf['id'] === $headingFontId; $isBody = (int) $bf['id'] === $bodyFontId; $isFooter = (int) $bf['id'] === $footerFontId; ?>
       <div class="account-row">
         <div class="account-info">
           <span><?= h($bf['name']) ?></span>
           <?php if ($isHeading): ?><span class="badge badge-active">Heading</span><?php endif; ?>
           <?php if ($isBody): ?><span class="badge badge-active">Body</span><?php endif; ?>
+          <?php if ($isFooter): ?><span class="badge badge-active">Signature</span><?php endif; ?>
         </div>
         <div class="inline-form">
           <?php if (!$isHeading): ?>
@@ -647,6 +674,15 @@ require __DIR__ . '/../includes/layout_top.php';
               <button type="submit" class="btn-tiny">Use for Body</button>
             </form>
           <?php endif; ?>
+          <?php if (!$isFooter): ?>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="font_set_role">
+              <input type="hidden" name="role" value="footer">
+              <input type="hidden" name="font_id" value="<?= (int) $bf['id'] ?>">
+              <button type="submit" class="btn-tiny">Use for Signature</button>
+            </form>
+          <?php endif; ?>
           <form method="post" onsubmit="return confirm('Remove this font?');">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
             <input type="hidden" name="form" value="font_delete">
@@ -659,7 +695,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php else: ?>
     <p class="muted">No custom fonts yet — Inter is used for both roles.</p>
   <?php endif; ?>
-  <?php if ($headingFontId || $bodyFontId): ?>
+  <?php if ($headingFontId || $bodyFontId || $footerFontId): ?>
     <div class="inline-form" style="margin-top:8px;">
       <?php if ($headingFontId): ?>
         <form method="post">
@@ -675,6 +711,14 @@ require __DIR__ . '/../includes/layout_top.php';
           <input type="hidden" name="form" value="font_clear_role">
           <input type="hidden" name="role" value="body">
           <button type="submit" class="btn-tiny btn-danger">Reset Body to Inter</button>
+        </form>
+      <?php endif; ?>
+      <?php if ($footerFontId): ?>
+        <form method="post">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="font_clear_role">
+          <input type="hidden" name="role" value="footer">
+          <button type="submit" class="btn-tiny btn-danger">Reset Signature to Heading/Body toggle</button>
         </form>
       <?php endif; ?>
     </div>
@@ -715,7 +759,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form" style="margin-top:16px;">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="footer_font_role">
-    <label>Footer name font
+    <label>Footer name font <span class="muted">(used only when no dedicated Signature font is assigned above)</span>
       <select name="footer_font_role">
         <option value="body" <?= $footerFontRole === 'body' ? 'selected' : '' ?>>Body font</option>
         <option value="heading" <?= $footerFontRole === 'heading' ? 'selected' : '' ?>>Heading font</option>
@@ -723,6 +767,24 @@ require __DIR__ . '/../includes/layout_top.php';
     </label>
     <button type="submit" class="btn-secondary">Save</button>
   </form>
+
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="footer_name_style">
+    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="footer_name_color" <?= $footerNameColor === null ? 'checked' : '' ?>> Auto-generate Signature color</label>
+    <label>Signature color <input type="color" name="footer_name_color" value="<?= h($footerNameColor ?: '#000000') ?>" <?= $footerNameColor === null ? 'disabled' : '' ?>></label>
+    <label>Signature size <span class="muted">(px, applies to Hook/Content/Single slides — the CTA slide's signature stays proportionally larger, same as today)</span>
+      <input type="number" name="footer_name_size" min="16" max="80" placeholder="Auto (33px)" value="<?= h($footerNameSize !== null ? (string) $footerNameSize : '') ?>">
+    </label>
+    <button type="submit" class="btn-secondary">Save</button>
+  </form>
+  <?php if ($footerNameColor !== null || $footerNameSize !== null): ?>
+    <form method="post" style="margin-top:8px;">
+      <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <input type="hidden" name="form" value="footer_name_style_reset">
+      <button type="submit" class="btn-tiny btn-danger">Reset Signature color/size to Auto</button>
+    </form>
+  <?php endif; ?>
 </section>
 
 <section class="card">

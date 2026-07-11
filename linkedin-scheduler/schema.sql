@@ -167,6 +167,24 @@ ALTER TABLE users
 ALTER TABLE users
   ADD COLUMN footer_font_role ENUM('heading','body') NOT NULL DEFAULT 'body';
 
+-- Independent "Signature" font for the footer name, separate from
+-- Heading/Body — takes priority over footer_font_role above when set.
+-- NULL falls back to the Heading/Body toggle (unchanged default).
+ALTER TABLE users
+  ADD COLUMN footer_font_id INT DEFAULT NULL,
+  ADD FOREIGN KEY (footer_font_id) REFERENCES brand_fonts(id) ON DELETE SET NULL;
+
+-- Manual overrides for the footer signature's color and size — see
+-- includes/image_renderer.php render_footer_simple()/render_footer_with_photo().
+-- NULL keeps the existing auto-derived palette color / auto size for
+-- both, i.e. unchanged default behavior for anyone who hasn't touched
+-- these Settings fields. footer_name_size is stored as a literal
+-- rendered pixel size (not the internal 1080-design-basis unit render.php
+-- scales from) so what a user types is exactly what they get.
+ALTER TABLE users
+  ADD COLUMN footer_name_color VARCHAR(7) DEFAULT NULL,
+  ADD COLUMN footer_name_size INT DEFAULT NULL;
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow

@@ -1095,11 +1095,16 @@ function render_cta_banner($im, string $text, float $y, array $p, int $fontSize 
 // the canvas edge — shrinks in 2px steps until it fits $maxPx, the same
 // "auto-shrink rather than overflow" precedent every other
 // variable-length text in this file follows (render_fit_headline_size(),
-// render_fit_font_size()). Best-effort like those: an absurdly long name
-// can still hit the floor and slightly overflow.
+// render_fit_font_size()). The floor is a fixed low value, not
+// proportional to $preferredSize — $preferredSize can be pushed well
+// past its built-in default by a manual Settings size override
+// (get_footer_name_size()), and a floor scaled off that inflated value
+// stops shrinking long before the text actually fits. Best-effort like
+// render_fit_headline_size()'s smallest-candidate fallback: an
+// absurdly long name at this floor can still slightly overflow.
 function render_fit_footer_name_size(string $name, float $maxPx, int $preferredSize, string $fontRole): int
 {
-    $floor = (int) round($preferredSize * 0.6);
+    $floor = 14;
     for ($size = $preferredSize; $size > $floor; $size -= 2) {
         if (render_text_width($name, $size, true, $fontRole) <= $maxPx) {
             return $size;
@@ -1112,35 +1117,45 @@ function render_fit_footer_name_size(string $name, float $maxPx, int $preferredS
 // (exactly 3 points, word-count limits, render_fit_headline_size() /
 // render_fit_font_size() auto-shrink) are what keep content from ever
 // reaching this ceiling; the footer itself just trusts that and holds
-// its documented position. $fontRole ('heading' or 'body') is the
-// per-user Settings toggle for which typeface the footer *name* uses —
-// see includes/helpers.php get_footer_font_role().
-function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body'): void
+// its documented position. $fontRole ('heading', 'body', or 'footer' if
+// the user assigned a dedicated Signature font) is the per-user Settings
+// choice for which typeface the footer *name* uses — see
+// includes/helpers.php get_footer_font_role() and
+// includes/post_helpers.php fetch_footer_font(). $nameColorRgb/
+// $nameSizeOverride are the manual Settings overrides for the name's
+// color/size (see includes/helpers.php get_footer_name_color()/
+// get_footer_name_size()) — null for either keeps today's auto-derived
+// palette color / auto size, so existing users see no change.
+function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null): void
 {
     [$cx, $rx] = render_content_edges();
     $fy = max(rs(800), min($contentY + rs(50), RENDER_SIZE - RENDER_PAD - rs(56)));
+    $nameColor = $nameColorRgb ? imagecolorallocate($im, $nameColorRgb[0], $nameColorRgb[1], $nameColorRgb[2]) : null;
 
     // 26 (was 22) — the footer signature is the smallest bold text in the
     // whole composition, so GD's anti-aliasing artifacts on small bold
     // curves are proportionally most visible here; a few extra px makes
     // those edges a smaller fraction of each letter and reads noticeably
-    // cleaner without changing the overall footer layout.
+    // cleaner without changing the overall footer layout. $nameSizeOverride
+    // is a literal rendered pixel size (not run through rs() again) —
+    // see schema.sql's comment on users.footer_name_size.
+    $preferred = $nameSizeOverride ?? rs(26);
     if ($layout === 'bold') {
         $padX = rs(16); $padY = rs(10);
-        $nameSize = render_fit_footer_name_size($name, ($rx - $cx) - $padX * 2, rs(26), $fontRole);
+        $nameSize = render_fit_footer_name_size($name, ($rx - $cx) - $padX * 2, $preferred, $fontRole);
         $w = render_text_width($name, $nameSize, true, $fontRole);
         render_rrect($im, $cx, $fy, $cx + $w + $padX * 2, $fy + $nameSize + $padY * 2, $p['accent'], rs(8));
-        render_text($im, $cx + $padX, $fy + $padY, $name, $nameSize, true, $p['accent_text'], $fontRole);
+        render_text($im, $cx + $padX, $fy + $padY, $name, $nameSize, true, $nameColor ?? $p['accent_text'], $fontRole);
         return;
     }
     if ($layout !== 'minimal') {
         imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + rs(2), $p['divider']);
     }
-    $nameSize = render_fit_footer_name_size($name, $rx - $cx, rs(26), $fontRole);
-    render_text($im, $cx, $fy + rs(12), $name, $nameSize, true, $p['name'], $fontRole);
+    $nameSize = render_fit_footer_name_size($name, $rx - $cx, $preferred, $fontRole);
+    render_text($im, $cx, $fy + rs(12), $name, $nameSize, true, $nameColor ?? $p['name'], $fontRole);
 }
 
-function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body'): void
+function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null): void
 {
     [$cx, $rx] = render_content_edges();
     $fy = max(rs(720), min($contentY + rs(50), RENDER_SIZE - RENDER_PAD - rs(148)));
@@ -1152,6 +1167,12 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
         imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + rs(2), $p['divider']);
     }
     $py = $fy + rs(14);
+    $nameColor = $nameColorRgb ? imagecolorallocate($im, $nameColorRgb[0], $nameColorRgb[1], $nameColorRgb[2]) : null;
+    // This slide's signature always renders larger than render_footer_simple()'s
+    // (32 vs 26 design px) as an intentional sign-off emphasis — a manual
+    // size override keeps that same ratio rather than flattening it, so
+    // the CTA slide's signature stays proportionally bigger either way.
+    $preferred = $nameSizeOverride ? (int) round($nameSizeOverride * (rs(32) / rs(26))) : rs(32);
 
     $photoSize = rs(108);
     $circle = $photoPath ? render_circular_photo($photoPath, $photoSize) : null;
@@ -1165,15 +1186,15 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
         // vertically centered against. Name width is fit-checked against
         // the space right of the photo — see render_fit_footer_name_size().
         $nx = $cx + $photoSize + rs(18);
-        $nameSize = render_fit_footer_name_size($name, $rx - $nx, rs(32), $fontRole);
+        $nameSize = render_fit_footer_name_size($name, $rx - $nx, $preferred, $fontRole);
         $nfh = render_lh($nameSize);
         $blockH = $nfh + render_lh(rs(22));
         $ny = $py + ($photoSize - $blockH) / 2;
-        render_text($im, $nx, $ny, $name, $nameSize, true, $p['headline'], $fontRole);
+        render_text($im, $nx, $ny, $name, $nameSize, true, $nameColor ?? $p['headline'], $fontRole);
         render_text($im, $nx, $ny + $nfh, 'Follow for more insights', rs(22), false, $p['body']);
     } else {
-        $nameSize = render_fit_footer_name_size($name, $rx - $cx, rs(32), $fontRole);
-        render_text($im, $cx, $py + rs(10), $name, $nameSize, true, $p['headline'], $fontRole);
+        $nameSize = render_fit_footer_name_size($name, $rx - $cx, $preferred, $fontRole);
+        render_text($im, $cx, $py + rs(10), $name, $nameSize, true, $nameColor ?? $p['headline'], $fontRole);
     }
 }
 
@@ -1276,7 +1297,7 @@ function render_resolve_design_preset(string $id): array
 
 // ── Slide renderers ──────────────────────────────────────────────────
 
-function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
+function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1292,7 +1313,7 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
         return;
     }
 
@@ -1305,10 +1326,10 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
         ? render_body_freestanding($im, $body, $y, $p, $cx, $cw)
         : render_body_boxed($im, $body, $y, $p, $cx, $cw);
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
 }
 
-function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
+function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1320,7 +1341,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
         return;
     }
 
@@ -1346,10 +1367,10 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
 }
 
-function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
+function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1361,7 +1382,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole);
+        render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
         return;
     }
 
@@ -1385,10 +1406,10 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
         $y = render_cta_banner($im, $point, $y, $p, $bannerSize, $preset['ctaStyle']);
     }
 
-    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole);
+    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
 }
 
-function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
+function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1400,7 +1421,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
         return;
     }
 
@@ -1424,7 +1445,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
 }
 
 // ── Main entry point ─────────────────────────────────────────────────
@@ -1444,7 +1465,19 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $bodyFont = $userId ? fetch_body_font($userId) : null;
     render_font_override_role('heading', $headingFont ? ['regular' => $headingFont['regular_path'], 'bold' => $headingFont['bold_path']] : null, true);
     render_font_override_role('body', $bodyFont ? ['regular' => $bodyFont['regular_path'], 'bold' => $bodyFont['bold_path']] : null, true);
+
+    // An independent "Signature" font (fetch_footer_font()) takes priority
+    // over the Heading/Body toggle (get_footer_font_role()) when the user
+    // has assigned one — see includes/post_helpers.php fetch_footer_font().
     $footerFontRole = $userId ? get_footer_font_role($userId) : 'body';
+    $footerFont = $userId ? fetch_footer_font($userId) : null;
+    if ($footerFont) {
+        render_font_override_role('footer', ['regular' => $footerFont['regular_path'], 'bold' => $footerFont['bold_path']], true);
+        $footerFontRole = 'footer';
+    }
+    $footerNameColorHex = $userId ? get_footer_name_color($userId) : null;
+    $footerNameColorRgb = $footerNameColorHex ? hex_to_rgb($footerNameColorHex) : null;
+    $footerNameSizeOverride = $userId ? get_footer_name_size($userId) : null;
 
     $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
     $layout = array_key_exists($data['layout'] ?? '', render_design_templates()) ? $data['layout'] : 'classic';
@@ -1462,7 +1495,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
         render_draw_background($im, $paletteColors, $bgStyle);
         $p = render_allocate_palette_colors($im, $paletteColors);
-        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath);
+        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
         $filename = 'slide_01.png';
         $path = $outDir . '/' . $filename;
         imagepng($im, $path);
@@ -1478,11 +1511,11 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $p = render_allocate_palette_colors($im, $paletteColors);
 
         if ($n === 1) {
-            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath);
+            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
         } elseif ($n === $total) {
-            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath);
+            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
         } else {
-            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath);
+            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
         }
 
         $filename = sprintf('slide_%02d.png', $n);
