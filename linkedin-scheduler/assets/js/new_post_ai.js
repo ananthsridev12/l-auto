@@ -278,6 +278,13 @@
     } else {
       delete currentCreative.template;
     }
+    var layoutSelect = document.getElementById('aiLayoutSelect');
+    var layout = layoutSelect ? layoutSelect.value : 'classic';
+    if (layout && layout !== 'classic') {
+      currentCreative.layout = layout;
+    } else {
+      delete currentCreative.layout;
+    }
     return currentCreative;
   }
 

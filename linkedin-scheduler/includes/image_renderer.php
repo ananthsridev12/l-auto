@@ -425,9 +425,18 @@ function render_circular_photo(string $photoPath, int $sz)
 
 // ── Layout primitives (direct ports of render.py) ───────────────────
 
-function render_draw_bar($im, array $p): void
+// $layout is one of 'classic' (default), 'minimal', 'bold' — see
+// pages/*.php "Design Template" pickers and render_creative_to_slides().
+// 'minimal' drops the bar entirely; 'bold' widens it for more visual
+// weight; content positioning (render_content_edges()) stays fixed
+// across all three so this never has to move where text starts.
+function render_draw_bar($im, array $p, string $layout = 'classic'): void
 {
-    imagefilledrectangle($im, 0, 0, RENDER_BAR, RENDER_SIZE, $p['bar']);
+    if ($layout === 'minimal') {
+        return;
+    }
+    $width = $layout === 'bold' ? 14 : RENDER_BAR;
+    imagefilledrectangle($im, 0, 0, $width, RENDER_SIZE, $p['bar']);
 }
 
 function render_draw_counter($im, int $n, int $total, array $p): void
@@ -446,10 +455,32 @@ function render_draw_rule($im, float $y, array $p): float
     return $y + $gapAbove + $thick + $gapBelow;
 }
 
+// The divider between headline and body — 'classic' is render_draw_rule()
+// unchanged, 'minimal' is just whitespace (no line), 'bold' is a thicker
+// solid block for more visual weight.
+function render_headline_rule($im, float $y, array $p, string $layout = 'classic'): float
+{
+    if ($layout === 'minimal') {
+        return $y + 14 + 22;
+    }
+    if ($layout === 'bold') {
+        [$cx] = render_content_edges();
+        $gapAbove = 14; $thick = 8; $gapBelow = 22;
+        imagefilledrectangle($im, (int) $cx, (int) ($y + $gapAbove), (int) ($cx + 100), (int) ($y + $gapAbove + $thick), $p['rule']);
+        return $y + $gapAbove + $thick + $gapBelow;
+    }
+    return render_draw_rule($im, $y, $p);
+}
+
 // Pure measurement, no drawing — mirrors render_numbered_card()'s height
 // math exactly so render_fit_font_size() can pick a size before drawing.
-function render_numbered_card_height(string $text, int $fontSize): float
+// 'bold' reuses this unchanged (its watermark is purely decorative, adds
+// no real height); 'minimal' has its own, smaller formula below.
+function render_numbered_card_height(string $text, int $fontSize, string $layout = 'classic'): float
 {
+    if ($layout === 'minimal') {
+        return render_minimal_point_height($text, $fontSize);
+    }
     [, , $cw] = render_content_edges();
     $badge = 44; $px = 20; $py = 15;
     $lines = render_wrap($text, $fontSize, false, $cw - $badge - $px * 2 - 18);
@@ -457,13 +488,29 @@ function render_numbered_card_height(string $text, int $fontSize): float
     return $ch + 14; // + the gap render_numbered_card() adds below each card
 }
 
+// Minimal layout's point style has no badge, so its floor is text height
+// alone rather than classic/bold's 44px-badge-driven minimum.
+function render_minimal_point_height(string $text, int $fontSize): float
+{
+    [, , $cw] = render_content_edges();
+    $barW = 4; $gap = 16;
+    $numW = render_text_width('00  ', $fontSize, true);
+    $lines = render_wrap($text, $fontSize, false, $cw - $barW - $gap - $numW);
+    return count($lines) * render_lh($fontSize) + 6 + 20; // top pad + gap below
+}
+
 // Pure measurement, no drawing — mirrors render_cta_banner()'s height math.
-function render_cta_banner_height(string $text, int $fontSize): float
+function render_cta_banner_height(string $text, int $fontSize, string $layout = 'classic'): float
 {
     [, , $cw] = render_content_edges();
     $aw = render_text_width('→  ', $fontSize, true);
-    $lines = render_wrap($text, $fontSize, true, $cw - $aw - 40);
-    return count($lines) * render_lh($fontSize) + 40 + 16; // + the gap below
+    if ($layout === 'minimal') {
+        $lines = render_wrap($text, $fontSize, true, $cw - $aw);
+        return count($lines) * render_lh($fontSize) + 16; // no box, just the gap below
+    }
+    $pad = $layout === 'bold' ? 28 : 20;
+    $lines = render_wrap($text, $fontSize, true, $cw - $aw - $pad * 2);
+    return count($lines) * render_lh($fontSize) + $pad * 2 + 16; // + the gap below
 }
 
 // Picks the largest candidate font size (assumed descending) whose
@@ -500,8 +547,57 @@ function render_fit_headline_size(string $text, float $maxPx, array $candidateSi
     return end($candidateSizes);
 }
 
-function render_numbered_card($im, int $num, string $text, float $y, array $p, int $fontSize = 26): float
+// Big, faint number watermark in a card's right side — 'bold' layout's
+// signature decorative touch. Drawn before the badge/text so it sits
+// behind them. By this point in the pipeline $p holds already-allocated
+// GD color indices (not RGB triplets — see render_allocate_palette_colors()),
+// so the tint is made on the fly from badge_bg's own RGB rather than via
+// a new palette role; using badge_bg (not accent, the card's own fill)
+// keeps enough contrast against the card background to actually read.
+function render_point_watermark($im, int $num, float $cx, float $y, float $rx, float $ch, array $p): void
 {
+    $rgb = imagecolorsforindex($im, $p['badge_bg']);
+    $tint = imagecolorallocatealpha($im, $rgb['red'], $rgb['green'], $rgb['blue'], 100);
+    $size = (int) min(90, $ch * 0.9);
+    $lbl = sprintf('%02d', $num);
+    $w = render_text_width($lbl, $size, true);
+    render_text($im, $rx - $w - 16, $y + ($ch - $size) / 2 - $size * 0.15, $lbl, $size, true, $tint);
+}
+
+// Minimal layout's point style: a slim accent-colored bar instead of a
+// filled card, the number as plain bold text instead of a pill badge —
+// see render_minimal_point_height() for the matching measurement.
+function render_minimal_point($im, int $num, string $text, float $y, array $p, int $fontSize): float
+{
+    [$cx, , $cw] = render_content_edges();
+    $barW = 4; $gap = 16; $py = 6;
+    $numLbl = sprintf('%02d', $num) . '  ';
+    $numW = render_text_width($numLbl, $fontSize, true);
+    $lines = render_wrap($text, $fontSize, false, $cw - $barW - $gap - $numW);
+    $lineH = render_lh($fontSize);
+    $textH = count($lines) * $lineH;
+
+    imagefilledrectangle($im, (int) $cx, (int) ($y + $py), (int) ($cx + $barW), (int) ($y + $py + $textH), $p['accent']);
+
+    // body, not accent, for the number itself — accent is only ever a
+    // guaranteed-safe fill/tint color, not guaranteed readable as text
+    // directly on bg (see the same fix in render_cta_banner()'s minimal
+    // branch). The bar above can stay accent since it's a decorative
+    // marker, not something anyone has to read.
+    $tx = $cx + $barW + $gap;
+    render_text($im, $tx, $y + $py, $numLbl, $fontSize, true, $p['body']);
+    foreach ($lines as $i => $line) {
+        render_text($im, $tx + $numW, $y + $py + $i * $lineH, $line, $fontSize, false, $p['body']);
+    }
+
+    return $y + $py + $textH + 20;
+}
+
+function render_numbered_card($im, int $num, string $text, float $y, array $p, int $fontSize = 26, string $layout = 'classic'): float
+{
+    if ($layout === 'minimal') {
+        return render_minimal_point($im, $num, $text, $y, $p, $fontSize);
+    }
     [$cx, $rx, $cw] = render_content_edges();
     $fs = $fontSize; $badge = 44; $px = 20; $py = 15;
     $lines = render_wrap($text, $fs, false, $cw - $badge - $px * 2 - 18);
@@ -510,6 +606,10 @@ function render_numbered_card($im, int $num, string $text, float $y, array $p, i
     $ch = max($badge + $py * 2, $textH + $py * 2);
 
     render_rrect($im, $cx, $y, $rx, $y + $ch, $p['accent'], 8);
+
+    if ($layout === 'bold') {
+        render_point_watermark($im, $num, $cx, $y, $rx, $ch, $p);
+    }
 
     $bx = $cx + $px;
     $by = $y + ($ch - $badge) / 2;
@@ -527,19 +627,34 @@ function render_numbered_card($im, int $num, string $text, float $y, array $p, i
     return $y + $ch + 14;
 }
 
-function render_cta_banner($im, string $text, float $y, array $p, int $fontSize = 27): float
+function render_cta_banner($im, string $text, float $y, array $p, int $fontSize = 27, string $layout = 'classic'): float
 {
     [$cx, $rx, $cw] = render_content_edges();
     $fs = $fontSize;
     $lh = render_lh($fs);
     $aw = render_text_width('→  ', $fs, true);
-    $lines = render_wrap($text, $fs, true, $cw - $aw - 40);
-    $ph = count($lines) * $lh + 40;
+
+    if ($layout === 'minimal') {
+        // headline, not accent — this is the primary CTA text sitting
+        // directly on bg with no fill behind it, so it needs the same
+        // guaranteed-readable role headline text uses, not a decorative
+        // tint that's only ever meant to sit under accent_text.
+        $lines = render_wrap($text, $fs, true, $cw - $aw);
+        render_text($im, $cx, $y, '→', $fs, true, $p['headline']);
+        foreach ($lines as $i => $line) {
+            render_text($im, $cx + $aw, $y + $i * $lh, $line, $fs, true, $p['headline']);
+        }
+        return $y + count($lines) * $lh + 16;
+    }
+
+    $pad = $layout === 'bold' ? 28 : 20;
+    $lines = render_wrap($text, $fs, true, $cw - $aw - $pad * 2);
+    $ph = count($lines) * $lh + $pad * 2;
     render_rrect($im, $cx, $y, $rx, $y + $ph, $p['cta_bg'], 10);
     $ty = $y + ($ph - count($lines) * $lh) / 2;
-    render_text($im, $cx + 20, $ty, '→', $fs, true, $p['cta_text']);
+    render_text($im, $cx + $pad, $ty, '→', $fs, true, $p['cta_text']);
     foreach ($lines as $i => $line) {
-        render_text($im, $cx + 20 + $aw, $ty + $i * $lh, $line, $fs, true, $p['cta_text']);
+        render_text($im, $cx + $pad + $aw, $ty + $i * $lh, $line, $fs, true, $p['cta_text']);
     }
     return $y + $ph + 16;
 }
@@ -548,20 +663,38 @@ function render_cta_banner($im, string $text, float $y, array $p, int $fontSize 
 // (exactly 3 points, word-count limits, render_fit_headline_size() /
 // render_fit_font_size() auto-shrink) are what keep content from ever
 // reaching this ceiling; the footer itself just trusts that and holds
-// its documented position.
-function render_footer_simple($im, float $contentY, array $p, string $name): void
+// its documented position. $fontRole ('heading' or 'body') is the
+// per-user Settings toggle for which typeface the footer *name* uses —
+// see includes/helpers.php get_footer_font_role().
+function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body'): void
 {
     [$cx, $rx] = render_content_edges();
     $fy = max(800, min($contentY + 50, RENDER_SIZE - RENDER_PAD - 56));
-    imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 2, $p['divider']);
-    render_text($im, $cx, $fy + 12, $name, 22, true, $p['name']);
+
+    if ($layout === 'bold') {
+        $w = render_text_width($name, 22, true, $fontRole);
+        $padX = 16; $padY = 10;
+        render_rrect($im, $cx, $fy, $cx + $w + $padX * 2, $fy + 22 + $padY * 2, $p['accent'], 8);
+        render_text($im, $cx + $padX, $fy + $padY, $name, 22, true, $p['accent_text'], $fontRole);
+        return;
+    }
+    if ($layout !== 'minimal') {
+        imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 2, $p['divider']);
+    }
+    render_text($im, $cx, $fy + 12, $name, 22, true, $p['name'], $fontRole);
 }
 
-function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath): void
+function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body'): void
 {
     [$cx, $rx] = render_content_edges();
     $fy = max(720, min($contentY + 50, RENDER_SIZE - RENDER_PAD - 148));
-    imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 2, $p['divider']);
+    if ($layout === 'minimal') {
+        // no divider
+    } elseif ($layout === 'bold') {
+        imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 4, $p['bar']);
+    } else {
+        imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + 2, $p['divider']);
+    }
     $py = $fy + 14;
 
     $circle = $photoPath ? render_circular_photo($photoPath, 108) : null;
@@ -573,19 +706,63 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
         $nfh = render_lh(28);
         $blockH = $nfh + render_lh(20);
         $ny = $py + (108 - $blockH) / 2;
-        render_text($im, $nx, $ny, $name, 28, true, $p['headline']);
+        render_text($im, $nx, $ny, $name, 28, true, $p['headline'], $fontRole);
         render_text($im, $nx, $ny + $nfh, 'Follow for more insights', 20, false, $p['body']);
     } else {
-        render_text($im, $cx, $py + 10, $name, 28, true, $p['headline']);
+        render_text($im, $cx, $py + 10, $name, 28, true, $p['headline'], $fontRole);
     }
 }
 
-// ── Slide renderers ──────────────────────────────────────────────────
+// ── Body treatment (shared across slide types) ──────────────────────
 
-function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = ''): void
+// Boxed in the accent color — Hook/Single always use this in 'classic'
+// (per the design spec), every slide type uses it in 'bold' (that
+// layout's signature always-boxed look).
+function render_body_boxed($im, string $body, float $y, array $p, float $cx, float $cw): float
+{
+    if ($body === '') {
+        return $y;
+    }
+    $blh = render_lh(27);
+    $lines = render_wrap($body, 27, false, $cw - 24);
+    $ph = count($lines) * $blh + 28;
+    render_rrect($im, $cx, $y, $cx + $cw, $y + $ph, $p['accent'], 10);
+    $ty = $y + 14;
+    foreach ($lines as $line) {
+        render_text($im, $cx + 22, $ty, $line, 27, false, $p['accent_text']);
+        $ty += $blh;
+    }
+    return $y + $ph;
+}
+
+// Freestanding text, auto-shrinking to stay within a few lines like the
+// headline does — Content/CTA use this in 'classic', every slide type
+// uses it in 'minimal' (that layout's signature never-boxed look).
+function render_body_freestanding($im, string $body, float $y, array $p, float $cx, float $cw): float
+{
+    if ($body === '') {
+        return $y;
+    }
+    $bs = render_fit_headline_size($body, $cw, [26, 23, 20], 3, false, 'body');
+    $blh = render_lh($bs);
+    foreach (render_wrap($body, $bs, false, $cw, 'body') as $line) {
+        render_text($im, $cx, $y, $line, $bs, false, $p['body'], 'body');
+        $y += $blh;
+    }
+    return $y;
+}
+
+// ── Slide renderers ──────────────────────────────────────────────────
+// $layout is 'classic' (default), 'minimal', or 'bold' — see the "Design
+// Template" pickers in Content Studio / New Post / Calendar and
+// render_creative_to_slides() below, which resolves it from the
+// creative JSON's "layout" field (a separate axis from "template", the
+// color palette selector).
+
+function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body'): void
 {
     [$cx, , $cw] = render_content_edges();
-    render_draw_bar($im, $p);
+    render_draw_bar($im, $p, $layout);
     render_draw_counter($im, 1, $total, $p);
 
     $y = RENDER_PAD + 12;
@@ -600,29 +777,20 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
         $y += $lh;
     }
 
-    $y = render_draw_rule($im, $y, $p);
+    $y = render_headline_rule($im, $y, $p, $layout);
 
     $body = $slide['body'] ?? '';
-    if ($body !== '') {
-        $blh = render_lh(27);
-        $lines = render_wrap($body, 27, false, $cw - 24);
-        $ph = count($lines) * $blh + 28;
-        render_rrect($im, $cx, $y, $cx + $cw, $y + $ph, $p['accent'], 10);
-        $ty = $y + 14;
-        foreach ($lines as $line) {
-            render_text($im, $cx + 22, $ty, $line, 27, false, $p['accent_text']);
-            $ty += $blh;
-        }
-        $y += $ph;
-    }
+    $y = $layout === 'minimal'
+        ? render_body_freestanding($im, $body, $y, $p, $cx, $cw)
+        : render_body_boxed($im, $body, $y, $p, $cx, $cw);
 
-    render_footer_simple($im, $y, $p, $name);
+    render_footer_simple($im, $y, $p, $name, $layout, $footerFontRole);
 }
 
-function render_slide_content($im, array $slide, int $total, array $p, string $name): void
+function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body'): void
 {
     [$cx, , $cw] = render_content_edges();
-    render_draw_bar($im, $p);
+    render_draw_bar($im, $p, $layout);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = RENDER_PAD + 12;
@@ -633,32 +801,29 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
         $y += $lh;
     }
 
-    $y = render_draw_rule($im, $y, $p);
+    $y = render_headline_rule($im, $y, $p, $layout);
 
     $body = $slide['body'] ?? '';
+    $y = $layout === 'bold'
+        ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
+        : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
     if ($body !== '') {
-        $bs = render_fit_headline_size($body, $cw, [26, 23, 20], 3, false);
-        $blh = render_lh($bs);
-        foreach (render_wrap($body, $bs, false, $cw) as $line) {
-            render_text($im, $cx, $y, $line, $bs, false, $p['body']);
-            $y += $blh;
-        }
         $y += 22;
     }
 
     $points = $slide['points'] ?? [];
-    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], 'render_numbered_card_height');
+    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], fn ($item, $size) => render_numbered_card_height($item, $size, $layout));
     foreach ($points as $i => $point) {
-        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize);
+        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $layout);
     }
 
-    render_footer_simple($im, $y, $p, $name);
+    render_footer_simple($im, $y, $p, $name, $layout, $footerFontRole);
 }
 
-function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath): void
+function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body'): void
 {
     [$cx, , $cw] = render_content_edges();
-    render_draw_bar($im, $p);
+    render_draw_bar($im, $p, $layout);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = RENDER_PAD + 12;
@@ -669,31 +834,29 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
         $y += $lh;
     }
 
-    $y = render_draw_rule($im, $y, $p);
+    $y = render_headline_rule($im, $y, $p, $layout);
 
     $body = $slide['body'] ?? '';
+    $y = $layout === 'bold'
+        ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
+        : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
     if ($body !== '') {
-        $blh = render_lh(26);
-        foreach (render_wrap($body, 26, false, $cw) as $line) {
-            render_text($im, $cx, $y, $line, 26, false, $p['body']);
-            $y += $blh;
-        }
         $y += 22;
     }
 
     $points = $slide['points'] ?? [];
-    $bannerSize = render_fit_font_size($points, $y, 802, [27, 24, 21, 19], 'render_cta_banner_height');
+    $bannerSize = render_fit_font_size($points, $y, 802, [27, 24, 21, 19], fn ($item, $size) => render_cta_banner_height($item, $size, $layout));
     foreach ($points as $point) {
-        $y = render_cta_banner($im, $point, $y, $p, $bannerSize);
+        $y = render_cta_banner($im, $point, $y, $p, $bannerSize, $layout);
     }
 
-    render_footer_with_photo($im, $y, $p, $name, $photoPath);
+    render_footer_with_photo($im, $y, $p, $name, $photoPath, $layout, $footerFontRole);
 }
 
-function render_slide_single($im, array $data, array $p, string $name): void
+function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body'): void
 {
     [$cx, , $cw] = render_content_edges();
-    render_draw_bar($im, $p);
+    render_draw_bar($im, $p, $layout);
     $slide = $data['slides'][0];
 
     $y = RENDER_PAD + 12;
@@ -704,32 +867,25 @@ function render_slide_single($im, array $data, array $p, string $name): void
         $y += $lh;
     }
 
-    $y = render_draw_rule($im, $y, $p);
+    $y = render_headline_rule($im, $y, $p, $layout);
 
-    // Boxed in the accent color, same treatment as render_slide_hook()'s
-    // body — Single Image shares that spec row, not Content/CTA's
-    // freestanding one.
+    // Boxed in classic (Single shares Hook's spec row) and bold (always
+    // boxed); freestanding only in minimal.
     $body = $slide['body'] ?? '';
+    $y = $layout === 'minimal'
+        ? render_body_freestanding($im, $body, $y, $p, $cx, $cw)
+        : render_body_boxed($im, $body, $y, $p, $cx, $cw);
     if ($body !== '') {
-        $blh = render_lh(27);
-        $lines = render_wrap($body, 27, false, $cw - 24);
-        $ph = count($lines) * $blh + 28;
-        render_rrect($im, $cx, $y, $cx + $cw, $y + $ph, $p['accent'], 10);
-        $ty = $y + 14;
-        foreach ($lines as $line) {
-            render_text($im, $cx + 22, $ty, $line, 27, false, $p['accent_text']);
-            $ty += $blh;
-        }
-        $y += $ph + 22;
+        $y += 22;
     }
 
     $points = $slide['points'] ?? [];
-    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], 'render_numbered_card_height');
+    $cardSize = render_fit_font_size($points, $y, 894, [26, 23, 20, 18], fn ($item, $size) => render_numbered_card_height($item, $size, $layout));
     foreach ($points as $i => $point) {
-        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize);
+        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $layout);
     }
 
-    render_footer_simple($im, $y, $p, $name);
+    render_footer_simple($im, $y, $p, $name, $layout, $footerFontRole);
 }
 
 // ── Main entry point ─────────────────────────────────────────────────
@@ -749,8 +905,10 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $bodyFont = $userId ? fetch_body_font($userId) : null;
     render_font_override_role('heading', $headingFont ? ['regular' => $headingFont['regular_path'], 'bold' => $headingFont['bold_path']] : null, true);
     render_font_override_role('body', $bodyFont ? ['regular' => $bodyFont['regular_path'], 'bold' => $bodyFont['bold_path']] : null, true);
+    $footerFontRole = $userId ? get_footer_font_role($userId) : 'body';
 
     $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
+    $layout = in_array($data['layout'] ?? '', ['minimal', 'bold'], true) ? $data['layout'] : 'classic';
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
@@ -763,7 +921,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
         $p = render_allocate_palette_colors($im, $paletteColors);
         imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $p['bg']);
-        render_slide_single($im, $data, $p, $footerName);
+        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole);
         $filename = 'slide_01.png';
         $path = $outDir . '/' . $filename;
         imagepng($im, $path);
@@ -779,11 +937,11 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $p['bg']);
 
         if ($n === 1) {
-            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '');
+            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole);
         } elseif ($n === $total) {
-            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath);
+            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole);
         } else {
-            render_slide_content($im, $slide, $total, $p, $footerName);
+            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole);
         }
 
         $filename = sprintf('slide_%02d.png', $n);

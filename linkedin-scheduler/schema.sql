@@ -160,6 +160,13 @@ ALTER TABLE users
   ADD FOREIGN KEY (heading_font_id) REFERENCES brand_fonts(id) ON DELETE SET NULL,
   ADD FOREIGN KEY (body_font_id) REFERENCES brand_fonts(id) ON DELETE SET NULL;
 
+-- Which of the two font roles above the rendered footer *name* text uses
+-- — see includes/helpers.php get_footer_font_role() and
+-- includes/image_renderer.php render_footer_simple()/render_footer_with_photo().
+-- Defaults to 'body', matching the behavior before this toggle existed.
+ALTER TABLE users
+  ADD COLUMN footer_font_role ENUM('heading','body') NOT NULL DEFAULT 'body';
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow

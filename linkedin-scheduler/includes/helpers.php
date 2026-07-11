@@ -116,6 +116,25 @@ function set_ai_provider(int $userId, ?string $provider): void
     $stmt->execute([$provider, $userId]);
 }
 
+// Which font role ('heading' or 'body') the rendered footer *name* text
+// uses — see includes/image_renderer.php render_footer_simple()/
+// render_footer_with_photo(). Defaults to 'body' (today's behavior,
+// unchanged for anyone who hasn't touched this Settings toggle).
+function get_footer_font_role(int $userId): string
+{
+    $stmt = db()->prepare('SELECT footer_font_role FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $role = $stmt->fetchColumn();
+    return $role === 'heading' ? 'heading' : 'body';
+}
+
+function set_footer_font_role(int $userId, string $role): void
+{
+    $role = $role === 'heading' ? 'heading' : 'body';
+    $stmt = db()->prepare('UPDATE users SET footer_font_role = ? WHERE id = ?');
+    $stmt->execute([$role, $userId]);
+}
+
 function get_brand_brief(int $userId): ?string
 {
     $stmt = db()->prepare('SELECT brand_brief FROM users WHERE id = ?');

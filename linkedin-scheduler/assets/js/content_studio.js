@@ -129,7 +129,7 @@
       card.appendChild(labeledTextarea('Caption', 'caption-input', c.caption || ''));
 
       var templateWrap = document.createElement('label');
-      templateWrap.textContent = 'Template ';
+      templateWrap.textContent = 'Color Palette ';
       var templateSelect = document.createElement('select');
       templateSelect.className = 'template-select';
       var templateOptions = [['', 'Auto'], ['1', 'Cream'], ['2', 'Dark Green'], ['3', 'Olive'], ['4', 'Medium Green']];
@@ -145,6 +145,20 @@
       });
       templateWrap.appendChild(templateSelect);
       card.appendChild(templateWrap);
+
+      var layoutWrap = document.createElement('label');
+      layoutWrap.textContent = 'Design Template ';
+      var layoutSelect = document.createElement('select');
+      layoutSelect.className = 'layout-select';
+      [['classic', 'Classic'], ['minimal', 'Minimal'], ['bold', 'Bold Blocks']].forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt[0];
+        o.textContent = opt[1];
+        if ((c.layout || 'classic') === opt[0]) o.selected = true;
+        layoutSelect.appendChild(o);
+      });
+      layoutWrap.appendChild(layoutSelect);
+      card.appendChild(layoutWrap);
 
       var slidesWrap = document.createElement('div');
       slidesWrap.className = 'slides-wrap';
@@ -219,6 +233,12 @@
         c.template = parseInt(tpl, 10);
       } else {
         delete c.template;
+      }
+      var layout = card.querySelector('.layout-select').value;
+      if (layout && layout !== 'classic') {
+        c.layout = layout;
+      } else {
+        delete c.layout;
       }
       card.querySelectorAll('.slide-fieldset').forEach(function (fs) {
         var si = parseInt(fs.dataset.slideIndex, 10);

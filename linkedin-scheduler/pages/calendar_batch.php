@@ -91,7 +91,7 @@ require __DIR__ . '/../includes/layout_top.php';
                 <?php endforeach; ?>
               </div>
             <?php endif; ?>
-            <label class="field-row">Image Template
+            <label class="field-row">Color Palette
               <select class="template-select">
                 <option value="">Auto</option>
                 <option value="1"<?= ($p['creative']['template'] ?? '') === 1 ? ' selected' : '' ?>>Cream</option>
@@ -101,6 +101,13 @@ require __DIR__ . '/../includes/layout_top.php';
                 <?php foreach ($brandPalettes as $bp): ?>
                   <option value="custom:<?= (int) $bp['id'] ?>"<?= ($p['creative']['template'] ?? '') === "custom:{$bp['id']}" ? ' selected' : '' ?>><?= h($bp['name']) ?></option>
                 <?php endforeach; ?>
+              </select>
+            </label>
+            <label class="field-row">Design Template
+              <select class="layout-select">
+                <option value="classic"<?= ($p['creative']['layout'] ?? 'classic') === 'classic' ? ' selected' : '' ?>>Classic</option>
+                <option value="minimal"<?= ($p['creative']['layout'] ?? '') === 'minimal' ? ' selected' : '' ?>>Minimal</option>
+                <option value="bold"<?= ($p['creative']['layout'] ?? '') === 'bold' ? ' selected' : '' ?>>Bold Blocks</option>
               </select>
             </label>
             <button type="button" class="btn-tiny regenerate-btn">Regenerate</button>

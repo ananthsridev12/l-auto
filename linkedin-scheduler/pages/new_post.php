@@ -267,7 +267,7 @@ require __DIR__ . '/../includes/layout_top.php';
       </div>
 
       <div id="creativeSlidesPanel" style="width:100%; margin-top:12px; display:none;">
-        <label>Image Template <span class="muted">(optional)</span>
+        <label>Color Palette <span class="muted">(optional)</span>
           <select id="aiTemplateSelect">
             <option value="">Auto</option>
             <option value="1">Cream</option>
@@ -277,6 +277,13 @@ require __DIR__ . '/../includes/layout_top.php';
             <?php foreach ($brandPalettes as $bp): ?>
               <option value="custom:<?= (int) $bp['id'] ?>"><?= h($bp['name']) ?></option>
             <?php endforeach; ?>
+          </select>
+        </label>
+        <label>Design Template <span class="muted">(optional)</span>
+          <select id="aiLayoutSelect">
+            <option value="classic">Classic</option>
+            <option value="minimal">Minimal</option>
+            <option value="bold">Bold Blocks</option>
           </select>
         </label>
         <div id="aiSlidesReview"></div>

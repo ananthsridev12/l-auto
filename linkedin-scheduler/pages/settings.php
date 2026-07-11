@@ -322,6 +322,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'footer_font_role') {
+        set_footer_font_role($userId, $_POST['footer_font_role'] ?? 'body');
+        flash('success', 'Footer name font updated.');
+        redirect('pages/settings.php');
+    }
+
     $name = trim($_POST['name'] ?? '');
     $newPassword = $_POST['new_password'] ?? '';
 
@@ -359,6 +365,7 @@ $headingFontId = (int) (fetch_heading_font($userId)['id'] ?? 0);
 $bodyFontId = (int) (fetch_body_font($userId)['id'] ?? 0);
 $ownedFontNames = array_map(fn ($bf) => strtolower($bf['name']), $brandFonts);
 $siteFonts = array_filter(scan_site_fonts(), fn ($sf) => !in_array(strtolower($sf['name']), $ownedFontNames, true));
+$footerFontRole = get_footer_font_role($userId);
 
 $footerImages = [];
 foreach (['logo', 'photo'] as $slot) {
@@ -636,6 +643,18 @@ require __DIR__ . '/../includes/layout_top.php';
       <input type="file" name="font_bold" accept=".ttf,.otf,font/ttf,font/otf" required>
     </label>
     <button type="submit" class="btn-secondary">Upload Font</button>
+  </form>
+
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="footer_font_role">
+    <label>Footer name font
+      <select name="footer_font_role">
+        <option value="body" <?= $footerFontRole === 'body' ? 'selected' : '' ?>>Body font</option>
+        <option value="heading" <?= $footerFontRole === 'heading' ? 'selected' : '' ?>>Heading font</option>
+      </select>
+    </label>
+    <button type="submit" class="btn-secondary">Save</button>
   </form>
 </section>
 

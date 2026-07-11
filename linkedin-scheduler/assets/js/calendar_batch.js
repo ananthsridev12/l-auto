@@ -111,7 +111,9 @@
         } else if (tpl) {
           template = parseInt(tpl, 10);
         }
-        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template });
+        var layoutSelect = card.querySelector('.layout-select');
+        var layout = layoutSelect && layoutSelect.value !== 'classic' ? layoutSelect.value : null;
+        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout });
       });
       if (!postsData.length) {
         contentStatus.textContent = 'Select at least one post to approve.';
