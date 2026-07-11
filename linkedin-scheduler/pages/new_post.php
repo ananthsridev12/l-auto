@@ -285,6 +285,7 @@ require __DIR__ . '/../includes/layout_top.php';
           <select id="aiBackgroundSelect">
             <option value="flat">Flat</option>
             <option value="gradient">Gradient</option>
+            <option value="image">Image (needs a palette with a background photo uploaded)</option>
           </select>
         </label>
         <div id="aiSlidesReview"></div>

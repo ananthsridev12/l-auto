@@ -202,6 +202,23 @@ function render_resolve_palette_colors($templateValue, int $userId, ?string $ser
     return render_palettes()[render_get_palette_id_by_series_label($seriesLabel)];
 }
 
+// Mirrors render_resolve_palette_colors()'s template-resolution branches,
+// but for the optional per-palette background image path instead of
+// colors — kept as a separate function (not folded into the color map)
+// because render_allocate_palette_colors() destructures every value in
+// that map as an [$r, $g, $b] triplet, which a file path string isn't.
+// Built-in presets (int 1-4) and the series-label fallback never have an
+// uploaded image, so this returns null for both.
+function render_resolve_palette_background_image($templateValue, int $userId): ?string
+{
+    if (is_string($templateValue) && str_starts_with($templateValue, 'custom:')) {
+        $palette = fetch_brand_palette($userId, (int) substr($templateValue, 7));
+        return $palette['background_image_path'] ?? null;
+    }
+    $defaultPalette = fetch_default_brand_palette($userId);
+    return $defaultPalette['background_image_path'] ?? null;
+}
+
 // Allocates a resolved 14-role RGB map against a specific GD image
 // resource — color indices are per-image in GD, unlike PIL's plain RGB
 // tuples.
@@ -521,8 +538,59 @@ function render_draw_logo($im, ?string $logoPath, float $cx, float $y): float
 // into per-image GD color indices, since it allocates its own row colors
 // directly. Uses mix_colors() (below) rather than a full color shift so
 // contrast ratios tuned against a flat bg stay safe with 'gradient' too.
-function render_draw_background($im, array $paletteColors, string $bgStyle): void
+// Cover-fit crops/scales an uploaded photo to fill the full RENDER_SIZE
+// canvas (same "background-size: cover" idea as CSS) — scales up to the
+// smaller-overhang dimension, then center-crops the other. Users are
+// expected to upload roughly-square images (matching the canvas aspect
+// ratio), so this is normally a near-no-op resize; it only kicks in to
+// avoid stretching/distortion if an upload is a bit off-square. Draws a
+// flat, semi-transparent scrim in the palette's own 'bg' color on top —
+// reuses the same color the user already picked for that palette (no
+// separate "overlay color" control) so text drawn afterward keeps a
+// predictable, palette-matched contrast margin regardless of the photo.
+function render_draw_background_image($im, string $path, array $bgRgb): bool
 {
+    $info = @getimagesize($path);
+    if (!$info) {
+        return false;
+    }
+    $src = match ($info['mime']) {
+        'image/png'  => @imagecreatefrompng($path),
+        'image/jpeg' => @imagecreatefromjpeg($path),
+        default      => null,
+    };
+    if (!$src) {
+        return false;
+    }
+
+    $sw = imagesx($src);
+    $sh = imagesy($src);
+    $scale = max(RENDER_SIZE / $sw, RENDER_SIZE / $sh);
+    $scaledW = (int) ceil($sw * $scale);
+    $scaledH = (int) ceil($sh * $scale);
+    $scaled = imagecreatetruecolor($scaledW, $scaledH);
+    imagecopyresampled($scaled, $src, 0, 0, 0, 0, $scaledW, $scaledH, $sw, $sh);
+    imagedestroy($src);
+
+    $cropX = intdiv($scaledW - RENDER_SIZE, 2);
+    $cropY = intdiv($scaledH - RENDER_SIZE, 2);
+    imagecopy($im, $scaled, 0, 0, $cropX, $cropY, RENDER_SIZE, RENDER_SIZE);
+    imagedestroy($scaled);
+
+    // 50% opacity — enough to guarantee the same contrast margin flat/
+    // gradient backgrounds already provide, while still reading as a
+    // photo rather than a fully obscured brand-color rectangle.
+    imagealphablending($im, true);
+    $overlay = imagecolorallocatealpha($im, $bgRgb[0], $bgRgb[1], $bgRgb[2], 64);
+    imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $overlay);
+    return true;
+}
+
+function render_draw_background($im, array $paletteColors, string $bgStyle, ?string $bgImagePath = null): void
+{
+    if ($bgStyle === 'image' && $bgImagePath && is_file($bgImagePath) && render_draw_background_image($im, $bgImagePath, $paletteColors['bg'])) {
+        return;
+    }
     $top = $paletteColors['bg'];
     if ($bgStyle !== 'gradient') {
         [$r, $g, $b] = $top;
@@ -1495,7 +1563,8 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     // clashing with palettes that don't specify one.
     $footerNameColorRgb = $paletteColors['signature'] ?? null;
     $layout = array_key_exists($data['layout'] ?? '', render_design_templates()) ? $data['layout'] : 'classic';
-    $bgStyle = ($data['background'] ?? '') === 'gradient' ? 'gradient' : 'flat';
+    $bgStyle = in_array($data['background'] ?? '', ['gradient', 'image'], true) ? $data['background'] : 'flat';
+    $bgImagePath = ($bgStyle === 'image' && $userId) ? render_resolve_palette_background_image($data['template'] ?? null, $userId) : null;
     $logoPath = $userId ? resolve_brand_logo($userId) : null;
     $slides = $data['slides'] ?? [];
     $total = count($slides);
@@ -1507,7 +1576,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $result = [];
     if ($isSingle) {
         $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
-        render_draw_background($im, $paletteColors, $bgStyle);
+        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath);
         $p = render_allocate_palette_colors($im, $paletteColors);
         render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
         $filename = 'slide_01.png';
@@ -1521,7 +1590,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     foreach ($slides as $slide) {
         $n = (int) $slide['slide_number'];
         $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
-        render_draw_background($im, $paletteColors, $bgStyle);
+        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath);
         $p = render_allocate_palette_colors($im, $paletteColors);
 
         if ($n === 1) {

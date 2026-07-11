@@ -202,6 +202,18 @@ ALTER TABLE users DROP COLUMN footer_name_color;
 ALTER TABLE brand_palettes
   ADD COLUMN signature_color VARCHAR(7) DEFAULT NULL;
 
+-- Optional per-palette background image, selectable per-post via the
+-- existing "Background" choice (flat/gradient/image — see
+-- includes/image_renderer.php render_draw_background()). File-based like
+-- brand_logo/footer images, not a BLOB — stored at
+-- UPLOAD_DIR/{userId}/palette_backgrounds/{paletteId}.{ext} (see
+-- pages/settings.php palette_bg_image_upload). Only meaningful on custom
+-- palettes; the 4 built-in presets have no image. Cover-fit cropped to
+-- the render canvas at draw time regardless of the uploaded image's
+-- exact aspect ratio, so a near-square upload still renders cleanly.
+ALTER TABLE brand_palettes
+  ADD COLUMN background_image_path VARCHAR(500) DEFAULT NULL;
+
 -- One Content Calendar Generator run (see includes/calendar_planner.php,
 -- pages/content_calendar.php). Groups the posts it planned and tracks
 -- which stage of the content-approve -> image-approve -> schedule flow

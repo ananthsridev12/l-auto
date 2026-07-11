@@ -177,7 +177,7 @@
       backgroundWrap.textContent = 'Background ';
       var backgroundSelect = document.createElement('select');
       backgroundSelect.className = 'background-select';
-      [['flat', 'Flat'], ['gradient', 'Gradient']].forEach(function (opt) {
+      [['flat', 'Flat'], ['gradient', 'Gradient'], ['image', 'Image']].forEach(function (opt) {
         var o = document.createElement('option');
         o.value = opt[0];
         o.textContent = opt[1];

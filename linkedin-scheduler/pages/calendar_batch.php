@@ -112,6 +112,7 @@ require __DIR__ . '/../includes/layout_top.php';
               <select class="background-select">
                 <option value="flat"<?= ($p['creative']['background'] ?? 'flat') === 'flat' ? ' selected' : '' ?>>Flat</option>
                 <option value="gradient"<?= ($p['creative']['background'] ?? '') === 'gradient' ? ' selected' : '' ?>>Gradient</option>
+                <option value="image"<?= ($p['creative']['background'] ?? '') === 'image' ? ' selected' : '' ?>>Image</option>
               </select>
             </label>
             <button type="button" class="btn-tiny regenerate-btn">Regenerate</button>

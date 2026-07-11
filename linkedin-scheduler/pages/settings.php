@@ -155,8 +155,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'palette_delete') {
+        $paletteId = (int) ($_POST['palette_id'] ?? 0);
+        $palette = fetch_brand_palette($userId, $paletteId);
+        if ($palette && $palette['background_image_path']) {
+            @unlink($palette['background_image_path']);
+        }
         $stmt = db()->prepare('DELETE FROM brand_palettes WHERE id = ? AND user_id = ?');
-        $stmt->execute([(int) ($_POST['palette_id'] ?? 0), $userId]);
+        $stmt->execute([$paletteId, $userId]);
         flash('success', 'Palette removed.');
         redirect('pages/settings.php');
     }
@@ -164,6 +169,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'palette_set_default') {
         set_default_brand_palette($userId, (int) ($_POST['palette_id'] ?? 0));
         flash('success', 'Default palette updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'palette_bg_image_upload') {
+        $paletteId = (int) ($_POST['palette_id'] ?? 0);
+        $palette = fetch_brand_palette($userId, $paletteId);
+        if (!$palette) {
+            flash('error', 'Palette not found.');
+            redirect('pages/settings.php');
+        }
+        if (empty($_FILES['palette_bg_image']['tmp_name']) || $_FILES['palette_bg_image']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose an image file to upload.');
+            redirect('pages/settings.php');
+        }
+        $contents = file_get_contents($_FILES['palette_bg_image']['tmp_name']);
+        $mime = zip_sniff_image_mime($contents);
+        if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
+            flash('error', 'Background image must be a PNG or JPEG file.');
+            redirect('pages/settings.php');
+        }
+        $ext = $mime === 'image/png' ? 'png' : 'jpg';
+        $dir = UPLOAD_DIR . "/{$userId}/palette_backgrounds";
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        if ($palette['background_image_path']) {
+            @unlink($palette['background_image_path']);
+        }
+        $path = "{$dir}/{$paletteId}.{$ext}";
+        file_put_contents($path, $contents);
+        db()->prepare('UPDATE brand_palettes SET background_image_path = ? WHERE id = ? AND user_id = ?')->execute([$path, $paletteId, $userId]);
+        flash('success', "Background image for \"{$palette['name']}\" updated.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'palette_bg_image_remove') {
+        $paletteId = (int) ($_POST['palette_id'] ?? 0);
+        $palette = fetch_brand_palette($userId, $paletteId);
+        if ($palette && $palette['background_image_path']) {
+            @unlink($palette['background_image_path']);
+            db()->prepare('UPDATE brand_palettes SET background_image_path = NULL WHERE id = ? AND user_id = ?')->execute([$paletteId, $userId]);
+        }
+        flash('success', 'Background image removed.');
         redirect('pages/settings.php');
     }
 
@@ -527,11 +575,14 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card">
   <h2>Brand Palettes</h2>
-  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; Accent, CTA, and Signature colors are optional — leave "Auto-generate" checked to derive them automatically with guaranteed-readable contrast. Signature specifically controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes.</p>
+  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; Accent, CTA, and Signature colors are optional — leave "Auto-generate" checked to derive them automatically with guaranteed-readable contrast. Signature specifically controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes. Each palette can also have its own background photo (upload it square, matching the post's 1:1 shape, for a clean fit — off-square images are still center-cropped automatically) — select "Image" as the Background when generating a post using that palette. Your palette's Background color is drawn as a semi-transparent tint over the photo so text stays readable.</p>
   <?php if ($brandPalettes): ?>
     <?php foreach ($brandPalettes as $bp): ?>
       <div class="account-row">
         <div class="account-info">
+          <?php if ($bp['background_image_path']): ?>
+            <img src="<?= h(slide_public_url($bp['background_image_path'])) ?>" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #0002;">
+          <?php endif; ?>
           <span><?= h($bp['name']) ?></span>
           <?php if ($bp['is_default']): ?><span class="badge badge-active">Default</span><?php endif; ?>
           <span style="display:inline-flex; gap:4px;">
@@ -549,6 +600,21 @@ require __DIR__ . '/../includes/layout_top.php';
               <input type="hidden" name="form" value="palette_set_default">
               <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
               <button type="submit" class="btn-tiny">Set Default</button>
+            </form>
+          <?php endif; ?>
+          <form method="post" enctype="multipart/form-data">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="palette_bg_image_upload">
+            <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
+            <input type="file" name="palette_bg_image" accept="image/png,image/jpeg" required style="max-width:160px;">
+            <button type="submit" class="btn-tiny"><?= $bp['background_image_path'] ? 'Replace' : 'Upload' ?> Background</button>
+          </form>
+          <?php if ($bp['background_image_path']): ?>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="palette_bg_image_remove">
+              <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
+              <button type="submit" class="btn-tiny btn-danger">Remove Background</button>
             </form>
           <?php endif; ?>
           <form method="post" onsubmit="return confirm('Remove this palette?');">
