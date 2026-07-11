@@ -768,37 +768,83 @@ function render_text_emphasized($im, float $x, float $topY, array $line, int $si
     }
 }
 
-// Shared by all 4 slide types — resolves candidate font size, wraps, and
-// draws the headline, branching on the active design template's font
-// role (sans/serif) and whether it colors emphasized **word** spans.
-// Centralizing this here (rather than repeating the branch in every
-// render_slide_*()) is what keeps adding more templates cheap.
-function render_draw_headline($im, string $headline, float $cx, float $cw, float $y, array $candidateSizes, int $maxLines, array $p, array $preset): float
+// Resolves font size + wrapped lines for a headline, branching on the
+// active design template's font role (sans/serif) and whether it colors
+// emphasized **word** spans. $lines is either an array of plain strings
+// (no emphasis) or render_wrap_emphasized_clamped()'s word-struct lines
+// (emphasis) — render_draw_headline_line() below knows how to draw both.
+// Shared by render_draw_headline() (top-anchored) and
+// render_draw_headline_centered() (the "Title Only" treatment) so both
+// stay in exact agreement about sizing/wrapping.
+function render_resolve_headline_lines(string $headline, float $cw, array $candidateSizes, int $maxLines, array $preset): array
 {
     $fontRole = $preset['font'] === 'serif' ? 'serif' : 'heading';
     if ($preset['emphasis']) {
         $hs = render_fit_headline_size($headline, $cw, $candidateSizes, $maxLines, true, $fontRole);
-        $lh = render_lh($hs);
-        // body, not accent, for the emphasized color — same reasoning as
-        // every other legibility fix this session: accent is only ever a
-        // guaranteed-safe fill/tint, not guaranteed readable as text
-        // (it's deliberately close to bg on some palettes, e.g. Cream).
-        // body is already relied on for all point/body copy, so it's a
-        // proven-legible second tone at large display sizes too.
-        foreach (render_wrap_emphasized_clamped($headline, $hs, true, $cw, $maxLines, $fontRole) as $line) {
-            render_text_emphasized($im, $cx, $y, $line, $hs, true, $p['headline'], $p['body'], $fontRole);
-            $y += $lh;
-        }
-        return $y;
+        $lines = render_wrap_emphasized_clamped($headline, $hs, true, $cw, $maxLines, $fontRole);
+    } else {
+        $plain = render_strip_emphasis_markers($headline);
+        $hs = render_fit_headline_size($plain, $cw, $candidateSizes, $maxLines, true, $fontRole);
+        $lines = render_wrap_clamped($plain, $hs, true, $cw, $maxLines, $fontRole);
     }
-    $plain = render_strip_emphasis_markers($headline);
-    $hs = render_fit_headline_size($plain, $cw, $candidateSizes, $maxLines, true, $fontRole);
-    $lh = render_lh($hs);
-    foreach (render_wrap_clamped($plain, $hs, true, $cw, $maxLines, $fontRole) as $line) {
-        render_text($im, $cx, $y, $line, $hs, true, $p['headline'], $fontRole);
+    return [$hs, render_lh($hs), $lines, $fontRole];
+}
+
+// Draws one line from render_resolve_headline_lines() — a plain string
+// or an emphasized word-struct line, depending on $preset['emphasis'].
+// body, not accent, for the emphasized color — same reasoning as every
+// other legibility fix this session: accent is only ever a
+// guaranteed-safe fill/tint, not guaranteed readable as text (it's
+// deliberately close to bg on some palettes, e.g. Cream).
+function render_draw_headline_line($im, $line, float $x, float $y, int $hs, array $p, array $preset, string $fontRole): void
+{
+    if ($preset['emphasis']) {
+        render_text_emphasized($im, $x, $y, $line, $hs, true, $p['headline'], $p['body'], $fontRole);
+    } else {
+        render_text($im, $x, $y, $line, $hs, true, $p['headline'], $fontRole);
+    }
+}
+
+// Shared by all 4 slide types — top-anchored headline draw (the normal
+// case). Centralizing this here (rather than repeating the branch in
+// every render_slide_*()) is what keeps adding more templates cheap.
+function render_draw_headline($im, string $headline, float $cx, float $cw, float $y, array $candidateSizes, int $maxLines, array $p, array $preset): float
+{
+    [$hs, $lh, $lines, $fontRole] = render_resolve_headline_lines($headline, $cw, $candidateSizes, $maxLines, $preset);
+    foreach ($lines as $line) {
+        render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
         $y += $lh;
     }
     return $y;
+}
+
+// "Title Only" treatment: a large, vertically-centered headline filling
+// the frame, used when a slide has no body and no points (see
+// render_is_title_only()) instead of leaving a mostly-empty gap under a
+// normally-sized top-anchored headline. Centers within [$topY, $bottomY]
+// — callers keep $bottomY comfortably above the footer's own clamp floor
+// (800/720) so there's no need to compute an exact content-bottom for
+// the footer call afterward; any $bottomY-bounded block is already safe.
+function render_draw_headline_centered($im, string $headline, float $cx, float $cw, float $topY, float $bottomY, array $candidateSizes, int $maxLines, array $p, array $preset): void
+{
+    [$hs, $lh, $lines, $fontRole] = render_resolve_headline_lines($headline, $cw, $candidateSizes, $maxLines, $preset);
+    $blockH = count($lines) * $lh;
+    $y = max($topY, $topY + ($bottomY - $topY - $blockH) / 2);
+    foreach ($lines as $line) {
+        render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
+        $y += $lh;
+    }
+}
+
+// A slide is "Title Only" when it has no body and no points to show —
+// rather than a separate format/toggle, leaving those fields blank in
+// the review step is itself the signal: the headline gets the large,
+// centered "impact statement" treatment instead of sitting top-anchored
+// over a mostly-empty frame. Works the same way in Single Image and any
+// individual carousel slide (Hook/Content/CTA).
+function render_is_title_only(array $slide): bool
+{
+    return trim($slide['body'] ?? '') === '' && empty($slide['points']);
 }
 
 // ── Corner decorations ───────────────────────────────────────────────
@@ -1185,6 +1231,13 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
         render_text($im, $cx, $y, strtoupper($seriesLabel), 16, false, $p['counter']);
         $y += render_lh(16) + 8;
     }
+
+    if (render_is_title_only($slide)) {
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, 650, [110, 96, 84, 72, 60], 3, $p, $preset);
+        render_footer_simple($im, 650, $p, $name, $preset['barStyle'], $footerFontRole);
+        return;
+    }
+
     $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [78, 68, 58, 50, 44], 2, $p, $preset);
 
     $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
@@ -1206,6 +1259,13 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
+
+    if (render_is_title_only($slide)) {
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, 650, [110, 96, 84, 72, 60], 3, $p, $preset);
+        render_footer_simple($im, 650, $p, $name, $preset['barStyle'], $footerFontRole);
+        return;
+    }
+
     $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [54, 48, 42, 38, 34], 2, $p, $preset);
 
     $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
@@ -1240,6 +1300,13 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
+
+    if (render_is_title_only($slide)) {
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, 650, [110, 96, 84, 72, 60], 3, $p, $preset);
+        render_footer_with_photo($im, 650, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole);
+        return;
+    }
+
     $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [52, 46, 40, 36, 32], 2, $p, $preset);
 
     $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
@@ -1272,6 +1339,13 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     $slide = $data['slides'][0];
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
+
+    if (render_is_title_only($slide)) {
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, 650, [110, 96, 84, 72, 60], 3, $p, $preset);
+        render_footer_simple($im, 650, $p, $name, $preset['barStyle'], $footerFontRole);
+        return;
+    }
+
     $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [68, 60, 52, 46, 40], 3, $p, $preset);
 
     $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
