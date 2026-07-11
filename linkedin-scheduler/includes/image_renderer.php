@@ -1090,6 +1090,24 @@ function render_cta_banner($im, string $text, float $y, array $p, int $fontSize 
     return $y + $ph + rs(16);
 }
 
+// The footer name is never wrapped (a signature reads as one line), so
+// an unusually long profile/page display name could otherwise run past
+// the canvas edge — shrinks in 2px steps until it fits $maxPx, the same
+// "auto-shrink rather than overflow" precedent every other
+// variable-length text in this file follows (render_fit_headline_size(),
+// render_fit_font_size()). Best-effort like those: an absurdly long name
+// can still hit the floor and slightly overflow.
+function render_fit_footer_name_size(string $name, float $maxPx, int $preferredSize, string $fontRole): int
+{
+    $floor = (int) round($preferredSize * 0.6);
+    for ($size = $preferredSize; $size > $floor; $size -= 2) {
+        if (render_text_width($name, $size, true, $fontRole) <= $maxPx) {
+            return $size;
+        }
+    }
+    return $floor;
+}
+
 // clamp(800, y+50, 944) per the design spec — content-length budgets
 // (exactly 3 points, word-count limits, render_fit_headline_size() /
 // render_fit_font_size() auto-shrink) are what keep content from ever
@@ -1102,10 +1120,15 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
     [$cx, $rx] = render_content_edges();
     $fy = max(rs(800), min($contentY + rs(50), RENDER_SIZE - RENDER_PAD - rs(56)));
 
+    // 26 (was 22) — the footer signature is the smallest bold text in the
+    // whole composition, so GD's anti-aliasing artifacts on small bold
+    // curves are proportionally most visible here; a few extra px makes
+    // those edges a smaller fraction of each letter and reads noticeably
+    // cleaner without changing the overall footer layout.
     if ($layout === 'bold') {
-        $nameSize = rs(22);
-        $w = render_text_width($name, $nameSize, true, $fontRole);
         $padX = rs(16); $padY = rs(10);
+        $nameSize = render_fit_footer_name_size($name, ($rx - $cx) - $padX * 2, rs(26), $fontRole);
+        $w = render_text_width($name, $nameSize, true, $fontRole);
         render_rrect($im, $cx, $fy, $cx + $w + $padX * 2, $fy + $nameSize + $padY * 2, $p['accent'], rs(8));
         render_text($im, $cx + $padX, $fy + $padY, $name, $nameSize, true, $p['accent_text'], $fontRole);
         return;
@@ -1113,7 +1136,8 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
     if ($layout !== 'minimal') {
         imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + rs(2), $p['divider']);
     }
-    render_text($im, $cx, $fy + rs(12), $name, rs(22), true, $p['name'], $fontRole);
+    $nameSize = render_fit_footer_name_size($name, $rx - $cx, rs(26), $fontRole);
+    render_text($im, $cx, $fy + rs(12), $name, $nameSize, true, $p['name'], $fontRole);
 }
 
 function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body'): void
@@ -1135,14 +1159,21 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
         imagealphablending($im, true);
         imagecopy($im, $circle, (int) $cx, (int) $py, 0, 0, $photoSize, $photoSize);
         imagedestroy($circle);
+        // 32/22 (was 28/20) — same small-bold-text anti-aliasing fix as
+        // render_footer_simple() above; blockH (103px at these sizes)
+        // still comfortably fits inside the 108px photo circle it's
+        // vertically centered against. Name width is fit-checked against
+        // the space right of the photo — see render_fit_footer_name_size().
         $nx = $cx + $photoSize + rs(18);
-        $nfh = render_lh(rs(28));
-        $blockH = $nfh + render_lh(rs(20));
+        $nameSize = render_fit_footer_name_size($name, $rx - $nx, rs(32), $fontRole);
+        $nfh = render_lh($nameSize);
+        $blockH = $nfh + render_lh(rs(22));
         $ny = $py + ($photoSize - $blockH) / 2;
-        render_text($im, $nx, $ny, $name, rs(28), true, $p['headline'], $fontRole);
-        render_text($im, $nx, $ny + $nfh, 'Follow for more insights', rs(20), false, $p['body']);
+        render_text($im, $nx, $ny, $name, $nameSize, true, $p['headline'], $fontRole);
+        render_text($im, $nx, $ny + $nfh, 'Follow for more insights', rs(22), false, $p['body']);
     } else {
-        render_text($im, $cx, $py + rs(10), $name, rs(28), true, $p['headline'], $fontRole);
+        $nameSize = render_fit_footer_name_size($name, $rx - $cx, rs(32), $fontRole);
+        render_text($im, $cx, $py + rs(10), $name, $nameSize, true, $p['headline'], $fontRole);
     }
 }
 
