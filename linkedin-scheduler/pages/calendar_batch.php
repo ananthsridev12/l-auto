@@ -110,6 +110,12 @@ require __DIR__ . '/../includes/layout_top.php';
                 <option value="bold"<?= ($p['creative']['layout'] ?? '') === 'bold' ? ' selected' : '' ?>>Bold Blocks</option>
               </select>
             </label>
+            <label class="field-row">Background
+              <select class="background-select">
+                <option value="flat"<?= ($p['creative']['background'] ?? 'flat') === 'flat' ? ' selected' : '' ?>>Flat</option>
+                <option value="gradient"<?= ($p['creative']['background'] ?? '') === 'gradient' ? ' selected' : '' ?>>Gradient</option>
+              </select>
+            </label>
             <button type="button" class="btn-tiny regenerate-btn">Regenerate</button>
           <?php endif; ?>
         </div>

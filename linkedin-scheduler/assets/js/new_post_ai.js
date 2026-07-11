@@ -285,6 +285,13 @@
     } else {
       delete currentCreative.layout;
     }
+    var backgroundSelect = document.getElementById('aiBackgroundSelect');
+    var background = backgroundSelect ? backgroundSelect.value : 'flat';
+    if (background && background !== 'flat') {
+      currentCreative.background = background;
+    } else {
+      delete currentCreative.background;
+    }
     return currentCreative;
   }
 

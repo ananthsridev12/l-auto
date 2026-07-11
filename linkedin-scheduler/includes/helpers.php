@@ -209,6 +209,22 @@ function resolve_footer_image(int $userId, string $category): ?string
     return null;
 }
 
+// A separate slot from resolve_footer_image()'s logo/photo — those are
+// always circle-cropped for the CTA footer avatar, which would mangle a
+// rectangular wordmark. This one is drawn as-is (aspect preserved) in the
+// top-left corner of every slide — see render_draw_logo(). No bundled
+// default: absent means nothing is drawn, not a placeholder mark.
+function resolve_brand_logo(int $userId): ?string
+{
+    foreach (['png', 'jpg', 'jpeg'] as $ext) {
+        $path = UPLOAD_DIR . "/{$userId}/branding/brand_logo.{$ext}";
+        if (is_file($path)) {
+            return $path;
+        }
+    }
+    return null;
+}
+
 function resolve_ai_config(int $userId): array
 {
     $provider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;

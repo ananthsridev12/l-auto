@@ -201,6 +201,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'brand_logo_upload') {
+        if (empty($_FILES['brand_logo']['tmp_name']) || $_FILES['brand_logo']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose an image file to upload.');
+            redirect('pages/settings.php');
+        }
+        $contents = file_get_contents($_FILES['brand_logo']['tmp_name']);
+        $mime = zip_sniff_image_mime($contents);
+        if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
+            flash('error', 'Logo must be a PNG or JPEG file.');
+            redirect('pages/settings.php');
+        }
+        $ext = $mime === 'image/png' ? 'png' : 'jpg';
+        $dir = UPLOAD_DIR . "/{$userId}/branding";
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        foreach (['png', 'jpg', 'jpeg'] as $existingExt) {
+            @unlink("{$dir}/brand_logo.{$existingExt}");
+        }
+        file_put_contents("{$dir}/brand_logo.{$ext}", $contents);
+        flash('success', 'Brand logo updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'brand_logo_remove') {
+        $dir = UPLOAD_DIR . "/{$userId}/branding";
+        foreach (['png', 'jpg', 'jpeg'] as $ext) {
+            @unlink("{$dir}/brand_logo.{$ext}");
+        }
+        flash('success', 'Brand logo removed.');
+        redirect('pages/settings.php');
+    }
+
     if (($_POST['form'] ?? '') === 'font_add') {
         $fontName = trim($_POST['font_name'] ?? '');
         if ($fontName === '') {
@@ -379,6 +412,12 @@ foreach (['logo', 'photo'] as $slot) {
     }
 }
 
+$brandLogoUrl = null;
+$brandLogoPath = resolve_brand_logo($userId);
+if ($brandLogoPath) {
+    $brandLogoUrl = slide_public_url($brandLogoPath);
+}
+
 $pageTitle  = 'Settings';
 $activePage = 'settings';
 $token = csrf_token();
@@ -547,6 +586,34 @@ require __DIR__ . '/../includes/layout_top.php';
       </div>
     </div>
   <?php endforeach; ?>
+</section>
+
+<section class="card">
+  <h2>Brand Logo</h2>
+  <p class="muted">Shown top-left on every generated slide, across every Design Template and Color Palette. Aspect ratio is preserved (not cropped) — a transparent-background PNG wordmark works best. No logo means nothing is drawn.</p>
+  <div class="account-row">
+    <div class="account-info">
+      <?php if ($brandLogoUrl): ?>
+        <img src="<?= h($brandLogoUrl) ?>" style="max-width:120px; max-height:48px; object-fit:contain;">
+      <?php endif; ?>
+      <span class="muted"><?= $brandLogoUrl ? 'Set' : 'Not set' ?></span>
+    </div>
+    <div class="inline-form">
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf" value="<?= h($token) ?>">
+        <input type="hidden" name="form" value="brand_logo_upload">
+        <input type="file" name="brand_logo" accept="image/png,image/jpeg" required>
+        <button type="submit" class="btn-tiny">Upload</button>
+      </form>
+      <?php if ($brandLogoUrl): ?>
+        <form method="post">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="brand_logo_remove">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      <?php endif; ?>
+    </div>
+  </div>
 </section>
 
 <section class="card">

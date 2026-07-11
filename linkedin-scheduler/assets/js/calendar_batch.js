@@ -113,7 +113,9 @@
         }
         var layoutSelect = card.querySelector('.layout-select');
         var layout = layoutSelect && layoutSelect.value !== 'classic' ? layoutSelect.value : null;
-        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout });
+        var backgroundSelect = card.querySelector('.background-select');
+        var background = backgroundSelect && backgroundSelect.value !== 'flat' ? backgroundSelect.value : null;
+        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background });
       });
       if (!postsData.length) {
         contentStatus.textContent = 'Select at least one post to approve.';

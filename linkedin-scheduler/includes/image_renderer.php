@@ -423,6 +423,66 @@ function render_circular_photo(string $photoPath, int $sz)
     return $circle;
 }
 
+// Top-left brand mark, drawn on every slide of every layout — unlike
+// render_circular_photo() this preserves aspect ratio (scaled to a fixed
+// max height) rather than cropping to a circle, since a rectangular
+// wordmark logo would be mangled by a circle crop, and preserves alpha so
+// a transparent-background PNG composites cleanly over any palette/
+// background. Returns the Y position content should resume at — $y
+// unchanged if no logo (zero layout shift for users who haven't uploaded
+// one), or $y advanced past the logo + a gap if one was drawn.
+function render_draw_logo($im, ?string $logoPath, float $cx, float $y): float
+{
+    if ($logoPath === null || !is_file($logoPath)) {
+        return $y;
+    }
+    $info = @getimagesize($logoPath);
+    if (!$info) {
+        return $y;
+    }
+    $src = match ($info['mime']) {
+        'image/png'  => @imagecreatefrompng($logoPath),
+        'image/jpeg' => @imagecreatefromjpeg($logoPath),
+        default      => null,
+    };
+    if (!$src) {
+        return $y;
+    }
+
+    $sw = imagesx($src);
+    $sh = imagesy($src);
+    $dh = 36;
+    $dw = (int) round($sw * ($dh / $sh));
+
+    imagealphablending($im, true);
+    imagesavealpha($src, true);
+    imagecopyresampled($im, $src, (int) $cx, (int) $y, 0, 0, $dw, $dh, $sw, $sh);
+    imagedestroy($src);
+
+    return $y + $dh + 20;
+}
+
+// Fills the full canvas — flat single color (today's behavior) or a
+// subtle top-to-bottom brand-tinted gradient. Must run on the raw RGB
+// $paletteColors map, before render_allocate_palette_colors() turns it
+// into per-image GD color indices, since it allocates its own row colors
+// directly. Uses mix_colors() (below) rather than a full color shift so
+// contrast ratios tuned against a flat bg stay safe with 'gradient' too.
+function render_draw_background($im, array $paletteColors, string $bgStyle): void
+{
+    $top = $paletteColors['bg'];
+    if ($bgStyle !== 'gradient') {
+        [$r, $g, $b] = $top;
+        imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, imagecolorallocate($im, $r, $g, $b));
+        return;
+    }
+    $bottom = mix_colors($top, $paletteColors['accent'], 0.18);
+    for ($y = 0; $y < RENDER_SIZE; $y++) {
+        [$r, $g, $b] = mix_colors($top, $bottom, $y / (RENDER_SIZE - 1));
+        imagefilledrectangle($im, 0, $y, RENDER_SIZE, $y, imagecolorallocate($im, $r, $g, $b));
+    }
+}
+
 // ── Layout primitives (direct ports of render.py) ───────────────────
 
 // $layout is one of 'classic' (default), 'minimal', 'bold' — see
@@ -778,13 +838,13 @@ function render_body_freestanding($im, string $body, float $y, array $p, float $
 // creative JSON's "layout" field (a separate axis from "template", the
 // color palette selector).
 
-function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body'): void
+function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
 {
     [$cx, , $cw] = render_content_edges();
     render_draw_bar($im, $p, $layout);
     render_draw_counter($im, 1, $total, $p);
 
-    $y = RENDER_PAD + 12;
+    $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
     if ($seriesLabel !== '') {
         render_text($im, $cx, $y, strtoupper($seriesLabel), 16, false, $p['counter']);
         $y += render_lh(16) + 8;
@@ -806,13 +866,13 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     render_footer_simple($im, $y, $p, $name, $layout, $footerFontRole);
 }
 
-function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body'): void
+function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
 {
     [$cx, , $cw] = render_content_edges();
     render_draw_bar($im, $p, $layout);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
-    $y = RENDER_PAD + 12;
+    $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [54, 48, 42, 38, 34], 2);
     $lh = render_lh($hs);
     foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 2, 'heading') as $line) {
@@ -843,13 +903,13 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_footer_simple($im, $y, $p, $name, $layout, $footerFontRole);
 }
 
-function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body'): void
+function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
 {
     [$cx, , $cw] = render_content_edges();
     render_draw_bar($im, $p, $layout);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
-    $y = RENDER_PAD + 12;
+    $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [52, 46, 40, 36, 32], 2);
     $lh = render_lh($hs);
     foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 2, 'heading') as $line) {
@@ -878,13 +938,13 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     render_footer_with_photo($im, $y, $p, $name, $photoPath, $layout, $footerFontRole);
 }
 
-function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body'): void
+function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null): void
 {
     [$cx, , $cw] = render_content_edges();
     render_draw_bar($im, $p, $layout);
     $slide = $data['slides'][0];
 
-    $y = RENDER_PAD + 12;
+    $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + 12);
     $hs = render_fit_headline_size($slide['headline'] ?? '', $cw, [68, 60, 52, 46, 40], 3);
     $lh = render_lh($hs);
     foreach (render_wrap_clamped($slide['headline'] ?? '', $hs, true, $cw, 3, 'heading') as $line) {
@@ -934,6 +994,8 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
 
     $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
     $layout = in_array($data['layout'] ?? '', ['minimal', 'bold'], true) ? $data['layout'] : 'classic';
+    $bgStyle = ($data['background'] ?? '') === 'gradient' ? 'gradient' : 'flat';
+    $logoPath = $userId ? resolve_brand_logo($userId) : null;
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
@@ -944,9 +1006,9 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $result = [];
     if ($isSingle) {
         $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
+        render_draw_background($im, $paletteColors, $bgStyle);
         $p = render_allocate_palette_colors($im, $paletteColors);
-        imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $p['bg']);
-        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole);
+        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath);
         $filename = 'slide_01.png';
         $path = $outDir . '/' . $filename;
         imagepng($im, $path);
@@ -958,15 +1020,15 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     foreach ($slides as $slide) {
         $n = (int) $slide['slide_number'];
         $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
+        render_draw_background($im, $paletteColors, $bgStyle);
         $p = render_allocate_palette_colors($im, $paletteColors);
-        imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $p['bg']);
 
         if ($n === 1) {
-            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole);
+            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath);
         } elseif ($n === $total) {
-            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole);
+            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath);
         } else {
-            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole);
+            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath);
         }
 
         $filename = sprintf('slide_%02d.png', $n);

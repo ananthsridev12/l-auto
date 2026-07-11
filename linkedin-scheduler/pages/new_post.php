@@ -286,6 +286,12 @@ require __DIR__ . '/../includes/layout_top.php';
             <option value="bold">Bold Blocks</option>
           </select>
         </label>
+        <label>Background <span class="muted">(optional)</span>
+          <select id="aiBackgroundSelect">
+            <option value="flat">Flat</option>
+            <option value="gradient">Gradient</option>
+          </select>
+        </label>
         <div id="aiSlidesReview"></div>
         <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
 
