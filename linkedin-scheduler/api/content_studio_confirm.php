@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
 $userId = current_user_id();
+$workspaceId = current_workspace_id();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('pages/content_studio.php');
@@ -42,8 +43,8 @@ $batchStmt->execute([$userId, $csvFilename, count($rows)]);
 $batchId = (int) $pdo->lastInsertId();
 
 $upsertStmt = $pdo->prepare(
-    'INSERT INTO posts (user_id, linkedin_account_id, import_batch_id, campaign_id, title, format, caption, source_page_label, status, scheduled_at, creative_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    'INSERT INTO posts (user_id, workspace_id, linkedin_account_id, import_batch_id, campaign_id, title, format, caption, source_page_label, status, scheduled_at, creative_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        linkedin_account_id = IF(status = "posted", linkedin_account_id, VALUES(linkedin_account_id)),
        import_batch_id     = IF(status = "posted", import_batch_id, VALUES(import_batch_id)),
@@ -53,7 +54,8 @@ $upsertStmt = $pdo->prepare(
        source_page_label   = IF(status = "posted", source_page_label, VALUES(source_page_label)),
        status              = IF(status = "posted", status, VALUES(status)),
        scheduled_at        = IF(status = "posted", scheduled_at, VALUES(scheduled_at)),
-       creative_json       = IF(status = "posted", creative_json, VALUES(creative_json))'
+       creative_json       = IF(status = "posted", creative_json, VALUES(creative_json)),
+       workspace_id        = IF(status = "posted", workspace_id, VALUES(workspace_id))'
 );
 $findPostStmt = $pdo->prepare('SELECT id, status FROM posts WHERE user_id = ? AND campaign_id = ?');
 $deleteSlidesStmt = $pdo->prepare('DELETE FROM post_slides WHERE post_id = ?');
@@ -103,7 +105,7 @@ foreach ($rows as $row) {
     // creative_json is stored so the image can be re-edited later from
     // the post page (pages/post.php "Edit Image Content" card).
     $upsertStmt->execute([
-        $userId, $accountId, $batchId, $campaignId,
+        $userId, $workspaceId, $accountId, $batchId, $campaignId,
         $title, $format, $caption, $pageLabel,
         $status, $scheduledAt, json_encode($creative),
     ]);

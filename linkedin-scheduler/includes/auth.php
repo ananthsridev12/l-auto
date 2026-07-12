@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/workspace.php';
 require_once __DIR__ . '/kb_seed.php';
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -64,7 +65,12 @@ function register_user(string $email, string $password, string $name): array
     }
     $stmt = db()->prepare('INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)');
     $stmt->execute([$email, password_hash($password, PASSWORD_DEFAULT), trim($name)]);
-    seed_default_knowledge_base((int) db()->lastInsertId());
+    $newUserId = (int) db()->lastInsertId();
+    // Every user gets their Personal workspace immediately; the default
+    // knowledge base seeds into it (company pillars land in a company
+    // workspace only once the user creates one).
+    $wsId = create_workspace($newUserId, 'personal', 'Personal');
+    seed_default_knowledge_base($newUserId, $wsId);
     return [true, null];
 }
 

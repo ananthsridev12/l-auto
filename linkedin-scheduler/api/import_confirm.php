@@ -62,8 +62,8 @@ $unmatchedAccount = 0;
 // gone out — IF(status='posted', <old>, VALUES(<new>)) leaves posted
 // rows completely untouched while still updating drafts/scheduled ones.
 $upsertStmt = $pdo->prepare(
-    'INSERT INTO posts (user_id, linkedin_account_id, import_batch_id, campaign_id, title, format, caption, source_page_label, status, scheduled_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    'INSERT INTO posts (user_id, workspace_id, linkedin_account_id, import_batch_id, campaign_id, title, format, caption, source_page_label, status, scheduled_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        linkedin_account_id = IF(status = "posted", linkedin_account_id, VALUES(linkedin_account_id)),
        import_batch_id     = IF(status = "posted", import_batch_id, VALUES(import_batch_id)),
@@ -72,7 +72,8 @@ $upsertStmt = $pdo->prepare(
        caption             = IF(status = "posted", caption, VALUES(caption)),
        source_page_label   = IF(status = "posted", source_page_label, VALUES(source_page_label)),
        status              = IF(status = "posted", status, VALUES(status)),
-       scheduled_at        = IF(status = "posted", scheduled_at, VALUES(scheduled_at))'
+       scheduled_at        = IF(status = "posted", scheduled_at, VALUES(scheduled_at)),
+       workspace_id        = IF(status = "posted", workspace_id, VALUES(workspace_id))'
 );
 $findPostStmt = $pdo->prepare('SELECT id, status FROM posts WHERE user_id = ? AND campaign_id = ?');
 $deleteSlidesStmt = $pdo->prepare('DELETE FROM post_slides WHERE post_id = ?');
@@ -114,7 +115,7 @@ foreach ($rows as $row) {
     }
 
     $upsertStmt->execute([
-        $userId, $accountId, $batchId, $campaignId,
+        $userId, current_workspace_id(), $accountId, $batchId, $campaignId,
         $row['title'] ?? '', $row['format'], $row['caption'] ?? '', $pageLabel,
         $status, $scheduledAt,
     ]);

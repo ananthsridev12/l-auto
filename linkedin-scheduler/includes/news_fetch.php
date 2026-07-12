@@ -24,20 +24,25 @@ const NEWS_MAX_AGE_DAYS    = 7;    // older items in the feed are ignored
 
 // ── Custom keyword topics (Settings CRUD) ────────────────────────────
 
-function fetch_news_topics(int $userId): array
+function fetch_news_topics(int $userId, ?int $workspaceId = null): array
 {
-    $stmt = db()->prepare('SELECT id, query FROM news_topics WHERE user_id = ? ORDER BY query');
-    $stmt->execute([$userId]);
+    if ($workspaceId === null) {
+        $stmt = db()->prepare('SELECT id, query FROM news_topics WHERE user_id = ? ORDER BY query');
+        $stmt->execute([$userId]);
+    } else {
+        $stmt = db()->prepare('SELECT id, query FROM news_topics WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY query');
+        $stmt->execute([$userId, $workspaceId]);
+    }
     return $stmt->fetchAll();
 }
 
-function add_news_topic(int $userId, string $query): void
+function add_news_topic(int $userId, string $query, ?int $workspaceId = null): void
 {
     $query = trim($query);
     if ($query === '') {
         return;
     }
-    db()->prepare('INSERT IGNORE INTO news_topics (user_id, query) VALUES (?, ?)')->execute([$userId, $query]);
+    db()->prepare('INSERT IGNORE INTO news_topics (user_id, workspace_id, query) VALUES (?, ?, ?)')->execute([$userId, $workspaceId, $query]);
 }
 
 function delete_news_topic(int $userId, int $id): void
@@ -59,20 +64,25 @@ function news_topic_is_feed(string $query): bool
 // time. Direct feed URLs the user added themselves bypass this: adding
 // the feed IS the trust decision.
 
-function fetch_news_trusted_sources(int $userId): array
+function fetch_news_trusted_sources(int $userId, ?int $workspaceId = null): array
 {
-    $stmt = db()->prepare('SELECT id, source FROM news_trusted_sources WHERE user_id = ? ORDER BY source');
-    $stmt->execute([$userId]);
+    if ($workspaceId === null) {
+        $stmt = db()->prepare('SELECT id, source FROM news_trusted_sources WHERE user_id = ? ORDER BY source');
+        $stmt->execute([$userId]);
+    } else {
+        $stmt = db()->prepare('SELECT id, source FROM news_trusted_sources WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY source');
+        $stmt->execute([$userId, $workspaceId]);
+    }
     return $stmt->fetchAll();
 }
 
-function add_news_trusted_source(int $userId, string $source): void
+function add_news_trusted_source(int $userId, string $source, ?int $workspaceId = null): void
 {
     $source = trim($source);
     if ($source === '') {
         return;
     }
-    db()->prepare('INSERT IGNORE INTO news_trusted_sources (user_id, source) VALUES (?, ?)')->execute([$userId, mb_substr($source, 0, 255)]);
+    db()->prepare('INSERT IGNORE INTO news_trusted_sources (user_id, workspace_id, source) VALUES (?, ?, ?)')->execute([$userId, $workspaceId, mb_substr($source, 0, 255)]);
 }
 
 function delete_news_trusted_source(int $userId, int $id): void
@@ -117,13 +127,13 @@ function news_source_is_trusted(array $item, array $trustedEntries): bool
 // user posts about), plus any custom keywords added in Settings. Pillar
 // queries carry the pillar id through to the stored item, so generation
 // can pull that pillar's description/brief/design defaults later.
-function news_build_queries(int $userId): array
+function news_build_queries(int $userId, ?int $workspaceId = null): array
 {
     $queries = [];
-    foreach (fetch_content_pillars($userId) as $pillar) {
+    foreach (fetch_content_pillars($userId, $workspaceId) as $pillar) {
         $queries[] = ['query' => $pillar['name'], 'pillar_id' => (int) $pillar['id'], 'feed' => false];
     }
-    foreach (fetch_news_topics($userId) as $topic) {
+    foreach (fetch_news_topics($userId, $workspaceId) as $topic) {
         $queries[] = ['query' => $topic['query'], 'pillar_id' => null, 'feed' => news_topic_is_feed($topic['query'])];
     }
     // Dedupe by lowercased query text (a keyword duplicating a pillar
@@ -227,12 +237,12 @@ function news_parse_feed(string $xml): array
 // Inserts parsed items for one query, skipping anything already seen
 // (per-user url_hash unique key) or older than NEWS_MAX_AGE_DAYS.
 // Returns how many new rows were stored.
-function news_store_items(int $userId, string $query, ?int $pillarId, array $items): int
+function news_store_items(int $userId, string $query, ?int $pillarId, array $items, ?int $workspaceId = null): int
 {
     $cutoff = date('Y-m-d H:i:s', strtotime('-' . NEWS_MAX_AGE_DAYS . ' days'));
     $stmt = db()->prepare(
-        'INSERT IGNORE INTO news_items (user_id, topic_query, content_pillar_id, title, url, url_hash, source, published_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT IGNORE INTO news_items (user_id, workspace_id, topic_query, content_pillar_id, title, url, url_hash, source, published_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stored = 0;
     foreach (array_slice($items, 0, NEWS_ITEMS_PER_QUERY) as $item) {
@@ -240,7 +250,7 @@ function news_store_items(int $userId, string $query, ?int $pillarId, array $ite
             continue;
         }
         $stmt->execute([
-            $userId, mb_substr($query, 0, 255), $pillarId,
+            $userId, $workspaceId, mb_substr($query, 0, 255), $pillarId,
             mb_substr($item['title'], 0, 500),
             mb_substr($item['url'], 0, 1000),
             sha1($item['url']),
@@ -258,12 +268,12 @@ function news_store_items(int $userId, string $query, ?int $pillarId, array $ite
 // allowlist when one is configured; direct feed URLs bypass it (adding
 // the feed was the trust decision).
 // Returns ['fetched' => queries tried, 'stored' => new items, 'errors' => [msg]].
-function news_refresh(int $userId): array
+function news_refresh(int $userId, ?int $workspaceId = null): array
 {
     $stored = 0;
     $errors = [];
-    $queries = news_build_queries($userId);
-    $trusted = array_column(fetch_news_trusted_sources($userId), 'source');
+    $queries = news_build_queries($userId, $workspaceId);
+    $trusted = array_column(fetch_news_trusted_sources($userId, $workspaceId), 'source');
     foreach ($queries as $q) {
         $isFeed = !empty($q['feed']);
         try {
@@ -280,7 +290,7 @@ function news_refresh(int $userId): array
             } elseif ($trusted) {
                 $items = array_values(array_filter($items, fn ($item) => news_source_is_trusted($item, $trusted)));
             }
-            $stored += news_store_items($userId, $q['query'], $q['pillar_id'], $items);
+            $stored += news_store_items($userId, $q['query'], $q['pillar_id'], $items, $workspaceId);
         } catch (Throwable $e) {
             $errors[] = "\"{$q['query']}\": " . $e->getMessage();
         }
@@ -324,10 +334,14 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         'News'           => $newsLine,
     ];
 
-    $brief = resolve_brief_for_pillar($userId, $pillar);
-    $creative = generate_creative_via_ai($row, $aiConfig, $brief, null, $pillar);
-    $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null);
-    $paletteDefault = resolve_default_palette($userId, $creative['format'], $pillar['name'] ?? null);
+    // Workspace context (profile fields + uploaded documents) beats the
+    // legacy brief pair when the item belongs to a workspace.
+    $workspace = !empty($newsItem['workspace_id']) ? fetch_workspace($userId, (int) $newsItem['workspace_id']) : null;
+    $wsId = $workspace ? (int) $workspace['id'] : null;
+    $brief = $workspace ? null : resolve_brief_for_pillar($userId, $pillar);
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, null, $pillar, $workspace);
+    $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null, $wsId);
+    $paletteDefault = resolve_default_palette($userId, $creative['format'], $pillar['name'] ?? null, $wsId);
     if ($paletteDefault !== null && empty($creative['template'])) {
         $creative['template'] = str_starts_with($paletteDefault, 'custom:') ? $paletteDefault : (int) $paletteDefault;
     }
@@ -337,10 +351,10 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
     $caption = trim($creative['caption'] ?? '');
 
     db()->prepare(
-        'INSERT INTO posts (user_id, campaign_id, title, format, caption, status, content_pillar_id, creative_json)
-         VALUES (?, ?, ?, ?, ?, "draft", ?, ?)'
+        'INSERT INTO posts (user_id, workspace_id, linkedin_account_id, campaign_id, title, format, caption, status, content_pillar_id, creative_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, "draft", ?, ?)'
     )->execute([
-        $userId, $campaignId, $title, $format, $caption,
+        $userId, $wsId, $workspace['linkedin_account_id'] ?? null, $campaignId, $title, $format, $caption,
         $newsItem['content_pillar_id'] ?: null, json_encode($creative),
     ]);
     $postId = (int) db()->lastInsertId();
@@ -350,7 +364,8 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         $user->execute([$userId]);
         $u = $user->fetch();
         $footerName = trim($u['name'] ?? '') ?: explode('@', $u['email'] ?? 'Your Name')[0];
-        $category = ($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal';
+        $category = $workspace ? ($workspace['type'] === 'company' ? 'company' : 'personal')
+            : (($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal');
         $photoPath = resolve_footer_image($userId, $category);
         $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         try {
@@ -374,15 +389,21 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
 // The freshest unused headlines, spread across queries so one hot topic
 // doesn't take every auto-draft slot: picks at most one item per
 // topic_query first, then fills remaining slots by recency.
-function news_pick_items_for_drafts(int $userId, int $count): array
+function news_pick_items_for_drafts(int $userId, int $count, ?int $workspaceId = null): array
 {
-    $stmt = db()->prepare(
-        "SELECT * FROM news_items
-         WHERE user_id = ? AND status = 'new'
-         ORDER BY COALESCE(published_at, fetched_at) DESC
-         LIMIT 100"
-    );
-    $stmt->execute([$userId]);
+    if ($workspaceId === null) {
+        $stmt = db()->prepare(
+            "SELECT * FROM news_items WHERE user_id = ? AND status = 'new'
+             ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 100"
+        );
+        $stmt->execute([$userId]);
+    } else {
+        $stmt = db()->prepare(
+            "SELECT * FROM news_items WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = 'new'
+             ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 100"
+        );
+        $stmt->execute([$userId, $workspaceId]);
+    }
     $items = $stmt->fetchAll();
 
     $picked = [];

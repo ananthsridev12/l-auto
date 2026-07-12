@@ -108,10 +108,10 @@ $stmt = db()->prepare(
     'SELECT p.id, p.campaign_id, p.title, p.format, p.status, p.scheduled_at, p.linkedin_account_id, la.display_name AS account_name
      FROM posts p
      LEFT JOIN linkedin_accounts la ON la.id = p.linkedin_account_id
-     WHERE p.user_id = ? AND p.status IN ("draft","scheduled")
+     WHERE p.user_id = ? AND (p.workspace_id = ? OR p.workspace_id IS NULL) AND p.status IN ("draft","scheduled")
      ORDER BY COALESCE(p.scheduled_at, p.created_at) ASC, p.id ASC'
 );
-$stmt->execute([$userId]);
+$stmt->execute([$userId, current_workspace_id()]);
 $posts = $stmt->fetchAll();
 
 $pageTitle  = 'Bulk Schedule';

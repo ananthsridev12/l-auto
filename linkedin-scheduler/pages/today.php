@@ -5,9 +5,10 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 
 require_login();
 $userId = current_user_id();
+$workspaceId = current_workspace_id();
 
-$stmt = db()->prepare('SELECT id FROM posts WHERE user_id = ? AND DATE(scheduled_at) = CURDATE() ORDER BY id ASC');
-$stmt->execute([$userId]);
+$stmt = db()->prepare('SELECT id FROM posts WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND DATE(scheduled_at) = CURDATE() ORDER BY id ASC');
+$stmt->execute([$userId, $workspaceId]);
 $todayIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 
 // The common case (one post today) gets the full editor below. With more

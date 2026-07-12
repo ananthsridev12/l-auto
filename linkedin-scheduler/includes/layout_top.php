@@ -30,6 +30,21 @@ $__flashSuccess = flash('success');
       <span>LI Scheduler</span>
     </div>
 
+    <?php if ($__user): ?>
+      <?php $__workspaces = fetch_workspaces((int) $__user['id']); $__activeWs = current_workspace_id(); ?>
+      <form method="post" action="<?= h(app_path('api/switch_workspace.php')) ?>" class="workspace-switcher">
+        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+        <input type="hidden" name="return_to" value="<?= h(ltrim($_SERVER['REQUEST_URI'] ?? '', '/')) ?>">
+        <select name="workspace_id" onchange="this.form.submit()" aria-label="Workspace">
+          <?php foreach ($__workspaces as $__ws): ?>
+            <option value="<?= (int) $__ws['id'] ?>"<?= (int) $__ws['id'] === $__activeWs ? ' selected' : '' ?>>
+              <?= h($__ws['name']) ?><?= $__ws['type'] === 'personal' ? ' (Personal)' : ' (Company)' ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </form>
+    <?php endif; ?>
+
     <nav>
       <a href="<?= h(app_path('pages/new_post.php')) ?>" class="<?= ($activePage ?? '') === 'new_post' ? 'active' : '' ?>">New Post</a>
       <a href="<?= h(app_path('pages/today.php')) ?>" class="<?= ($activePage ?? '') === 'today' ? 'active' : '' ?>">Today</a>

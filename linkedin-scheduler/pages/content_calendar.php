@@ -7,13 +7,14 @@ require_once __DIR__ . '/../includes/calendar_planner.php';
 require_login();
 $userId = current_user_id();
 
-$pillars = fetch_content_pillars($userId);
+$workspaceId = current_workspace_id();
+$pillars = fetch_content_pillars($userId, $workspaceId);
 $enabledFormats = get_enabled_formats($userId);
 $defaultPillarWeights = default_pillar_weights($pillars);
 $defaultFormatWeights = default_format_weights($enabledFormats);
 
-$stmt = db()->prepare('SELECT id, period_days, posts_per_week, status, created_at FROM calendar_batches WHERE user_id = ? ORDER BY created_at DESC');
-$stmt->execute([$userId]);
+$stmt = db()->prepare('SELECT id, period_days, posts_per_week, status, created_at FROM calendar_batches WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY created_at DESC');
+$stmt->execute([$userId, $workspaceId]);
 $batches = $stmt->fetchAll();
 
 $pageTitle  = 'Content Calendar';

@@ -54,10 +54,13 @@ if ($row['Topic / Title'] === '' && $row['Post Caption'] === '') {
     json_response(['success' => false, 'error' => 'Enter at least a topic/title (or a caption) to generate from.'], 422);
 }
 
-$brief = resolve_brief_for_pillar($userId, $pillar);
+// Workspace profile + documents are the context now; the legacy brief
+// pair only applies when no workspace exists yet (pre-migration).
+$workspace = current_workspace();
+$brief = $workspace ? null : resolve_brief_for_pillar($userId, $pillar);
 
 try {
-    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar);
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace);
 } catch (Throwable $e) {
     json_response(['success' => false, 'error' => $e->getMessage()], 502);
 }

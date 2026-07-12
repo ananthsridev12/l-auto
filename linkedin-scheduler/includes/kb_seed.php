@@ -8,7 +8,12 @@
 // deliberately left blank — they're inherently individual/company-
 // specific and can't be meaningfully generic (see pages/settings.php).
 
-function seed_default_knowledge_base(int $userId): void
+// $workspaceId scopes everything seeded (null = legacy unscoped rows,
+// only for pre-workspace callers). Personal-category pillars seed into a
+// personal workspace as-is; when seeding a company workspace the same
+// starter set still applies — the category column is legacy metadata,
+// voice now comes from the workspace type.
+function seed_default_knowledge_base(int $userId, ?int $workspaceId = null): void
 {
     $personas = [
         ['Decision Maker', 'The economic buyer — cares about ROI, budget justification, and risk. Wants proof before committing.'],
@@ -17,11 +22,11 @@ function seed_default_knowledge_base(int $userId): void
         ['Recruiter / Future Employer', 'Someone assessing your track record and skills through your posts, not a customer at all.'],
     ];
     $personaStmt = db()->prepare(
-        'INSERT INTO personas (user_id, name, description) VALUES (?, ?, ?)
+        'INSERT INTO personas (user_id, workspace_id, name, description) VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE description = description'
     );
     foreach ($personas as [$name, $desc]) {
-        $personaStmt->execute([$userId, $name, $desc]);
+        $personaStmt->execute([$userId, $workspaceId, $name, $desc]);
     }
 
     $pillars = [
@@ -35,11 +40,11 @@ function seed_default_knowledge_base(int $userId): void
         ['Personal Opinion / Hot Take', 'A genuine, slightly contrarian opinion on something in your field or work life.', 'personal'],
     ];
     $pillarStmt = db()->prepare(
-        'INSERT INTO content_pillars (user_id, name, description, category) VALUES (?, ?, ?, ?)
+        'INSERT INTO content_pillars (user_id, workspace_id, name, description, category) VALUES (?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE description = description'
     );
     foreach ($pillars as [$name, $desc, $category]) {
-        $pillarStmt->execute([$userId, $name, $desc, $category]);
+        $pillarStmt->execute([$userId, $workspaceId, $name, $desc, $category]);
     }
 
     $ctas = [
@@ -55,12 +60,12 @@ function seed_default_knowledge_base(int $userId): void
     // cta_library has no unique key (multiple identical CTAs are harmless
     // and users may legitimately want near-duplicates), so guard
     // idempotency here explicitly instead.
-    $existingStmt = db()->prepare('SELECT COUNT(*) FROM cta_library WHERE user_id = ?');
-    $existingStmt->execute([$userId]);
+    $existingStmt = db()->prepare('SELECT COUNT(*) FROM cta_library WHERE user_id = ? AND (workspace_id <=> ?)');
+    $existingStmt->execute([$userId, $workspaceId]);
     if ((int) $existingStmt->fetchColumn() === 0) {
-        $ctaStmt = db()->prepare('INSERT INTO cta_library (user_id, text, funnel_stage) VALUES (?, ?, ?)');
+        $ctaStmt = db()->prepare('INSERT INTO cta_library (user_id, workspace_id, text, funnel_stage) VALUES (?, ?, ?, ?)');
         foreach ($ctas as [$text, $stage]) {
-            $ctaStmt->execute([$userId, $text, $stage]);
+            $ctaStmt->execute([$userId, $workspaceId, $text, $stage]);
         }
     }
 }

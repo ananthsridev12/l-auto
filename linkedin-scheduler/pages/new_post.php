@@ -9,13 +9,15 @@ require_once __DIR__ . '/../includes/ai_generate.php';
 
 require_login();
 $userId = current_user_id();
+$workspaceId = current_workspace_id();
+$workspace = current_workspace();
 
 $availableFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel'], get_enabled_formats($userId)));
 $accounts = fetch_user_accounts($userId);
 $aiConfig = resolve_ai_config($userId);
-$personas = fetch_personas($userId);
-$contentPillars = fetch_content_pillars($userId);
-$ctaLibrary = fetch_cta_library($userId);
+$personas = fetch_personas($userId, $workspaceId);
+$contentPillars = fetch_content_pillars($userId, $workspaceId);
+$ctaLibrary = fetch_cta_library($userId, $workspaceId);
 $brandPalettes = fetch_brand_palettes($userId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -89,10 +91,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $storedCreative = ($aiCreative !== null && in_array($format, ['Single Image', 'Carousel'], true))
             ? json_encode($aiCreative) : null;
         $stmt = db()->prepare(
-            'INSERT INTO posts (user_id, linkedin_account_id, campaign_id, title, format, caption, status, scheduled_at, creative_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO posts (user_id, workspace_id, linkedin_account_id, campaign_id, title, format, caption, status, scheduled_at, creative_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$userId, $accountId, $campaignId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
+        $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
     } catch (PDOException $e) {
         if ((string) $e->getCode() === '23000') {
             flash('error', "Campaign ID \"{$campaignId}\" is already in use — choose another.");
@@ -322,7 +324,7 @@ require __DIR__ . '/../includes/layout_top.php';
           <select name="linkedin_account_id">
             <option value="">— Unassigned —</option>
             <?php foreach ($accounts as $acct): ?>
-              <option value="<?= (int) $acct['id'] ?>"><?= h($acct['display_name']) ?> (<?= h($acct['account_type']) ?>)</option>
+              <option value="<?= (int) $acct['id'] ?>"<?= (int) ($workspace['linkedin_account_id'] ?? 0) === (int) $acct['id'] ? ' selected' : '' ?>><?= h($acct['display_name']) ?> (<?= h($acct['account_type']) ?>)</option>
             <?php endforeach; ?>
           </select>
         </label>

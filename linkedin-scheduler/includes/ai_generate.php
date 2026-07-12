@@ -31,10 +31,23 @@ function gemini_configured(?string $apiKey): bool
 // has a brand brief and/or picked a persona/content pillar from their
 // Content Knowledge Base (see includes/post_helpers.php fetch_personas()
 // etc.) — richer than the short "Target Audience:" label alone.
-function build_context_block(?string $brandBrief, ?array $persona, ?array $pillar): string
+// $workspace (a workspaces row, see includes/workspace.php) supersedes
+// $brandBrief: its profile fields (about/industry/audience/tone/goals/
+// rules) plus any uploaded reference documents become the context. The
+// $brandBrief param remains for legacy callers without a workspace.
+function build_context_block(?string $brandBrief, ?array $persona, ?array $pillar, ?array $workspace = null): string
 {
     $parts = [];
-    if ($brandBrief) {
+    if ($workspace) {
+        $profile = workspace_context_text($workspace);
+        if ($profile !== '') {
+            $parts[] = $profile;
+        }
+        $docs = workspace_documents_text((int) $workspace['id']);
+        if ($docs !== '') {
+            $parts[] = $docs;
+        }
+    } elseif ($brandBrief) {
         $parts[] = "Brand context: {$brandBrief}";
     }
     if ($persona && !empty($persona['description'])) {
@@ -80,9 +93,9 @@ CAPTION RULES:
 RULES;
 }
 
-function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null): string
+function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null): string
 {
-    $context = build_context_block($brandBrief, $persona, $pillar);
+    $context = build_context_block($brandBrief, $persona, $pillar, $workspace);
 
     // News-reaction posts (includes/news_fetch.php news_generate_draft())
     // pass the headline/source/date in the row's "News" field. Only the
@@ -356,7 +369,7 @@ function ai_call_openai(string $prompt, string $apiKey, string $model): string
 // $persona/$pillar are full records (['name','description']) from
 // includes/post_helpers.php fetch_persona()/fetch_content_pillar(), not
 // just IDs — pass null for either when the caller has nothing selected.
-function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null): array
+function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null): array
 {
     $provider = $aiConfig['provider'] ?? 'gemini';
     $label = AI_PROVIDER_LABELS[$provider] ?? ucfirst($provider);
@@ -367,7 +380,7 @@ function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBri
 
     $rawFormat = trim($row['Final_Format'] ?? '');
     $format = in_array($rawFormat, ['Single Image', 'Text Post'], true) ? $rawFormat : 'Carousel';
-    $prompt = build_generation_prompt($row, $format, $brandBrief, $persona, $pillar);
+    $prompt = build_generation_prompt($row, $format, $brandBrief, $persona, $pillar, $workspace);
 
     $text = match ($provider) {
         'claude' => ai_call_claude($prompt, $aiConfig['api_key'], $aiConfig['model']),

@@ -74,10 +74,15 @@ function fetch_mention_picker_list(int $userId): array
 // from New Post's AI panel or applied automatically (see
 // includes/ai_generate.php build_generation_prompt()).
 
-function fetch_personas(int $userId): array
+function fetch_personas(int $userId, ?int $workspaceId = null): array
 {
-    $stmt = db()->prepare('SELECT id, name, description FROM personas WHERE user_id = ? ORDER BY name');
-    $stmt->execute([$userId]);
+    if ($workspaceId === null) {
+        $stmt = db()->prepare('SELECT id, name, description FROM personas WHERE user_id = ? ORDER BY name');
+        $stmt->execute([$userId]);
+    } else {
+        $stmt = db()->prepare('SELECT id, name, description FROM personas WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY name');
+        $stmt->execute([$userId, $workspaceId]);
+    }
     return $stmt->fetchAll();
 }
 
@@ -88,10 +93,18 @@ function fetch_persona(int $userId, int $id): ?array
     return $stmt->fetch() ?: null;
 }
 
-function fetch_content_pillars(int $userId): array
+// $workspaceId scopes results to a workspace; rows with NULL
+// workspace_id (created before the workspace migration ran) stay
+// visible everywhere so nothing disappears mid-rollout.
+function fetch_content_pillars(int $userId, ?int $workspaceId = null): array
 {
-    $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? ORDER BY name');
-    $stmt->execute([$userId]);
+    if ($workspaceId === null) {
+        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? ORDER BY name');
+        $stmt->execute([$userId]);
+    } else {
+        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY name');
+        $stmt->execute([$userId, $workspaceId]);
+    }
     return $stmt->fetchAll();
 }
 
@@ -112,7 +125,7 @@ function fetch_content_pillar(int $userId, int $id): ?array
 // than ID, since Content Studio rows aren't linked to a content_pillars
 // row the way Calendar-generated posts are. A pillar match wins over the
 // per-user format default, which wins over 'classic'.
-function resolve_default_layout(int $userId, string $format, ?string $pillarName = null): string
+function resolve_default_layout(int $userId, string $format, ?string $pillarName = null, ?int $workspaceId = null): string
 {
     if ($pillarName) {
         $stmt = db()->prepare('SELECT default_layout FROM content_pillars WHERE user_id = ? AND name = ? LIMIT 1');
@@ -122,8 +135,13 @@ function resolve_default_layout(int $userId, string $format, ?string $pillarName
             return $pillarLayout;
         }
     }
-    $stmt = db()->prepare('SELECT default_layout_single, default_layout_carousel FROM users WHERE id = ?');
-    $stmt->execute([$userId]);
+    if ($workspaceId !== null) {
+        $stmt = db()->prepare('SELECT default_layout_single, default_layout_carousel FROM workspaces WHERE id = ? AND user_id = ?');
+        $stmt->execute([$workspaceId, $userId]);
+    } else {
+        $stmt = db()->prepare('SELECT default_layout_single, default_layout_carousel FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+    }
     $row = $stmt->fetch();
     $layout = $format === 'carousel' ? ($row['default_layout_carousel'] ?? null) : ($row['default_layout_single'] ?? null);
     return $layout ?: 'classic';
@@ -141,7 +159,7 @@ function resolve_default_layout(int $userId, string $format, ?string $pillarName
 // preset or "custom:{id}" for a saved brand_palettes row — callers should
 // cast digit strings to int before assigning, same as every other call
 // site that sets "template".
-function resolve_default_palette(int $userId, string $format, ?string $pillarName = null): ?string
+function resolve_default_palette(int $userId, string $format, ?string $pillarName = null, ?int $workspaceId = null): ?string
 {
     if ($pillarName) {
         $stmt = db()->prepare('SELECT default_palette FROM content_pillars WHERE user_id = ? AND name = ? LIMIT 1');
@@ -151,17 +169,27 @@ function resolve_default_palette(int $userId, string $format, ?string $pillarNam
             return $pillarPalette;
         }
     }
-    $stmt = db()->prepare('SELECT default_palette_single, default_palette_carousel FROM users WHERE id = ?');
-    $stmt->execute([$userId]);
+    if ($workspaceId !== null) {
+        $stmt = db()->prepare('SELECT default_palette_single, default_palette_carousel FROM workspaces WHERE id = ? AND user_id = ?');
+        $stmt->execute([$workspaceId, $userId]);
+    } else {
+        $stmt = db()->prepare('SELECT default_palette_single, default_palette_carousel FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+    }
     $row = $stmt->fetch();
     $palette = $format === 'carousel' ? ($row['default_palette_carousel'] ?? null) : ($row['default_palette_single'] ?? null);
     return $palette ?: null;
 }
 
-function fetch_cta_library(int $userId): array
+function fetch_cta_library(int $userId, ?int $workspaceId = null): array
 {
-    $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE user_id = ? ORDER BY funnel_stage, text');
-    $stmt->execute([$userId]);
+    if ($workspaceId === null) {
+        $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE user_id = ? ORDER BY funnel_stage, text');
+        $stmt->execute([$userId]);
+    } else {
+        $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY funnel_stage, text');
+        $stmt->execute([$userId, $workspaceId]);
+    }
     return $stmt->fetchAll();
 }
 

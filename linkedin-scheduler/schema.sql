@@ -382,3 +382,73 @@ CREATE TABLE IF NOT EXISTS post_slides (
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
   UNIQUE KEY uniq_post_order (post_id, slide_order)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Workspaces: full personal/company segregation ────────────────────
+-- One 'personal' workspace per user (created at signup and by
+-- scripts/migrate_workspaces.php for existing users) plus one workspace
+-- per company page. Each workspace owns its knowledge hub (profile
+-- fields below + workspace-scoped pillars/personas/CTAs/news topics +
+-- knowledge_documents) and its content (posts/calendar batches). The
+-- 'about' field replaces users.brand_brief/self_brief, which remain but
+-- are no longer read after migration. Voice (company vs personal) is
+-- now the workspace type, not content_pillars.category.
+CREATE TABLE IF NOT EXISTS workspaces (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  type ENUM('personal','company') NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  linkedin_account_id INT NULL,
+  about TEXT NULL,
+  industry VARCHAR(255) NULL,
+  target_audience TEXT NULL,
+  tone_of_voice TEXT NULL,
+  goals TEXT NULL,
+  content_rules TEXT NULL,
+  website VARCHAR(500) NULL,
+  news_auto_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  news_drafts_per_day TINYINT NOT NULL DEFAULT 2,
+  default_layout_single VARCHAR(50) DEFAULT NULL,
+  default_layout_carousel VARCHAR(50) DEFAULT NULL,
+  default_palette_single VARCHAR(50) DEFAULT NULL,
+  default_palette_carousel VARCHAR(50) DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (linkedin_account_id) REFERENCES linkedin_accounts(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Uploaded reference documents (PDF/DOCX/TXT/MD) whose extracted text
+-- feeds AI generation context for the workspace — see Phase B,
+-- includes/kb_documents.php.
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  workspace_id INT NOT NULL,
+  filename VARCHAR(255) NOT NULL,
+  filepath VARCHAR(500) NOT NULL,
+  kind ENUM('pdf','docx','txt','md') NOT NULL,
+  extracted_text LONGTEXT NULL,
+  summary TEXT NULL,
+  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- NULL workspace_id = pre-migration row (treated as visible everywhere
+-- until scripts/migrate_workspaces.php backfills it).
+ALTER TABLE content_pillars ADD COLUMN workspace_id INT NULL;
+ALTER TABLE personas ADD COLUMN workspace_id INT NULL;
+ALTER TABLE cta_library ADD COLUMN workspace_id INT NULL;
+ALTER TABLE news_topics ADD COLUMN workspace_id INT NULL;
+ALTER TABLE news_items ADD COLUMN workspace_id INT NULL;
+ALTER TABLE news_trusted_sources ADD COLUMN workspace_id INT NULL;
+ALTER TABLE calendar_batches ADD COLUMN workspace_id INT NULL;
+ALTER TABLE posts ADD COLUMN workspace_id INT NULL;
+
+-- Names/queries are unique per WORKSPACE now, not per user — two
+-- workspaces can (and after seeding, do) each have a pillar named
+-- "Case Study / Results". NULL workspace_id rows don't collide (MySQL
+-- unique indexes permit repeated NULLs), which is fine for the short
+-- pre-migration window.
+ALTER TABLE content_pillars DROP INDEX uniq_user_pillar, ADD UNIQUE KEY uniq_user_ws_pillar (user_id, workspace_id, name);
+ALTER TABLE personas DROP INDEX uniq_user_persona, ADD UNIQUE KEY uniq_user_ws_persona (user_id, workspace_id, name);
+ALTER TABLE news_topics DROP INDEX uniq_user_query, ADD UNIQUE KEY uniq_user_ws_query (user_id, workspace_id, query);
+ALTER TABLE news_trusted_sources DROP INDEX uniq_user_source, ADD UNIQUE KEY uniq_user_ws_source (user_id, workspace_id, source);
+ALTER TABLE news_items DROP INDEX uniq_user_url, ADD UNIQUE KEY uniq_user_ws_url (user_id, workspace_id, url_hash);

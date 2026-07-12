@@ -50,14 +50,18 @@ $row = [
     'Final_Format'   => $post['format'],
 ];
 
-$brief = resolve_brief_for_pillar($userId, $pillar);
+// The post's workspace (set at plan time) carries the knowledge-hub
+// context; the legacy brief pair only applies to pre-workspace posts.
+$workspace = !empty($post['workspace_id']) ? fetch_workspace($userId, (int) $post['workspace_id']) : null;
+$wsId = $workspace ? (int) $workspace['id'] : null;
+$brief = $workspace ? null : resolve_brief_for_pillar($userId, $pillar);
 
 try {
-    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar);
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace);
     // Same auto-assignment Content Studio's CSV upload uses — see
     // includes/post_helpers.php resolve_default_layout().
-    $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null);
-    $paletteDefault = resolve_default_palette($userId, $creative['format'], $pillar['name'] ?? null);
+    $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null, $wsId);
+    $paletteDefault = resolve_default_palette($userId, $creative['format'], $pillar['name'] ?? null, $wsId);
     if ($paletteDefault !== null && empty($creative['template'])) {
         $creative['template'] = str_starts_with($paletteDefault, 'custom:') ? $paletteDefault : (int) $paletteDefault;
     }

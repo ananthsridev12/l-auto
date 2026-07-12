@@ -9,6 +9,8 @@ require_once __DIR__ . '/../includes/news_fetch.php';
 require_login();
 $userId = current_user_id();
 $user = current_user();
+$workspaceId = current_workspace_id();
+$workspace = current_workspace();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
@@ -54,16 +56,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
-    if (($_POST['form'] ?? '') === 'brand_brief') {
-        set_brand_brief($userId, $_POST['brand_brief'] ?? '');
-        set_self_brief($userId, $_POST['self_brief'] ?? '');
-        flash('success', 'Brand brief saved.');
+    // Active workspace's knowledge-hub profile — the context every AI
+    // generation in this workspace receives (includes/workspace.php
+    // workspace_context_text()).
+    if (($_POST['form'] ?? '') === 'workspace_profile') {
+        $name = trim($_POST['ws_name'] ?? '') ?: $workspace['name'];
+        $accountId = (int) ($_POST['ws_linkedin_account_id'] ?? 0) ?: null;
+        if ($accountId !== null) {
+            $chk = db()->prepare('SELECT id FROM linkedin_accounts WHERE id = ? AND user_id = ?');
+            $chk->execute([$accountId, $userId]);
+            if (!$chk->fetch()) {
+                $accountId = null;
+            }
+        }
+        db()->prepare(
+            'UPDATE workspaces SET name = ?, linkedin_account_id = ?, about = ?, industry = ?, target_audience = ?,
+             tone_of_voice = ?, goals = ?, content_rules = ?, website = ? WHERE id = ? AND user_id = ?'
+        )->execute([
+            $name, $accountId,
+            trim($_POST['ws_about'] ?? '') ?: null,
+            trim($_POST['ws_industry'] ?? '') ?: null,
+            trim($_POST['ws_target_audience'] ?? '') ?: null,
+            trim($_POST['ws_tone_of_voice'] ?? '') ?: null,
+            trim($_POST['ws_goals'] ?? '') ?: null,
+            trim($_POST['ws_content_rules'] ?? '') ?: null,
+            trim($_POST['ws_website'] ?? '') ?: null,
+            $workspaceId, $userId,
+        ]);
+        flash('success', 'Workspace profile saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'workspace_add') {
+        $name = trim($_POST['ws_name'] ?? '');
+        if ($name === '') {
+            flash('error', 'Enter a name for the company workspace.');
+            redirect('pages/settings.php');
+        }
+        $newId = create_workspace($userId, 'company', $name);
+        seed_default_knowledge_base($userId, $newId);
+        set_current_workspace($userId, $newId);
+        flash('success', "Workspace \"{$name}\" created with a starter knowledge base — you're now in it. Fill in its profile below.");
+        redirect('pages/settings.php');
+    }
+
+    // Company workspaces only; scoped rows are kept but unassigned (they
+    // become visible in every workspace) rather than destroyed.
+    if (($_POST['form'] ?? '') === 'workspace_delete') {
+        $wsDel = fetch_workspace($userId, (int) ($_POST['workspace_id'] ?? 0));
+        if (!$wsDel || $wsDel['type'] === 'personal') {
+            flash('error', 'The Personal workspace can\'t be deleted.');
+            redirect('pages/settings.php');
+        }
+        foreach (['content_pillars', 'personas', 'cta_library', 'news_topics', 'news_items', 'news_trusted_sources', 'calendar_batches', 'posts'] as $tbl) {
+            db()->prepare("UPDATE {$tbl} SET workspace_id = NULL WHERE workspace_id = ?")->execute([(int) $wsDel['id']]);
+        }
+        db()->prepare('DELETE FROM workspaces WHERE id = ? AND user_id = ?')->execute([(int) $wsDel['id'], $userId]);
+        flash('success', "Workspace \"{$wsDel['name']}\" removed — its content is kept and now shows in all workspaces.");
         redirect('pages/settings.php');
     }
 
     if (($_POST['form'] ?? '') === 'seed_kb') {
-        seed_default_knowledge_base($userId);
-        flash('success', 'Starter personas, content pillars, and CTAs added — anything you already had was left untouched.');
+        seed_default_knowledge_base($userId, $workspaceId);
+        flash('success', 'Starter personas, content pillars, and CTAs added to this workspace — anything you already had was left untouched.');
         redirect('pages/settings.php');
     }
 
@@ -75,10 +130,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/settings.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO personas (user_id, name, description) VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description)'
+            'INSERT INTO personas (user_id, workspace_id, name, description) VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), workspace_id = VALUES(workspace_id)'
         );
-        $stmt->execute([$userId, $name, $desc]);
+        $stmt->execute([$userId, $workspaceId, $name, $desc]);
         flash('success', "Persona \"{$name}\" saved.");
         redirect('pages/settings.php');
     }
@@ -102,10 +157,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/settings.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO content_pillars (user_id, name, description, category, default_layout, default_palette) VALUES (?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout), default_palette = VALUES(default_palette)'
+            'INSERT INTO content_pillars (user_id, workspace_id, name, description, category, default_layout, default_palette) VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout), default_palette = VALUES(default_palette), workspace_id = VALUES(workspace_id)'
         );
-        $stmt->execute([$userId, $name, $desc, $category, $layout, $palette]);
+        $stmt->execute([$userId, $workspaceId, $name, $desc, $category, $layout, $palette]);
         flash('success', "Content pillar \"{$name}\" saved.");
         redirect('pages/settings.php');
     }
@@ -121,10 +176,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $templates = render_design_templates();
         $single = $_POST['design_template_single'] ?? '';
         $carousel = $_POST['design_template_carousel'] ?? '';
-        set_default_layout_single($userId, array_key_exists($single, $templates) ? $single : null);
-        set_default_layout_carousel($userId, array_key_exists($carousel, $templates) ? $carousel : null);
-        set_default_palette_single($userId, validate_palette_select_value($userId, trim($_POST['default_palette_single'] ?? '')));
-        set_default_palette_carousel($userId, validate_palette_select_value($userId, trim($_POST['default_palette_carousel'] ?? '')));
+        db()->prepare(
+            'UPDATE workspaces SET default_layout_single = ?, default_layout_carousel = ?, default_palette_single = ?, default_palette_carousel = ? WHERE id = ? AND user_id = ?'
+        )->execute([
+            array_key_exists($single, $templates) ? $single : null,
+            array_key_exists($carousel, $templates) ? $carousel : null,
+            validate_palette_select_value($userId, trim($_POST['default_palette_single'] ?? '')),
+            validate_palette_select_value($userId, trim($_POST['default_palette_carousel'] ?? '')),
+            $workspaceId, $userId,
+        ]);
         flash('success', 'Default Design Templates updated.');
         redirect('pages/settings.php');
     }
@@ -132,8 +192,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'news_settings') {
         $enabled = !empty($_POST['news_auto_enabled']) ? 1 : 0;
         $perDay = max(1, min(5, (int) ($_POST['news_drafts_per_day'] ?? 2)));
-        db()->prepare('UPDATE users SET news_auto_enabled = ?, news_drafts_per_day = ? WHERE id = ?')
-            ->execute([$enabled, $perDay, $userId]);
+        db()->prepare('UPDATE workspaces SET news_auto_enabled = ?, news_drafts_per_day = ? WHERE id = ? AND user_id = ?')
+            ->execute([$enabled, $perDay, $workspaceId, $userId]);
         flash('success', 'News auto-content settings saved.');
         redirect('pages/settings.php');
     }
@@ -145,7 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (news_topic_is_feed($query) && !filter_var($query, FILTER_VALIDATE_URL)) {
             flash('error', 'That looks like a URL but isn\'t a valid one — check it and try again.');
         } else {
-            add_news_topic($userId, $query);
+            add_news_topic($userId, $query, $workspaceId);
             flash('success', news_topic_is_feed($query) ? 'RSS feed added — it will be fetched directly.' : "News keyword \"{$query}\" added.");
         }
         redirect('pages/settings.php');
@@ -156,7 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($source === '') {
             flash('error', 'Enter a publisher domain or name.');
         } else {
-            add_news_trusted_source($userId, $source);
+            add_news_trusted_source($userId, $source, $workspaceId);
             flash('success', "Trusted source \"{$source}\" added — Google News results are now limited to your trusted list.");
         }
         redirect('pages/settings.php');
@@ -182,8 +242,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'Enter the CTA text.');
             redirect('pages/settings.php');
         }
-        $stmt = db()->prepare('INSERT INTO cta_library (user_id, text, funnel_stage) VALUES (?, ?, ?)');
-        $stmt->execute([$userId, $text, $stage]);
+        $stmt = db()->prepare('INSERT INTO cta_library (user_id, workspace_id, text, funnel_stage) VALUES (?, ?, ?, ?)');
+        $stmt->execute([$userId, $workspaceId, $text, $stage]);
         flash('success', 'CTA added to your library.');
         redirect('pages/settings.php');
     }
@@ -516,20 +576,17 @@ $geminiKey = get_gemini_api_key($userId);
 $claudeKey = get_claude_api_key($userId);
 $openaiKey = get_openai_api_key($userId);
 $aiProvider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;
-$brandBrief = get_brand_brief($userId);
-$selfBrief = get_self_brief($userId);
-$personas = fetch_personas($userId);
-$contentPillars = fetch_content_pillars($userId);
-$defaultLayoutSingle = get_default_layout_single($userId);
-$defaultLayoutCarousel = get_default_layout_carousel($userId);
-$defaultPaletteSingle = get_default_palette_single($userId);
-$defaultPaletteCarousel = get_default_palette_carousel($userId);
-$newsTopics = fetch_news_topics($userId);
-$newsTrustedSources = fetch_news_trusted_sources($userId);
-$newsSettingsStmt = db()->prepare('SELECT news_auto_enabled, news_drafts_per_day FROM users WHERE id = ?');
-$newsSettingsStmt->execute([$userId]);
-$newsSettings = $newsSettingsStmt->fetch() ?: ['news_auto_enabled' => 0, 'news_drafts_per_day' => 2];
-$ctaLibrary = fetch_cta_library($userId);
+$workspaces = fetch_workspaces($userId);
+$personas = fetch_personas($userId, $workspaceId);
+$contentPillars = fetch_content_pillars($userId, $workspaceId);
+$defaultLayoutSingle = $workspace['default_layout_single'] ?? null;
+$defaultLayoutCarousel = $workspace['default_layout_carousel'] ?? null;
+$defaultPaletteSingle = $workspace['default_palette_single'] ?? null;
+$defaultPaletteCarousel = $workspace['default_palette_carousel'] ?? null;
+$newsTopics = fetch_news_topics($userId, $workspaceId);
+$newsTrustedSources = fetch_news_trusted_sources($userId, $workspaceId);
+$newsSettings = ['news_auto_enabled' => $workspace['news_auto_enabled'] ?? 0, 'news_drafts_per_day' => $workspace['news_drafts_per_day'] ?? 2];
+$ctaLibrary = fetch_cta_library($userId, $workspaceId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 $brandPalettes = fetch_brand_palettes($userId);
 $brandFonts = fetch_brand_fonts($userId);
@@ -628,18 +685,74 @@ require __DIR__ . '/../includes/layout_top.php';
 </section>
 
 <section class="card">
-  <h2>Brand Brief &amp; Self Brief</h2>
-  <p class="muted">Brand Brief covers company-related posts (services, case studies, industry expertise). Self Brief is the personal-voice counterpart used for personal content pillars (achievements, opinions, life events) — see the Company/Personal tag on each pillar below. Both are automatically added as context to every AI generation call, so you don't have to retype them each time.</p>
+  <h2>Workspaces</h2>
+  <p class="muted">Everything below Settings' AI Provider section is <strong>per workspace</strong> — knowledge profile, personas, content pillars, CTAs, news topics, and design defaults are all separate for your Personal voice and for each company page. Switch workspaces with the selector at the top of the sidebar; every page (New Post, Content Calendar, News Studio, Drafts…) follows it.</p>
+  <?php foreach ($workspaces as $wsRow): ?>
+    <div class="account-row">
+      <div class="account-info">
+        <span><strong><?= h($wsRow['name']) ?></strong></span>
+        <span class="badge <?= $wsRow['type'] === 'personal' ? 'badge-format' : 'badge-active' ?>"><?= $wsRow['type'] === 'personal' ? 'Personal' : 'Company' ?></span>
+        <?php if ((int) $wsRow['id'] === $workspaceId): ?><span class="badge badge-campaign">Active</span><?php endif; ?>
+      </div>
+      <?php if ($wsRow['type'] !== 'personal'): ?>
+        <form method="post" onsubmit="return confirm('Remove this workspace? Its pillars/personas/posts are kept but become visible in every workspace.');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="workspace_delete">
+          <input type="hidden" name="workspace_id" value="<?= (int) $wsRow['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      <?php endif; ?>
+    </div>
+  <?php endforeach; ?>
+  <form method="post" class="stacked-form" style="margin-top:12px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="workspace_add">
+    <label>New company workspace
+      <input type="text" name="ws_name" placeholder="e.g. Acme Manufacturing" required>
+    </label>
+    <button type="submit" class="btn-secondary">Add Company Workspace</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Knowledge Hub — <?= h($workspace['name']) ?> profile</h2>
+  <p class="muted">This is who <?= $workspace['type'] === 'personal' ? 'you are' : 'this company is' ?> — every AI generation in this workspace automatically receives all of it as context, so the more you fill in, the more on-voice the content. (Uploadable reference documents are coming to this hub next.)</p>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
-    <input type="hidden" name="form" value="brand_brief">
-    <label>Brand Brief
-      <textarea name="brand_brief" rows="4" placeholder="e.g. We sell predictive-maintenance sensors to mid-size manufacturing plants. Voice: direct, data-driven, not salesy."><?= h($brandBrief ?? '') ?></textarea>
+    <input type="hidden" name="form" value="workspace_profile">
+    <label>Workspace name
+      <input type="text" name="ws_name" value="<?= h($workspace['name']) ?>" required>
     </label>
-    <label>Self Brief
-      <textarea name="self_brief" rows="4" placeholder="e.g. I'm a reliability engineer turned founder. Voice: candid, a bit informal, share real lessons not just wins."><?= h($selfBrief ?? '') ?></textarea>
+    <label>Default LinkedIn account <span class="muted">(new posts in this workspace pre-select it)</span>
+      <select name="ws_linkedin_account_id">
+        <option value="">— None —</option>
+        <?php foreach (fetch_user_accounts($userId) as $acct): ?>
+          <option value="<?= (int) $acct['id'] ?>"<?= (int) ($workspace['linkedin_account_id'] ?? 0) === (int) $acct['id'] ? ' selected' : '' ?>><?= h($acct['display_name']) ?> (<?= h($acct['account_type']) ?>)</option>
+        <?php endforeach; ?>
+      </select>
     </label>
-    <button type="submit" class="btn-primary">Save Briefs</button>
+    <label><?= $workspace['type'] === 'personal' ? 'About you' : 'About the company' ?> <span class="muted">(the brief — who, what, voice)</span>
+      <textarea name="ws_about" rows="4" placeholder="<?= $workspace['type'] === 'personal' ? "e.g. I'm a reliability engineer turned founder. Voice: candid, a bit informal, share real lessons not just wins." : 'e.g. We sell predictive-maintenance sensors to mid-size manufacturing plants. Voice: direct, data-driven, not salesy.' ?>"><?= h($workspace['about'] ?? '') ?></textarea>
+    </label>
+    <label>Industry
+      <input type="text" name="ws_industry" value="<?= h($workspace['industry'] ?? '') ?>" placeholder="e.g. Industrial IoT / Manufacturing">
+    </label>
+    <label>Target audience
+      <textarea name="ws_target_audience" rows="2" placeholder="e.g. Plant managers and reliability engineers at 200-2000 employee manufacturers"><?= h($workspace['target_audience'] ?? '') ?></textarea>
+    </label>
+    <label>Tone of voice
+      <input type="text" name="ws_tone_of_voice" value="<?= h($workspace['tone_of_voice'] ?? '') ?>" placeholder="e.g. Direct, practical, numbers over adjectives, never salesy">
+    </label>
+    <label>Content goals
+      <textarea name="ws_goals" rows="2" placeholder="e.g. Build authority in predictive maintenance; generate demo calls"><?= h($workspace['goals'] ?? '') ?></textarea>
+    </label>
+    <label>Content rules — do's &amp; don'ts <span class="muted">(followed strictly by the AI)</span>
+      <textarea name="ws_content_rules" rows="3" placeholder="e.g. Never mention competitors by name. Always use metric units. No emojis in captions."><?= h($workspace['content_rules'] ?? '') ?></textarea>
+    </label>
+    <label>Website
+      <input type="text" name="ws_website" value="<?= h($workspace['website'] ?? '') ?>" placeholder="https://example.com">
+    </label>
+    <button type="submit" class="btn-primary">Save Profile</button>
   </form>
 </section>
 

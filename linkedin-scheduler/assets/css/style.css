@@ -603,6 +603,20 @@ body.centered-page {
 .color-field .hex-input:disabled { background: var(--gray-50); color: var(--gray-400); }
 .color-field .hex-input:focus { border-color: var(--color-brand); box-shadow: var(--focus-ring); outline: none; }
 
+/* Workspace switcher at the top of the sidebar */
+.workspace-switcher { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--gray-200); }
+.workspace-switcher select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-700);
+  background: var(--gray-50);
+  cursor: pointer;
+}
+
 .palette-swatches { display: inline-flex; gap: 4px; }
 .palette-swatches span {
   width: 22px;

@@ -15,6 +15,8 @@ require_once __DIR__ . '/../includes/news_fetch.php';
 
 require_login();
 $userId = current_user_id();
+$workspaceId = current_workspace_id();
+$workspace = current_workspace();
 $aiConfig = resolve_ai_config($userId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -24,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'fetch_now') {
-        $result = news_refresh($userId);
+        $result = news_refresh($userId, $workspaceId);
         if ($result['fetched'] === 0) {
             flash('error', 'Nothing to search — add Content Pillars or news keywords in Settings first.');
         } else {
@@ -41,8 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['form'] ?? '') === 'create_draft') {
         $itemId = (int) ($_POST['item_id'] ?? 0);
-        $stmt = db()->prepare('SELECT * FROM news_items WHERE id = ? AND user_id = ? AND status = "new"');
-        $stmt->execute([$itemId, $userId]);
+        $stmt = db()->prepare('SELECT * FROM news_items WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = "new"');
+        $stmt->execute([$itemId, $userId, $workspaceId]);
         $item = $stmt->fetch();
         if (!$item) {
             flash('error', 'Headline not found (already used or dismissed?).');
@@ -74,38 +76,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $draftStmt = db()->prepare(
     "SELECT p.*, (SELECT ps.filepath FROM post_slides ps WHERE ps.post_id = p.id ORDER BY ps.slide_order LIMIT 1) AS first_slide
      FROM posts p
-     WHERE p.user_id = ? AND p.status = 'draft' AND p.campaign_id LIKE 'NEWS-%'
+     WHERE p.user_id = ? AND (p.workspace_id = ? OR p.workspace_id IS NULL) AND p.status = 'draft' AND p.campaign_id LIKE 'NEWS-%'
      ORDER BY p.created_at DESC
      LIMIT 50"
 );
-$draftStmt->execute([$userId]);
+$draftStmt->execute([$userId, $workspaceId]);
 $newsDrafts = $draftStmt->fetchAll();
 
 $itemStmt = db()->prepare(
     "SELECT * FROM news_items
-     WHERE user_id = ? AND status = 'new'
+     WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = 'new'
      ORDER BY COALESCE(published_at, fetched_at) DESC
      LIMIT 60"
 );
-$itemStmt->execute([$userId]);
+$itemStmt->execute([$userId, $workspaceId]);
 $headlines = $itemStmt->fetchAll();
 
-$queries = news_build_queries($userId);
-$autoEnabled = false;
-$draftsPerDay = 2;
-$uStmt = db()->prepare('SELECT news_auto_enabled, news_drafts_per_day FROM users WHERE id = ?');
-$uStmt->execute([$userId]);
-if ($uRow = $uStmt->fetch()) {
-    $autoEnabled = (bool) $uRow['news_auto_enabled'];
-    $draftsPerDay = (int) $uRow['news_drafts_per_day'];
-}
+$queries = news_build_queries($userId, $workspaceId);
+$autoEnabled = (bool) ($workspace['news_auto_enabled'] ?? false);
+$draftsPerDay = (int) ($workspace['news_drafts_per_day'] ?? 2);
 
 $pageTitle  = 'News Studio';
 $activePage = 'news_studio';
 $token = csrf_token();
 require __DIR__ . '/../includes/layout_top.php';
 ?>
-<div class="page-header"><h1>News Studio</h1></div>
+<div class="page-header"><h1>News Studio</h1><span class="badge badge-campaign"><?= h($workspace['name']) ?></span></div>
 
 <section class="card">
   <div class="card-header">
