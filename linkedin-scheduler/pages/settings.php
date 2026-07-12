@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/news_fetch.php';
 require_once __DIR__ . '/../includes/kb_documents.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
+require_once __DIR__ . '/../includes/wordpress_api.php';
 
 require_login();
 $userId = current_user_id();
@@ -92,6 +93,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $workspaceId, $userId,
         ]);
         flash('success', 'Workspace profile saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'wordpress_settings') {
+        db()->prepare('UPDATE workspaces SET wordpress_url = ?, wordpress_username = ?, wordpress_app_password = ? WHERE id = ? AND user_id = ?')
+            ->execute([
+                rtrim(trim($_POST['wordpress_url'] ?? ''), '/') ?: null,
+                trim($_POST['wordpress_username'] ?? '') ?: null,
+                trim($_POST['wordpress_app_password'] ?? '') ?: null,
+                $workspaceId, $userId,
+            ]);
+        flash('success', 'WordPress connection saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'wordpress_test') {
+        $ws = fetch_workspace($userId, $workspaceId);
+        $result = wordpress_test_connection($ws);
+        flash($result['success'] ? 'success' : 'error', $result['success']
+            ? "Connected — authenticated as \"{$result['user']}\"."
+            : $result['error']);
         redirect('pages/settings.php');
     }
 
@@ -860,6 +882,32 @@ require __DIR__ . '/../includes/layout_top.php';
     </label>
     <button type="submit" class="btn-primary">Save Profile</button>
   </form>
+</section>
+
+<section class="card">
+  <h2>WordPress — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Connect a WordPress site to publish <a href="<?= h(app_path('pages/blog_studio.php')) ?>">Blog Studio</a> posts to directly. Use an <strong>Application Password</strong> (WordPress admin &gt; Users &gt; Profile &gt; Application Passwords), not your account password — it's scoped and revocable independently.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="wordpress_settings">
+    <label>Site URL
+      <input type="text" name="wordpress_url" value="<?= h($workspace['wordpress_url'] ?? '') ?>" placeholder="https://example.com">
+    </label>
+    <label>Username
+      <input type="text" name="wordpress_username" value="<?= h($workspace['wordpress_username'] ?? '') ?>" autocomplete="off">
+    </label>
+    <label>Application Password
+      <input type="password" name="wordpress_app_password" value="<?= h($workspace['wordpress_app_password'] ?? '') ?>" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" autocomplete="off">
+    </label>
+    <button type="submit" class="btn-secondary">Save WordPress Connection</button>
+  </form>
+  <?php if (wordpress_configured($workspace)): ?>
+    <form method="post" style="margin-top:12px;">
+      <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <input type="hidden" name="form" value="wordpress_test">
+      <button type="submit" class="btn-tiny">Test Connection</button>
+    </form>
+  <?php endif; ?>
 </section>
 
 <section class="card">

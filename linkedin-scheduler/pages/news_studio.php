@@ -14,6 +14,8 @@ require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/embeddings.php';
 require_once __DIR__ . '/../includes/content_memory.php';
 require_once __DIR__ . '/../includes/news_fetch.php';
+require_once __DIR__ . '/../includes/blog_posts.php';
+require_once __DIR__ . '/../includes/blog_generate.php';
 
 require_login();
 $userId = current_user_id();
@@ -70,6 +72,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         db()->prepare('UPDATE news_items SET status = "dismissed" WHERE id = ? AND user_id = ? AND status = "new"')
             ->execute([(int) ($_POST['item_id'] ?? 0), $userId]);
         redirect('pages/news_studio.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'write_blog_post') {
+        $itemId = (int) ($_POST['item_id'] ?? 0);
+        $stmt = db()->prepare('SELECT * FROM news_items WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL)');
+        $stmt->execute([$itemId, $userId, $workspaceId]);
+        $item = $stmt->fetch();
+        if (!$item) {
+            flash('error', 'Headline not found.');
+            redirect('pages/news_studio.php');
+        }
+        if (!ai_configured($aiConfig)) {
+            flash('error', 'Add an AI provider key in Settings first.');
+            redirect('pages/news_studio.php');
+        }
+        try {
+            // Sibling headlines from the same trend — grounds the post
+            // without pretending to have crawled the live web.
+            $sibStmt = db()->prepare(
+                "SELECT title, source FROM news_items
+                 WHERE user_id = ? AND topic_query = ? AND id != ?
+                 ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 5"
+            );
+            $sibStmt->execute([$userId, $item['topic_query'], $itemId]);
+            $siblings = $sibStmt->fetchAll();
+            $researchLines = array_map(
+                fn ($s) => '- ' . $s['title'] . ($s['source'] ? ' (' . $s['source'] . ')' : ''),
+                $siblings
+            );
+            $researchContext = $researchLines ? implode("\n", $researchLines) : null;
+
+            $meta = array_filter([$item['source'] ? 'reported by ' . $item['source'] : null, $item['published_at'] ? date('j M Y', strtotime($item['published_at'])) : null]);
+            $topic = ['title' => $item['title'], 'news_line' => $meta ? '(' . implode(', ', $meta) . ')' : null];
+
+            $relatedMemory = content_memory_related_for_topic($workspaceId, $item['title'], $aiConfig, 'blog');
+            $existingPosts = array_map(
+                fn ($p) => ['title' => $p['title'], 'slug' => $p['slug']],
+                fetch_blog_posts($userId, $workspaceId, 'published')
+            );
+            $creative = generate_blog_post_via_ai($topic, $aiConfig, $workspace, $relatedMemory, $researchContext, $existingPosts);
+            $newBlogPostId = create_blog_post($userId, $workspaceId, $creative, $itemId);
+            save_blog_content_memory($workspaceId, $newBlogPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
+            db()->prepare('UPDATE news_items SET status = "used" WHERE id = ? AND user_id = ?')->execute([$itemId, $userId]);
+            flash('success', 'Blog post drafted — review and edit before publishing.');
+            redirect('pages/blog_studio.php?id=' . $newBlogPostId);
+        } catch (Throwable $e) {
+            flash('error', 'Blog generation failed: ' . $e->getMessage());
+            redirect('pages/news_studio.php');
+        }
     }
 }
 
@@ -175,6 +226,12 @@ require __DIR__ . '/../includes/layout_top.php';
             <input type="hidden" name="form" value="create_draft">
             <input type="hidden" name="item_id" value="<?= (int) $item['id'] ?>">
             <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Create Draft</button>
+          </form>
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="write_blog_post">
+            <input type="hidden" name="item_id" value="<?= (int) $item['id'] ?>">
+            <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
           </form>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">

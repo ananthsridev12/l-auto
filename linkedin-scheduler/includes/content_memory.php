@@ -31,6 +31,28 @@ function save_content_memory(int $workspaceId, int $postId, string $embedText, s
     ]);
 }
 
+// Same idea as save_content_memory() above but for blog_posts (Phase F)
+// — a separate function rather than overloading save_content_memory()'s
+// signature, since every existing call site (New Post, Content Studio,
+// Calendar, News Studio) already depends on it always writing post_id +
+// content_type='linkedin'.
+function save_blog_content_memory(int $workspaceId, int $blogPostId, string $embedText, string $summary, array $aiConfig): void
+{
+    $embedding = ai_generate_embedding($embedText, $aiConfig);
+    if ($embedding === null) {
+        return;
+    }
+    db()->prepare(
+        'INSERT INTO content_memory (workspace_id, blog_post_id, content_type, summary, embedding, embedding_model)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    )->execute([
+        $workspaceId, $blogPostId, 'blog',
+        mb_substr(trim($summary), 0, 500),
+        json_encode($embedding),
+        $aiConfig['provider'] . ':' . ($aiConfig['provider'] === 'gemini' ? GEMINI_EMBEDDING_MODEL : OPENAI_EMBEDDING_MODEL),
+    ]);
+}
+
 // Top-N most similar past posts in this workspace to $queryEmbedding,
 // as [['summary' => ..., 'created_at' => ...], ...] ready for
 // build_context_block(). Brute-force cosine similarity in PHP — a

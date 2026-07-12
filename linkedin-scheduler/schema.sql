@@ -486,3 +486,45 @@ CREATE TABLE IF NOT EXISTS content_memory (
 ALTER TABLE users ADD COLUMN reddit_client_id VARCHAR(255) DEFAULT NULL;
 ALTER TABLE users ADD COLUMN reddit_client_secret VARCHAR(255) DEFAULT NULL;
 ALTER TABLE news_topics ADD COLUMN source_type ENUM('auto','reddit') NOT NULL DEFAULT 'auto';
+
+-- ── Blog content + WordPress publishing (Phase F) ─────────────────────
+-- One WordPress site per workspace (Application Password, not the
+-- account password — a scoped/revocable credential, same risk profile
+-- as linkedin_accounts.access_token). publish_target stays a plain
+-- string, not an ENUM locked to 'wordpress' — the user wasn't sure
+-- WordPress is the final platform, so adding another target later means
+-- a new publish_to_{target}() function (includes/wordpress_api.php is
+-- the first), not a schema change.
+ALTER TABLE workspaces ADD COLUMN wordpress_url VARCHAR(500) NULL;
+ALTER TABLE workspaces ADD COLUMN wordpress_username VARCHAR(255) NULL;
+ALTER TABLE workspaces ADD COLUMN wordpress_app_password VARCHAR(255) NULL;
+
+CREATE TABLE IF NOT EXISTS blog_posts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  workspace_id INT NOT NULL,
+  news_item_id INT NULL,
+  title VARCHAR(500) NOT NULL,
+  slug VARCHAR(500) NOT NULL,
+  meta_description VARCHAR(500) NULL,
+  keywords VARCHAR(500) NULL,
+  content_html LONGTEXT NOT NULL,
+  status ENUM('draft','scheduled','published','failed') NOT NULL DEFAULT 'draft',
+  scheduled_at DATETIME NULL,
+  published_at DATETIME NULL,
+  publish_target VARCHAR(50) NOT NULL DEFAULT 'wordpress',
+  external_post_id VARCHAR(100) NULL,
+  external_url VARCHAR(500) NULL,
+  error_message TEXT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (news_item_id) REFERENCES news_items(id) ON DELETE SET NULL,
+  INDEX idx_workspace_status (workspace_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- content_memory (Phase D) was created before blog_posts existed, so
+-- its blog_post_id FK is added here now that the target table is real.
+ALTER TABLE content_memory ADD CONSTRAINT fk_content_memory_blog_post
+  FOREIGN KEY (blog_post_id) REFERENCES blog_posts(id) ON DELETE CASCADE;

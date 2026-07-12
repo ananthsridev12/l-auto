@@ -54,6 +54,7 @@ $__flashSuccess = flash('success');
       <a href="<?= h(app_path('pages/content_calendar.php')) ?>" class="<?= ($activePage ?? '') === 'content_calendar' ? 'active' : '' ?>">Content Calendar</a>
       <a href="<?= h(app_path('pages/content_studio.php')) ?>" class="<?= ($activePage ?? '') === 'content_studio' ? 'active' : '' ?>">Content Studio</a>
       <a href="<?= h(app_path('pages/news_studio.php')) ?>" class="<?= ($activePage ?? '') === 'news_studio' ? 'active' : '' ?>">News Studio</a>
+      <a href="<?= h(app_path('pages/blog_studio.php')) ?>" class="<?= ($activePage ?? '') === 'blog_studio' ? 'active' : '' ?>">Blog Studio</a>
       <a href="<?= h(app_path('pages/import.php')) ?>" class="<?= ($activePage ?? '') === 'import' ? 'active' : '' ?>">Import</a>
       <a href="<?= h(app_path('pages/accounts.php')) ?>" class="<?= ($activePage ?? '') === 'accounts' ? 'active' : '' ?>">Accounts</a>
       <a href="<?= h(app_path('pages/history.php')) ?>" class="<?= ($activePage ?? '') === 'history' ? 'active' : '' ?>">History</a>
