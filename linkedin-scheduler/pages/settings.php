@@ -5,6 +5,8 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/zip_import.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/news_fetch.php';
+require_once __DIR__ . '/../includes/kb_documents.php';
+require_once __DIR__ . '/../includes/ai_generate.php';
 
 require_login();
 $userId = current_user_id();
@@ -119,6 +121,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'seed_kb') {
         seed_default_knowledge_base($userId, $workspaceId);
         flash('success', 'Starter personas, content pillars, and CTAs added to this workspace — anything you already had was left untouched.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'kb_doc_upload') {
+        if (empty($_FILES['kb_doc']['tmp_name']) || $_FILES['kb_doc']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose a PDF, Word (.docx), or text (.txt/.md) file to upload.');
+            redirect('pages/settings.php');
+        }
+        if ($_FILES['kb_doc']['size'] > MAX_DOCUMENT_SIZE_BYTES) {
+            flash('error', 'That file is too large — the limit is 10MB.');
+            redirect('pages/settings.php');
+        }
+        $originalName = $_FILES['kb_doc']['name'];
+        $contents = file_get_contents($_FILES['kb_doc']['tmp_name']);
+        $kind = sniff_document_kind($contents, $originalName);
+        if ($kind === null) {
+            flash('error', 'Unrecognized file type — upload a PDF, Word (.docx), or plain text (.txt/.md) file.');
+            redirect('pages/settings.php');
+        }
+        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/documents";
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        $safeName = preg_replace('/[^A-Za-z0-9_.-]/', '_', pathinfo($originalName, PATHINFO_FILENAME));
+        $storedName = bin2hex(random_bytes(8)) . '_' . mb_substr($safeName, 0, 100) . '.' . $kind;
+        $destPath = $dir . '/' . $storedName;
+        file_put_contents($destPath, $contents);
+        $extractedText = extract_document_text($destPath, $kind);
+        db()->prepare('INSERT INTO knowledge_documents (workspace_id, filename, filepath, kind, extracted_text) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$workspaceId, mb_substr($originalName, 0, 255), $destPath, $kind, $extractedText]);
+        flash($extractedText !== null ? 'success' : 'error',
+            $extractedText !== null
+                ? "\"{$originalName}\" uploaded — its text is now part of this workspace's AI context."
+                : "\"{$originalName}\" uploaded, but no readable text could be extracted (scanned/image-only file?). It's saved but won't add any context until replaced with a text-based version.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'kb_doc_delete') {
+        delete_knowledge_document($workspaceId, (int) ($_POST['doc_id'] ?? 0));
+        flash('success', 'Document removed.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'kb_doc_summarize') {
+        $doc = fetch_knowledge_document($workspaceId, (int) ($_POST['doc_id'] ?? 0));
+        if (!$doc || $doc['extracted_text'] === null) {
+            flash('error', 'This document has no extracted text to summarize.');
+            redirect('pages/settings.php');
+        }
+        $aiConfig = resolve_ai_config($userId);
+        if (!ai_configured($aiConfig)) {
+            flash('error', 'Add an AI provider key in Settings first.');
+            redirect('pages/settings.php');
+        }
+        try {
+            $summary = ai_summarize_document($doc['extracted_text'], $aiConfig);
+            db()->prepare('UPDATE knowledge_documents SET summary = ? WHERE id = ? AND workspace_id = ?')
+                ->execute([$summary, $doc['id'], $workspaceId]);
+            flash('success', "Summarized \"{$doc['filename']}\" — the summary (not the full text) is now used in AI context going forward.");
+        } catch (Throwable $e) {
+            flash('error', 'Summarization failed: ' . $e->getMessage());
+        }
         redirect('pages/settings.php');
     }
 
@@ -583,6 +647,7 @@ $defaultLayoutSingle = $workspace['default_layout_single'] ?? null;
 $defaultLayoutCarousel = $workspace['default_layout_carousel'] ?? null;
 $defaultPaletteSingle = $workspace['default_palette_single'] ?? null;
 $defaultPaletteCarousel = $workspace['default_palette_carousel'] ?? null;
+$knowledgeDocuments = fetch_knowledge_documents($workspaceId);
 $newsTopics = fetch_news_topics($userId, $workspaceId);
 $newsTrustedSources = fetch_news_trusted_sources($userId, $workspaceId);
 $newsSettings = ['news_auto_enabled' => $workspace['news_auto_enabled'] ?? 0, 'news_drafts_per_day' => $workspace['news_drafts_per_day'] ?? 2];
@@ -753,6 +818,55 @@ require __DIR__ . '/../includes/layout_top.php';
       <input type="text" name="ws_website" value="<?= h($workspace['website'] ?? '') ?>" placeholder="https://example.com">
     </label>
     <button type="submit" class="btn-primary">Save Profile</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Reference Documents — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Upload PDFs, Word docs, or text files with facts, positioning, product details, or data you want the AI to draw on — pitch decks, one-pagers, FAQs, case studies. Extracted text is added to this workspace's AI context automatically. For longer documents, click "Summarize" once your AI provider is configured — it condenses the document into a compact summary that's reused instead of the full text on every generation.</p>
+  <?php if ($knowledgeDocuments): ?>
+    <?php foreach ($knowledgeDocuments as $doc): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($doc['filename']) ?></span>
+          <span class="badge badge-format"><?= strtoupper(h($doc['kind'])) ?></span>
+          <?php if (!$doc['has_text']): ?>
+            <span class="badge badge-warning">No readable text</span>
+          <?php elseif ($doc['has_summary']): ?>
+            <span class="badge badge-active">Summarized</span>
+          <?php else: ?>
+            <span class="badge badge-scheduled">Using full text</span>
+          <?php endif; ?>
+          <span class="muted"><?= h(date('j M Y', strtotime($doc['uploaded_at']))) ?></span>
+        </div>
+        <div class="inline-form">
+          <?php if ($doc['has_text']): ?>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="kb_doc_summarize">
+              <input type="hidden" name="doc_id" value="<?= (int) $doc['id'] ?>">
+              <button type="submit" class="btn-tiny"><?= $doc['has_summary'] ? 'Re-summarize' : 'Summarize' ?></button>
+            </form>
+          <?php endif; ?>
+          <form method="post" onsubmit="return confirm('Remove this document from the knowledge hub?');">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="kb_doc_delete">
+            <input type="hidden" name="doc_id" value="<?= (int) $doc['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No documents uploaded yet.</p>
+  <?php endif; ?>
+  <form method="post" enctype="multipart/form-data" class="stacked-form" style="margin-top:12px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="kb_doc_upload">
+    <label>Upload document <span class="muted">(PDF, .docx, .txt, or .md — up to 10MB)</span>
+      <input type="file" name="kb_doc" accept=".pdf,.docx,.txt,.md" required>
+    </label>
+    <button type="submit" class="btn-secondary">Upload</button>
   </form>
 </section>
 
