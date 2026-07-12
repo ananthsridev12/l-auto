@@ -8,6 +8,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/creative_builder.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
+require_once __DIR__ . '/../includes/embeddings.php';
+require_once __DIR__ . '/../includes/content_memory.php';
 
 require_login();
 $userId = current_user_id();
@@ -58,9 +60,12 @@ if ($row['Topic / Title'] === '' && $row['Post Caption'] === '') {
 // pair only applies when no workspace exists yet (pre-migration).
 $workspace = current_workspace();
 $brief = $workspace ? null : resolve_brief_for_pillar($userId, $pillar);
+$relatedMemory = $workspace
+    ? content_memory_related_for_topic((int) $workspace['id'], $row['Topic / Title'] ?: $row['Post Caption'], $aiConfig)
+    : [];
 
 try {
-    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace);
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace, $relatedMemory);
 } catch (Throwable $e) {
     json_response(['success' => false, 'error' => $e->getMessage()], 502);
 }

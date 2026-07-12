@@ -12,6 +12,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/creative_builder.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
+require_once __DIR__ . '/../includes/embeddings.php';
+require_once __DIR__ . '/../includes/content_memory.php';
 
 require_login();
 $userId = current_user_id();
@@ -55,9 +57,10 @@ $row = [
 $workspace = !empty($post['workspace_id']) ? fetch_workspace($userId, (int) $post['workspace_id']) : null;
 $wsId = $workspace ? (int) $workspace['id'] : null;
 $brief = $workspace ? null : resolve_brief_for_pillar($userId, $pillar);
+$relatedMemory = $wsId ? content_memory_related_for_topic($wsId, $row['Topic / Title'], $aiConfig) : [];
 
 try {
-    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace);
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace, $relatedMemory);
     // Same auto-assignment Content Studio's CSV upload uses — see
     // includes/post_helpers.php resolve_default_layout().
     $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null, $wsId);
@@ -77,5 +80,9 @@ try {
 
 $update = db()->prepare('UPDATE posts SET creative_json = ?, title = ?, caption = ?, error_message = NULL WHERE id = ?');
 $update->execute([json_encode($creative), $creative['title'] ?? null, $creative['caption'] ?? null, $postId]);
+
+if ($wsId && trim($creative['caption'] ?? '') !== '') {
+    save_content_memory($wsId, $postId, trim(($creative['title'] ?? '') . ' ' . $creative['caption']), $creative['title'] ?: mb_substr($creative['caption'], 0, 200), $aiConfig);
+}
 
 json_response(['success' => true, 'post_id' => $postId, 'creative' => $creative]);

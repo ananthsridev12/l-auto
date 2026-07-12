@@ -3,10 +3,14 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
+require_once __DIR__ . '/../includes/ai_generate.php';
+require_once __DIR__ . '/../includes/embeddings.php';
+require_once __DIR__ . '/../includes/content_memory.php';
 
 require_login();
 $userId = current_user_id();
 $workspaceId = current_workspace_id();
+$aiConfig = resolve_ai_config($userId);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('pages/content_studio.php');
@@ -132,6 +136,10 @@ foreach ($rows as $row) {
     $deleteSlidesStmt->execute([$postId]);
     foreach ($slides as $order => $slide) {
         $insertSlideStmt->execute([$postId, $order + 1, $slide['filename'], $slide['filepath']]);
+    }
+
+    if ($workspaceId && trim($caption) !== '') {
+        save_content_memory($workspaceId, $postId, trim($title . ' ' . $caption), $title ?: mb_substr($caption, 0, 200), $aiConfig);
     }
 
     $rendered++;

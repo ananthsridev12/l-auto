@@ -57,6 +57,11 @@ define('AI_PROVIDER_DEFAULT', 'gemini'); // 'gemini' | 'claude' | 'openai'
 define('GEMINI_MODEL', 'gemini-2.5-flash');
 define('CLAUDE_MODEL', 'claude-sonnet-5');
 define('OPENAI_MODEL', 'gpt-4o-mini');
+// Embeddings for Memory & Context (includes/embeddings.php) — Claude has no
+// embeddings endpoint, so this only ever activates for Gemini/OpenAI users;
+// see ai_generate_embedding()'s null-on-unsupported-provider behavior.
+define('GEMINI_EMBEDDING_MODEL', 'text-embedding-004');
+define('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small');
 
 define('CLAUDE_API_KEY_DEFAULT', '');
 define('OPENAI_API_KEY_DEFAULT', '');

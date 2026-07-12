@@ -339,7 +339,8 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
     $workspace = !empty($newsItem['workspace_id']) ? fetch_workspace($userId, (int) $newsItem['workspace_id']) : null;
     $wsId = $workspace ? (int) $workspace['id'] : null;
     $brief = $workspace ? null : resolve_brief_for_pillar($userId, $pillar);
-    $creative = generate_creative_via_ai($row, $aiConfig, $brief, null, $pillar, $workspace);
+    $relatedMemory = $wsId ? content_memory_related_for_topic($wsId, $newsItem['title'], $aiConfig) : [];
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, null, $pillar, $workspace, $relatedMemory);
     $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null, $wsId);
     $paletteDefault = resolve_default_palette($userId, $creative['format'], $pillar['name'] ?? null, $wsId);
     if ($paletteDefault !== null && empty($creative['template'])) {
@@ -378,6 +379,10 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         foreach ($slides as $order => $slide) {
             $insertSlide->execute([$postId, $order + 1, $slide['filename'], $slide['filepath']]);
         }
+    }
+
+    if ($wsId && $caption !== '') {
+        save_content_memory($wsId, $postId, trim($title . ' ' . $caption), $title ?: mb_substr($caption, 0, 200), $aiConfig);
     }
 
     db()->prepare('UPDATE news_items SET status = "used", post_id = ? WHERE id = ? AND user_id = ?')

@@ -35,7 +35,12 @@ function gemini_configured(?string $apiKey): bool
 // $brandBrief: its profile fields (about/industry/audience/tone/goals/
 // rules) plus any uploaded reference documents become the context. The
 // $brandBrief param remains for legacy callers without a workspace.
-function build_context_block(?string $brandBrief, ?array $persona, ?array $pillar, ?array $workspace = null): string
+// $relatedMemory (see includes/content_memory.php
+// content_memory_related_for_topic()) is this workspace's own past
+// posts most similar to the new topic — empty when Memory & Context
+// isn't active (Claude-only accounts have no embeddings endpoint) or
+// there's simply no history yet.
+function build_context_block(?string $brandBrief, ?array $persona, ?array $pillar, ?array $workspace = null, array $relatedMemory = []): string
 {
     $parts = [];
     if ($workspace) {
@@ -55,6 +60,14 @@ function build_context_block(?string $brandBrief, ?array $persona, ?array $pilla
     }
     if ($pillar && !empty($pillar['description'])) {
         $parts[] = "Content pillar \"{$pillar['name']}\": {$pillar['description']}";
+    }
+    if ($relatedMemory) {
+        $lines = array_map(
+            fn ($m) => '- ' . $m['summary'] . ' (' . date('j M Y', strtotime($m['created_at'])) . ')',
+            $relatedMemory
+        );
+        $parts[] = "RECENT POSTS FROM THIS WORKSPACE (avoid repeating these — cover new ground; if one is clearly the start of a series this topic continues, build on it naturally instead of restating it):\n"
+            . implode("\n", $lines);
     }
     return $parts ? implode("\n", $parts) . "\n\n" : '';
 }
@@ -93,9 +106,9 @@ CAPTION RULES:
 RULES;
 }
 
-function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null): string
+function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null, array $relatedMemory = []): string
 {
-    $context = build_context_block($brandBrief, $persona, $pillar, $workspace);
+    $context = build_context_block($brandBrief, $persona, $pillar, $workspace, $relatedMemory);
 
     // News-reaction posts (includes/news_fetch.php news_generate_draft())
     // pass the headline/source/date in the row's "News" field. Only the
@@ -369,7 +382,7 @@ function ai_call_openai(string $prompt, string $apiKey, string $model): string
 // $persona/$pillar are full records (['name','description']) from
 // includes/post_helpers.php fetch_persona()/fetch_content_pillar(), not
 // just IDs — pass null for either when the caller has nothing selected.
-function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null): array
+function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null, array $relatedMemory = []): array
 {
     $provider = $aiConfig['provider'] ?? 'gemini';
     $label = AI_PROVIDER_LABELS[$provider] ?? ucfirst($provider);
@@ -380,7 +393,7 @@ function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBri
 
     $rawFormat = trim($row['Final_Format'] ?? '');
     $format = in_array($rawFormat, ['Single Image', 'Text Post'], true) ? $rawFormat : 'Carousel';
-    $prompt = build_generation_prompt($row, $format, $brandBrief, $persona, $pillar, $workspace);
+    $prompt = build_generation_prompt($row, $format, $brandBrief, $persona, $pillar, $workspace, $relatedMemory);
 
     $text = match ($provider) {
         'claude' => ai_call_claude($prompt, $aiConfig['api_key'], $aiConfig['model']),

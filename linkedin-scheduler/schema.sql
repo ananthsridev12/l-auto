@@ -452,3 +452,26 @@ ALTER TABLE personas DROP INDEX uniq_user_persona, ADD UNIQUE KEY uniq_user_ws_p
 ALTER TABLE news_topics DROP INDEX uniq_user_query, ADD UNIQUE KEY uniq_user_ws_query (user_id, workspace_id, query);
 ALTER TABLE news_trusted_sources DROP INDEX uniq_user_source, ADD UNIQUE KEY uniq_user_ws_source (user_id, workspace_id, source);
 ALTER TABLE news_items DROP INDEX uniq_user_url, ADD UNIQUE KEY uniq_user_ws_url (user_id, workspace_id, url_hash);
+
+-- ── Memory & Context: anti-repetition, natural topic continuation ────
+-- One row per generated LinkedIn/blog post: a short summary (the
+-- caption/title itself — already compact, no separate summarization
+-- call needed) plus its embedding vector. See includes/content_memory.php
+-- content_memory_find_related() (brute-force cosine similarity in PHP —
+-- realistic per-workspace volume never justifies a vector DB) and
+-- includes/embeddings.php ai_generate_embedding(). blog_post_id has no FK
+-- yet — added when blog_posts exists (Phase F).
+CREATE TABLE IF NOT EXISTS content_memory (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  workspace_id INT NOT NULL,
+  post_id INT NULL,
+  blog_post_id INT NULL,
+  content_type ENUM('linkedin','blog') NOT NULL DEFAULT 'linkedin',
+  summary TEXT NOT NULL,
+  embedding LONGTEXT NOT NULL,
+  embedding_model VARCHAR(100) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+  INDEX idx_workspace_type (workspace_id, content_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

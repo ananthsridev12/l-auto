@@ -17,6 +17,8 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/creative_builder.php'; // creative_series_label() etc., used by generate_creative_via_ai()
 require_once __DIR__ . '/../includes/ai_generate.php';
+require_once __DIR__ . '/../includes/embeddings.php';
+require_once __DIR__ . '/../includes/content_memory.php';
 require_once __DIR__ . '/../includes/news_fetch.php';
 
 // One pass per workspace with auto-drafting on — each workspace has its

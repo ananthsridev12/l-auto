@@ -6,6 +6,8 @@ require_once __DIR__ . '/../includes/zip_import.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
+require_once __DIR__ . '/../includes/embeddings.php';
+require_once __DIR__ . '/../includes/content_memory.php';
 
 require_login();
 $userId = current_user_id();
@@ -170,6 +172,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'None of the uploaded files were valid PNG/JPEG images.');
             redirect('pages/new_post.php');
         }
+    }
+
+    // Memory & Context: remember this post (any real caption, AI or
+    // hand-written) so future generations in this workspace can avoid
+    // repeating it — silently a no-op if embeddings aren't available
+    // (Claude-only accounts) or the caption is empty.
+    if (trim($caption) !== '') {
+        save_content_memory($workspaceId, $postId, trim($title . ' ' . $caption), $title ?: mb_substr($caption, 0, 200), resolve_ai_config($userId));
     }
 
     if ($action === 'post_now') {

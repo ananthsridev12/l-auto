@@ -6,6 +6,8 @@ require_once __DIR__ . '/../includes/csv_parser.php';
 require_once __DIR__ . '/../includes/content_studio_parser.php';
 require_once __DIR__ . '/../includes/creative_builder.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
+require_once __DIR__ . '/../includes/embeddings.php';
+require_once __DIR__ . '/../includes/content_memory.php';
 
 require_login();
 $userId = current_user_id();
@@ -46,7 +48,10 @@ foreach ($preview['rows'] as &$entry) {
     } else {
         try {
             $entry['source'] = 'ai';
-            $entry['creative'] = generate_creative_via_ai($row, $aiConfig, $brandBrief, null, null, $workspace);
+            $relatedMemory = $workspace
+                ? content_memory_related_for_topic((int) $workspace['id'], $row['Topic / Title'] ?: $row['Post Caption'], $aiConfig)
+                : [];
+            $entry['creative'] = generate_creative_via_ai($row, $aiConfig, $brandBrief, null, null, $workspace, $relatedMemory);
         } catch (Throwable $e) {
             $entry['skip'] = true;
             $entry['skip_reason'] = 'AI generation failed: ' . $e->getMessage();
