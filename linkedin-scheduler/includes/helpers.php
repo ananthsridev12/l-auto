@@ -362,12 +362,23 @@ function resolve_brief_for_pillar(int $userId, ?array $pillar): ?string
 // includes/image_renderer.php render_footer_with_photo()). $category is
 // 'company' or 'personal', matching content_pillars.category — company
 // posts use the uploaded logo, personal posts use the uploaded photo.
-// Falls back to the app-wide assets/img/profile.* (the original single
-// image every deployment already had) if the user hasn't uploaded their
-// own yet, so existing behavior is unchanged until they do.
-function resolve_footer_image(int $userId, string $category): ?string
+// Fallback chain: the workspace's own upload (per-workspace branding,
+// added in Phase C) -> the old user-level upload (pre-Phase-C accounts
+// that uploaded before workspaces existed) -> the app-wide
+// assets/img/profile.* bundled default. Each tier only kicks in if the
+// one before it is absent, so nothing changes for an account that never
+// touches the new per-workspace upload.
+function resolve_footer_image(int $userId, string $category, ?int $workspaceId = null): ?string
 {
     $slot = $category === 'company' ? 'logo' : 'photo';
+    if ($workspaceId !== null) {
+        foreach (['png', 'jpg', 'jpeg'] as $ext) {
+            $path = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding/{$slot}.{$ext}";
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+    }
     foreach (['png', 'jpg', 'jpeg'] as $ext) {
         $path = UPLOAD_DIR . "/{$userId}/branding/{$slot}.{$ext}";
         if (is_file($path)) {
@@ -387,9 +398,18 @@ function resolve_footer_image(int $userId, string $category): ?string
 // always circle-cropped for the CTA footer avatar, which would mangle a
 // rectangular wordmark. This one is drawn as-is (aspect preserved) in the
 // top-left corner of every slide — see render_draw_logo(). No bundled
-// default: absent means nothing is drawn, not a placeholder mark.
-function resolve_brand_logo(int $userId): ?string
+// default: absent means nothing is drawn, not a placeholder mark. Same
+// per-workspace-first fallback chain as resolve_footer_image() above.
+function resolve_brand_logo(int $userId, ?int $workspaceId = null): ?string
 {
+    if ($workspaceId !== null) {
+        foreach (['png', 'jpg', 'jpeg'] as $ext) {
+            $path = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding/brand_logo.{$ext}";
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+    }
     foreach (['png', 'jpg', 'jpeg'] as $ext) {
         $path = UPLOAD_DIR . "/{$userId}/branding/brand_logo.{$ext}";
         if (is_file($path)) {

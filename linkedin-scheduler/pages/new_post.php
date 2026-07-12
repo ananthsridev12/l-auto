@@ -107,10 +107,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($aiCreative !== null && in_array($format, ['Single Image', 'Carousel'], true)) {
         $user = current_user();
         $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
-        $photoPath = resolve_footer_image($userId, 'personal');
+        $photoPath = resolve_footer_image($userId, 'personal', $workspaceId);
         $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         try {
-            $slides = render_creative_to_slides($aiCreative, $destDir, $footerName, $photoPath, $userId);
+            $slides = render_creative_to_slides($aiCreative, $destDir, $footerName, $photoPath, $userId, $workspaceId);
         } catch (Throwable $e) {
             db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
             flash('error', 'Image rendering failed: ' . $e->getMessage());

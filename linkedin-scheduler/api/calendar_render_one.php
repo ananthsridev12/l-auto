@@ -42,13 +42,14 @@ $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
 $pillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
 $category = ($pillar['category'] ?? 'company') === 'personal' ? 'personal' : 'company';
-$photoPath = resolve_footer_image($userId, $category);
+$wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
+$photoPath = resolve_footer_image($userId, $category, $wsId);
 
 $campaignId = $post['campaign_id'];
 $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
 
 try {
-    $slides = render_creative_to_slides($creative, $destDir, $footerName, $photoPath, $userId);
+    $slides = render_creative_to_slides($creative, $destDir, $footerName, $photoPath, $userId, $wsId);
 } catch (Throwable $e) {
     json_response(['success' => false, 'error' => $e->getMessage(), 'post_id' => $postId], 500);
 }

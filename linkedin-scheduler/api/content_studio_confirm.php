@@ -33,7 +33,7 @@ $ownedAccountIds = array_map('intval', array_column($stmt->fetchAll(), 'id'));
 
 $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
-$photoPath = resolve_footer_image($userId, 'personal');
+$photoPath = resolve_footer_image($userId, 'personal', $workspaceId);
 
 $pdo = db();
 $pdo->beginTransaction();
@@ -123,7 +123,7 @@ foreach ($rows as $row) {
     $outDir = UPLOAD_DIR . '/' . $userId . '/' . $safeCampaign;
 
     try {
-        $slides = render_creative_to_slides($creative, $outDir, $footerName, $photoPath, $userId);
+        $slides = render_creative_to_slides($creative, $outDir, $footerName, $photoPath, $userId, $workspaceId);
     } catch (Throwable $e) {
         $renderErrors[] = "{$campaignId}: " . $e->getMessage();
         continue;

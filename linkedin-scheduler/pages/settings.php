@@ -413,7 +413,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/settings.php');
         }
         $ext = $mime === 'image/png' ? 'png' : 'jpg';
-        $dir = UPLOAD_DIR . "/{$userId}/branding";
+        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding";
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
@@ -421,17 +421,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             @unlink("{$dir}/{$slot}.{$existingExt}");
         }
         file_put_contents("{$dir}/{$slot}.{$ext}", $contents);
-        flash('success', ucfirst($slot) . ' updated.');
+        flash('success', ucfirst($slot) . ' updated for this workspace.');
         redirect('pages/settings.php');
     }
 
     if (($_POST['form'] ?? '') === 'footer_image_remove') {
         $slot = ($_POST['image_slot'] ?? '') === 'logo' ? 'logo' : 'photo';
-        $dir = UPLOAD_DIR . "/{$userId}/branding";
+        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding";
         foreach (['png', 'jpg', 'jpeg'] as $ext) {
             @unlink("{$dir}/{$slot}.{$ext}");
         }
-        flash('success', ucfirst($slot) . ' removed.');
+        flash('success', ucfirst($slot) . ' removed from this workspace.');
         redirect('pages/settings.php');
     }
 
@@ -447,7 +447,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/settings.php');
         }
         $ext = $mime === 'image/png' ? 'png' : 'jpg';
-        $dir = UPLOAD_DIR . "/{$userId}/branding";
+        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding";
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
@@ -455,16 +455,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             @unlink("{$dir}/brand_logo.{$existingExt}");
         }
         file_put_contents("{$dir}/brand_logo.{$ext}", $contents);
-        flash('success', 'Brand logo updated.');
+        flash('success', 'Brand logo updated for this workspace.');
         redirect('pages/settings.php');
     }
 
     if (($_POST['form'] ?? '') === 'brand_logo_remove') {
-        $dir = UPLOAD_DIR . "/{$userId}/branding";
+        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding";
         foreach (['png', 'jpg', 'jpeg'] as $ext) {
             @unlink("{$dir}/brand_logo.{$ext}");
         }
-        flash('success', 'Brand logo removed.');
+        flash('success', 'Brand logo removed from this workspace.');
         redirect('pages/settings.php');
     }
 
@@ -663,11 +663,16 @@ $siteFonts = array_filter(scan_site_fonts(), fn ($sf) => !in_array(strtolower($s
 $footerFontRole = get_footer_font_role($userId);
 $footerNameSize = get_footer_name_size($userId);
 
+// Per-workspace branding: each workspace can set its own footer
+// logo/photo and brand logo — the display here only shows a workspace's
+// OWN upload (not the fallback chain resolve_footer_image() applies at
+// render time), so it's clear whether this specific workspace has one
+// set versus inheriting the account-wide/bundled default.
 $footerImages = [];
 foreach (['logo', 'photo'] as $slot) {
     $footerImages[$slot] = null;
     foreach (['png', 'jpg', 'jpeg'] as $ext) {
-        $path = UPLOAD_DIR . "/{$userId}/branding/{$slot}.{$ext}";
+        $path = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding/{$slot}.{$ext}";
         if (is_file($path)) {
             $footerImages[$slot] = slide_public_url($path);
             break;
@@ -676,7 +681,14 @@ foreach (['logo', 'photo'] as $slot) {
 }
 
 $brandLogoUrl = null;
-$brandLogoPath = resolve_brand_logo($userId);
+$brandLogoPath = null;
+foreach (['png', 'jpg', 'jpeg'] as $ext) {
+    $path = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding/brand_logo.{$ext}";
+    if (is_file($path)) {
+        $brandLogoPath = $path;
+        break;
+    }
+}
 if ($brandLogoPath) {
     $brandLogoUrl = slide_public_url($brandLogoPath);
 }
@@ -964,8 +976,8 @@ require __DIR__ . '/../includes/layout_top.php';
 </section>
 
 <section class="card">
-  <h2>Footer Images</h2>
-  <p class="muted">Shown in the circular footer on the last (CTA) slide of a carousel. Logo is used for company-category posts, Photo for personal-category posts (see the Company/Personal tag on Content Pillars below). Falls back to a default image until you upload your own.</p>
+  <h2>Footer Images — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Shown in the circular footer on the last (CTA) slide of a carousel. Logo is used for company-category posts, Photo for personal-category posts (see the Company/Personal tag on Content Pillars below). These are set per workspace — falls back to your account-wide upload (if any from before workspaces existed), then a bundled default, until this workspace has its own.</p>
   <?php foreach (['logo' => 'Logo (company posts)', 'photo' => 'Photo (personal posts)'] as $slot => $label): ?>
     <div class="account-row">
       <div class="account-info">
@@ -997,8 +1009,8 @@ require __DIR__ . '/../includes/layout_top.php';
 </section>
 
 <section class="card">
-  <h2>Brand Logo</h2>
-  <p class="muted">Shown top-left on every generated slide, across every Design Template and Color Palette. Aspect ratio is preserved (not cropped) — a transparent-background PNG wordmark works best. No logo means nothing is drawn.</p>
+  <h2>Brand Logo — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Shown top-left on every generated slide in this workspace, across every Design Template and Color Palette. Aspect ratio is preserved (not cropped) — a transparent-background PNG wordmark works best. No logo means nothing is drawn.</p>
   <div class="account-row">
     <div class="account-info">
       <?php if ($brandLogoUrl): ?>

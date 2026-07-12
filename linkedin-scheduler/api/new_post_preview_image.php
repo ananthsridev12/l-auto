@@ -12,6 +12,7 @@ require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
 $userId = current_user_id();
+$workspaceId = current_workspace_id();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['success' => false, 'error' => 'Invalid request'], 400);
@@ -29,7 +30,7 @@ $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
 // No pillar/category context at preview time (same as the actual save
 // path for New Post) — defaults to the personal footer image slot.
-$photoPath = resolve_footer_image($userId, 'personal');
+$photoPath = resolve_footer_image($userId, 'personal', $workspaceId);
 
 // Fixed, per-user scratch path — cleared on every preview rather than
 // accumulating files (e.g. switching Carousel -> Single Image would
@@ -41,7 +42,7 @@ foreach (glob($outDir . '/*.png') ?: [] as $stale) {
 }
 
 try {
-    $slides = render_creative_to_slides($creative, $outDir, $footerName, $photoPath, $userId);
+    $slides = render_creative_to_slides($creative, $outDir, $footerName, $photoPath, $userId, $workspaceId);
 } catch (Throwable $e) {
     json_response(['success' => false, 'error' => $e->getMessage()], 500);
 }

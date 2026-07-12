@@ -89,7 +89,8 @@ $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
 $pillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
 $category = ($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal';
-$photoPath = resolve_footer_image($userId, $category);
+$wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
+$photoPath = resolve_footer_image($userId, $category, $wsId);
 
 $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $post['campaign_id']);
 
@@ -101,7 +102,7 @@ $oldStmt->execute([$postId]);
 $oldPaths = array_column($oldStmt->fetchAll(), 'filepath');
 
 try {
-    $newSlides = render_creative_to_slides($creative, $destDir, $footerName, $photoPath, $userId);
+    $newSlides = render_creative_to_slides($creative, $destDir, $footerName, $photoPath, $userId, $wsId);
 } catch (Throwable $e) {
     json_response(['success' => false, 'error' => 'Image rendering failed: ' . $e->getMessage()], 500);
 }

@@ -366,10 +366,10 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         $footerName = trim($u['name'] ?? '') ?: explode('@', $u['email'] ?? 'Your Name')[0];
         $category = $workspace ? ($workspace['type'] === 'company' ? 'company' : 'personal')
             : (($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal');
-        $photoPath = resolve_footer_image($userId, $category);
+        $photoPath = resolve_footer_image($userId, $category, $wsId);
         $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         try {
-            $slides = render_creative_to_slides($creative, $destDir, $footerName, $photoPath, $userId);
+            $slides = render_creative_to_slides($creative, $destDir, $footerName, $photoPath, $userId, $wsId);
         } catch (Throwable $e) {
             db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
             throw new RuntimeException('Image rendering failed: ' . $e->getMessage());

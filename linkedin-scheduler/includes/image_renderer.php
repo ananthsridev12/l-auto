@@ -1718,7 +1718,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
 // in the same ['filename' => ..., 'filepath' => ...] shape
 // includes/zip_import.php produces, so callers can insert post_slides
 // rows identically either way.
-function render_creative_to_slides(array $data, string $outDir, string $footerName, ?string $photoPath = null, int $userId = 0): array
+function render_creative_to_slides(array $data, string $outDir, string $footerName, ?string $photoPath = null, int $userId = 0, ?int $workspaceId = null): array
 {
     if (!is_dir($outDir) && !mkdir($outDir, 0755, true) && !is_dir($outDir)) {
         throw new RuntimeException("Could not create output directory: {$outDir}");
@@ -1750,7 +1750,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $layout = array_key_exists($data['layout'] ?? '', render_design_templates()) ? $data['layout'] : 'classic';
     $bgStyle = in_array($data['background'] ?? '', ['gradient', 'image'], true) ? $data['background'] : 'flat';
     $bgImagePath = ($bgStyle === 'image' && $userId) ? render_resolve_palette_background_image($data['template'] ?? null, $userId) : null;
-    $logoPath = $userId ? resolve_brand_logo($userId) : null;
+    $logoPath = $userId ? resolve_brand_logo($userId, $workspaceId) : null;
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
