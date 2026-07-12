@@ -206,6 +206,29 @@ function set_ai_provider(int $userId, ?string $provider): void
     $stmt->execute([$provider, $userId]);
 }
 
+// Reddit "script" OAuth app credentials (News Studio trend source, see
+// includes/news_fetch.php reddit_fetch_subreddit_posts()) — a free,
+// self-service app at reddit.com/prefs/apps, no approval wait. Stored
+// per-user like the AI provider keys above.
+function get_reddit_credentials(int $userId): ?array
+{
+    $stmt = db()->prepare('SELECT reddit_client_id, reddit_client_secret FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch();
+    if (!$row || !$row['reddit_client_id'] || !$row['reddit_client_secret']) {
+        return null;
+    }
+    return ['client_id' => $row['reddit_client_id'], 'client_secret' => $row['reddit_client_secret']];
+}
+
+function set_reddit_credentials(int $userId, ?string $clientId, ?string $clientSecret): void
+{
+    $clientId = trim((string) $clientId);
+    $clientSecret = trim((string) $clientSecret);
+    $stmt = db()->prepare('UPDATE users SET reddit_client_id = ?, reddit_client_secret = ? WHERE id = ?');
+    $stmt->execute([$clientId === '' ? null : $clientId, $clientSecret === '' ? null : $clientSecret, $userId]);
+}
+
 // Which font role ('heading' or 'body') the rendered footer *name* text
 // uses — see includes/image_renderer.php render_footer_simple()/
 // render_footer_with_photo(). Defaults to 'body' (today's behavior,

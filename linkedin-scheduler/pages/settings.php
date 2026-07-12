@@ -58,6 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'reddit_credentials') {
+        set_reddit_credentials($userId, $_POST['reddit_client_id'] ?? '', $_POST['reddit_client_secret'] ?? '');
+        flash('success', 'Reddit credentials saved.');
+        redirect('pages/settings.php');
+    }
+
     // Active workspace's knowledge-hub profile — the context every AI
     // generation in this workspace receives (includes/workspace.php
     // workspace_context_text()).
@@ -264,13 +270,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['form'] ?? '') === 'news_topic_add') {
         $query = trim($_POST['news_query'] ?? '');
+        $sourceType = ($_POST['news_source_type'] ?? 'auto') === 'reddit' ? 'reddit' : 'auto';
+        if ($sourceType === 'reddit') {
+            $query = preg_replace('#^/?r/#i', '', $query); // stored bare, "r/" is added back for display
+        }
         if ($query === '') {
-            flash('error', 'Enter a search keyword, phrase, or RSS feed URL.');
-        } elseif (news_topic_is_feed($query) && !filter_var($query, FILTER_VALIDATE_URL)) {
+            flash('error', $sourceType === 'reddit' ? 'Enter a subreddit name.' : 'Enter a search keyword, phrase, or RSS feed URL.');
+        } elseif ($sourceType === 'auto' && news_topic_is_feed($query) && !filter_var($query, FILTER_VALIDATE_URL)) {
             flash('error', 'That looks like a URL but isn\'t a valid one — check it and try again.');
         } else {
-            add_news_topic($userId, $query, $workspaceId);
-            flash('success', news_topic_is_feed($query) ? 'RSS feed added — it will be fetched directly.' : "News keyword \"{$query}\" added.");
+            add_news_topic($userId, $query, $workspaceId, $sourceType);
+            flash('success', $sourceType === 'reddit'
+                ? "Subreddit \"r/{$query}\" added."
+                : (news_topic_is_feed($query) ? 'RSS feed added — it will be fetched directly.' : "News keyword \"{$query}\" added."));
         }
         redirect('pages/settings.php');
     }
@@ -640,6 +652,7 @@ $geminiKey = get_gemini_api_key($userId);
 $claudeKey = get_claude_api_key($userId);
 $openaiKey = get_openai_api_key($userId);
 $aiProvider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;
+$redditCreds = get_reddit_credentials($userId);
 $workspaces = fetch_workspaces($userId);
 $personas = fetch_personas($userId, $workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
@@ -758,6 +771,22 @@ require __DIR__ . '/../includes/layout_top.php';
       <input type="password" name="openai_api_key" value="<?= h($openaiKey ?? '') ?>" placeholder="sk-..." autocomplete="off">
     </label>
     <button type="submit" class="btn-primary">Save AI Provider</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Reddit (News Studio trend source)</h2>
+  <p class="muted">Lets News Studio pull trending discussion from subreddits you add below, alongside Google News. Create a free "script" app at <a href="https://www.reddit.com/prefs/apps" target="_blank" rel="noopener">reddit.com/prefs/apps</a> (no approval wait) and paste its Client ID/Secret here — this app never posts to Reddit or touches your Reddit account, it only reads public subreddit listings.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="reddit_credentials">
+    <label>Client ID
+      <input type="text" name="reddit_client_id" value="<?= h($redditCreds['client_id'] ?? '') ?>" placeholder="e.g. abcXYZ123-_"  autocomplete="off">
+    </label>
+    <label>Client Secret
+      <input type="password" name="reddit_client_secret" value="<?= h($redditCreds['client_secret'] ?? '') ?>" placeholder="e.g. abcXYZ123-_..." autocomplete="off">
+    </label>
+    <button type="submit" class="btn-secondary">Save Reddit Credentials</button>
   </form>
 </section>
 
@@ -1322,14 +1351,18 @@ require __DIR__ . '/../includes/layout_top.php';
     </label>
     <button type="submit" class="btn-secondary">Save News Settings</button>
   </form>
-  <h3 style="margin-top:20px;">Extra news keywords &amp; RSS feeds</h3>
-  <p class="muted">Searched in addition to your Content Pillar names — use these for topics you follow but don't have a pillar for (e.g. a competitor, a technology, an industry event). You can also paste a publication's own <strong>RSS feed URL</strong> to fetch that feed directly instead of searching Google News — direct feeds skip the trusted-sources filter below, since adding one is itself the trust decision.</p>
+  <h3 style="margin-top:20px;">Extra news keywords, RSS feeds &amp; subreddits</h3>
+  <p class="muted">Searched in addition to your Content Pillar names — use these for topics you follow but don't have a pillar for (e.g. a competitor, a technology, an industry event). You can also paste a publication's own <strong>RSS feed URL</strong> to fetch that feed directly instead of searching Google News, or add a <strong>subreddit</strong> (requires Reddit credentials below) to pull trending discussion instead of headlines. Direct feeds and subreddits both skip the trusted-sources filter below, since adding one is itself the trust decision.</p>
   <?php if ($newsTopics): ?>
     <?php foreach ($newsTopics as $nt): ?>
       <div class="account-row">
         <div class="account-info">
-          <span><?= h($nt['query']) ?></span>
-          <?php if (news_topic_is_feed($nt['query'])): ?><span class="badge badge-scheduled">Direct feed</span><?php endif; ?>
+          <span><?= h($nt['source_type'] === 'reddit' ? 'r/' . $nt['query'] : $nt['query']) ?></span>
+          <?php if ($nt['source_type'] === 'reddit'): ?>
+            <span class="badge badge-active">Reddit</span>
+          <?php elseif (news_topic_is_feed($nt['query'])): ?>
+            <span class="badge badge-scheduled">Direct feed</span>
+          <?php endif; ?>
         </div>
         <form method="post">
           <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -1345,8 +1378,14 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form" style="margin-top:12px;">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="news_topic_add">
-    <label>Keyword, phrase, or RSS feed URL
-      <input type="text" name="news_query" placeholder="e.g. predictive maintenance India — or https://example.com/feed.xml" required>
+    <label>Source type
+      <select name="news_source_type">
+        <option value="auto">Google News keyword / RSS feed URL</option>
+        <option value="reddit">Subreddit (Reddit)</option>
+      </select>
+    </label>
+    <label>Keyword, phrase, RSS feed URL, or subreddit name
+      <input type="text" name="news_query" placeholder="e.g. predictive maintenance India — or https://example.com/feed.xml — or r/manufacturing" required>
     </label>
     <button type="submit" class="btn-secondary">Add</button>
   </form>

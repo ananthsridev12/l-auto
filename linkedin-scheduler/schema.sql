@@ -475,3 +475,14 @@ CREATE TABLE IF NOT EXISTS content_memory (
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
   INDEX idx_workspace_type (workspace_id, content_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Reddit as a News Studio trend source (Phase E) ────────────────────
+-- Free Reddit "script" OAuth app credentials (client_credentials grant,
+-- app-only — no Reddit user account tied), stored per-user like the
+-- existing AI provider keys above. news_topics.source_type lets a topic
+-- be a subreddit name instead of a Google News search query/feed URL;
+-- news_refresh() (includes/news_fetch.php) branches on it. 'auto'
+-- preserves every existing row's behavior unchanged.
+ALTER TABLE users ADD COLUMN reddit_client_id VARCHAR(255) DEFAULT NULL;
+ALTER TABLE users ADD COLUMN reddit_client_secret VARCHAR(255) DEFAULT NULL;
+ALTER TABLE news_topics ADD COLUMN source_type ENUM('auto','reddit') NOT NULL DEFAULT 'auto';

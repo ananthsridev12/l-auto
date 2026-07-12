@@ -27,22 +27,27 @@ const NEWS_MAX_AGE_DAYS    = 7;    // older items in the feed are ignored
 function fetch_news_topics(int $userId, ?int $workspaceId = null): array
 {
     if ($workspaceId === null) {
-        $stmt = db()->prepare('SELECT id, query FROM news_topics WHERE user_id = ? ORDER BY query');
+        $stmt = db()->prepare('SELECT id, query, source_type FROM news_topics WHERE user_id = ? ORDER BY query');
         $stmt->execute([$userId]);
     } else {
-        $stmt = db()->prepare('SELECT id, query FROM news_topics WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY query');
+        $stmt = db()->prepare('SELECT id, query, source_type FROM news_topics WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY query');
         $stmt->execute([$userId, $workspaceId]);
     }
     return $stmt->fetchAll();
 }
 
-function add_news_topic(int $userId, string $query, ?int $workspaceId = null): void
+// $sourceType 'reddit' means $query is a subreddit name, fetched via
+// reddit_fetch_subreddit_posts() instead of Google News/direct-feed —
+// see news_refresh() below. 'auto' (default) preserves existing
+// behavior: news_topic_is_feed() sniffs URL vs. search-query text.
+function add_news_topic(int $userId, string $query, ?int $workspaceId = null, string $sourceType = 'auto'): void
 {
     $query = trim($query);
     if ($query === '') {
         return;
     }
-    db()->prepare('INSERT IGNORE INTO news_topics (user_id, workspace_id, query) VALUES (?, ?, ?)')->execute([$userId, $workspaceId, $query]);
+    $sourceType = $sourceType === 'reddit' ? 'reddit' : 'auto';
+    db()->prepare('INSERT IGNORE INTO news_topics (user_id, workspace_id, query, source_type) VALUES (?, ?, ?, ?)')->execute([$userId, $workspaceId, $query, $sourceType]);
 }
 
 function delete_news_topic(int $userId, int $id): void
@@ -131,10 +136,16 @@ function news_build_queries(int $userId, ?int $workspaceId = null): array
 {
     $queries = [];
     foreach (fetch_content_pillars($userId, $workspaceId) as $pillar) {
-        $queries[] = ['query' => $pillar['name'], 'pillar_id' => (int) $pillar['id'], 'feed' => false];
+        $queries[] = ['query' => $pillar['name'], 'pillar_id' => (int) $pillar['id'], 'feed' => false, 'source_type' => 'auto'];
     }
     foreach (fetch_news_topics($userId, $workspaceId) as $topic) {
-        $queries[] = ['query' => $topic['query'], 'pillar_id' => null, 'feed' => news_topic_is_feed($topic['query'])];
+        $sourceType = $topic['source_type'] ?? 'auto';
+        $queries[] = [
+            'query'       => $topic['query'],
+            'pillar_id'   => null,
+            'feed'        => $sourceType === 'auto' && news_topic_is_feed($topic['query']),
+            'source_type' => $sourceType,
+        ];
     }
     // Dedupe by lowercased query text (a keyword duplicating a pillar
     // name would double-fetch the same feed) — first entry wins, so the
@@ -187,6 +198,105 @@ function news_fetch_feed_xml(string $target, bool $isFeedUrl = false): string
         throw new RuntimeException("{$label} failed: HTTP {$status}");
     }
     return $xml;
+}
+
+// ── Reddit (News Studio trend source, Phase E) ──────────────────────
+// Free "script" OAuth app, client_credentials grant (app-only — no
+// Reddit user account tied). Create one at reddit.com/prefs/apps.
+
+function reddit_get_access_token(string $clientId, string $clientSecret): string
+{
+    $ch = curl_init('https://www.reddit.com/api/v1/access_token');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => http_build_query(['grant_type' => 'client_credentials']),
+        CURLOPT_USERPWD        => $clientId . ':' . $clientSecret,
+        CURLOPT_USERAGENT      => 'LinkedInScheduler/1.0 (news trend fetch)',
+        CURLOPT_TIMEOUT        => 20,
+    ]);
+    $response = curl_exec($ch);
+    if ($response === false) {
+        $err = curl_error($ch);
+        curl_close($ch);
+        throw new RuntimeException("Reddit auth failed: {$err}");
+    }
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $data = json_decode($response, true);
+    $token = $data['access_token'] ?? null;
+    if ($status !== 200 || !$token) {
+        throw new RuntimeException('Reddit auth failed: HTTP ' . $status . ' — check your Client ID/Secret in Settings.');
+    }
+    return $token;
+}
+
+// Normalizes a decoded Reddit "listing" JSON response into the exact
+// same shape news_parse_feed() produces, so everything downstream
+// (dedup, trusted-sources filter bypass, draft generation) is
+// unchanged. Separated from the network call so it can be tested
+// against a fixture response, same as news_parse_feed().
+function reddit_parse_listing(array $data, string $subreddit): array
+{
+    $children = $data['data']['children'] ?? [];
+    $items = [];
+    foreach ($children as $child) {
+        $post = $child['data'] ?? [];
+        if (!empty($post['stickied'])) {
+            continue; // pinned announcement/rules posts, not trending content
+        }
+        $title = trim((string) ($post['title'] ?? ''));
+        // A self (text-only) post has no external url — fall back to its
+        // own Reddit thread link so it's still usable as a topic.
+        $url = trim((string) ($post['url'] ?? ''));
+        if ($url === '' || !empty($post['is_self'])) {
+            $permalink = trim((string) ($post['permalink'] ?? ''));
+            $url = $permalink !== '' ? 'https://www.reddit.com' . $permalink : '';
+        }
+        if ($title === '' || $url === '') {
+            continue;
+        }
+        $createdUtc = $post['created_utc'] ?? null;
+        $items[] = [
+            'title'         => $title,
+            'url'           => $url,
+            'source'        => 'r/' . $subreddit,
+            'source_domain' => parse_url($url, PHP_URL_HOST) ?: null,
+            'published_at'  => $createdUtc !== null ? date('Y-m-d H:i:s', (int) $createdUtc) : null,
+        ];
+    }
+    return $items;
+}
+
+// $subreddit accepts "r/name" or bare "name".
+function reddit_fetch_subreddit_posts(string $subreddit, string $clientId, string $clientSecret): array
+{
+    $subreddit = preg_replace('#^/?r/#i', '', trim($subreddit));
+    if ($subreddit === '') {
+        throw new RuntimeException('Empty subreddit name.');
+    }
+    $token = reddit_get_access_token($clientId, $clientSecret);
+
+    $ch = curl_init('https://oauth.reddit.com/r/' . rawurlencode($subreddit) . '/hot?limit=' . NEWS_ITEMS_PER_QUERY);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $token],
+        CURLOPT_USERAGENT      => 'LinkedInScheduler/1.0 (news trend fetch)',
+        CURLOPT_TIMEOUT        => 20,
+    ]);
+    $response = curl_exec($ch);
+    if ($response === false) {
+        $err = curl_error($ch);
+        curl_close($ch);
+        throw new RuntimeException("Reddit fetch failed: {$err}");
+    }
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status !== 200) {
+        throw new RuntimeException("Reddit fetch failed: HTTP {$status} (check the subreddit name \"r/{$subreddit}\")");
+    }
+    $data = json_decode($response, true);
+    return reddit_parse_listing(is_array($data) ? $data : [], $subreddit);
 }
 
 // Parses a Google News RSS document into
@@ -274,21 +384,37 @@ function news_refresh(int $userId, ?int $workspaceId = null): array
     $errors = [];
     $queries = news_build_queries($userId, $workspaceId);
     $trusted = array_column(fetch_news_trusted_sources($userId, $workspaceId), 'source');
+    $redditCreds = null; // resolved lazily, once, only if a reddit-type topic is present
     foreach ($queries as $q) {
         $isFeed = !empty($q['feed']);
+        $isReddit = ($q['source_type'] ?? 'auto') === 'reddit';
         try {
-            $items = news_parse_feed(news_fetch_feed_xml($q['query'], $isFeed));
-            if ($isFeed) {
-                // Plain publication feeds usually have no <source> tag —
-                // label items with the feed's host so the UI shows where
-                // they came from.
-                $feedHost = news_normalize_source_entry($q['query']);
-                foreach ($items as &$item) {
-                    $item['source'] = $item['source'] ?? $feedHost;
+            if ($isReddit) {
+                if ($redditCreds === null) {
+                    $redditCreds = get_reddit_credentials($userId);
+                    if ($redditCreds === null) {
+                        throw new RuntimeException('Add your Reddit Client ID/Secret in Settings first.');
+                    }
                 }
-                unset($item);
-            } elseif ($trusted) {
-                $items = array_values(array_filter($items, fn ($item) => news_source_is_trusted($item, $trusted)));
+                // Reddit results aren't run through the Google-News
+                // trusted-sources allowlist — different source universe;
+                // picking the subreddit is itself the trust decision,
+                // same as adding a direct RSS feed URL.
+                $items = reddit_fetch_subreddit_posts($q['query'], $redditCreds['client_id'], $redditCreds['client_secret']);
+            } else {
+                $items = news_parse_feed(news_fetch_feed_xml($q['query'], $isFeed));
+                if ($isFeed) {
+                    // Plain publication feeds usually have no <source> tag —
+                    // label items with the feed's host so the UI shows where
+                    // they came from.
+                    $feedHost = news_normalize_source_entry($q['query']);
+                    foreach ($items as &$item) {
+                        $item['source'] = $item['source'] ?? $feedHost;
+                    }
+                    unset($item);
+                } elseif ($trusted) {
+                    $items = array_values(array_filter($items, fn ($item) => news_source_is_trusted($item, $trusted)));
+                }
             }
             $stored += news_store_items($userId, $q['query'], $q['pillar_id'], $items, $workspaceId);
         } catch (Throwable $e) {
