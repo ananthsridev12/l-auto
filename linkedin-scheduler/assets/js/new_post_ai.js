@@ -68,8 +68,8 @@
       currentCreative = null;
       if (reviewEl) reviewEl.innerHTML = '';
     }
-    if (aiFields) aiFields.style.display = mode === 'ai' ? 'block' : 'none';
-    if (slidesPanel) slidesPanel.style.display = (mode && !isTextPost) ? 'block' : 'none';
+    if (aiFields) aiFields.style.display = mode === 'ai' ? 'flex' : 'none';
+    if (slidesPanel) slidesPanel.style.display = (mode && !isTextPost) ? 'flex' : 'none';
     if (addSlideBtn) {
       addSlideBtn.style.display = (mode === 'manual' && formatSelect.value === 'Carousel') ? 'inline-block' : 'none';
     }

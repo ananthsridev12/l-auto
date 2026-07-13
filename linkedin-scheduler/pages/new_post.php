@@ -215,12 +215,12 @@ require __DIR__ . '/../includes/layout_top.php';
           <?php endforeach; ?>
         </select>
       </label>
-      <div id="imageUploadField" style="width:100%; margin-top:12px; display:none;">
+      <div id="imageUploadField" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
         <label>Image (PNG or JPEG)
           <input type="file" name="image" accept="image/png,image/jpeg" form="newPostForm">
         </label>
       </div>
-      <div id="carouselUploadField" style="width:100%; margin-top:12px; display:none;">
+      <div id="carouselUploadField" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
         <label>Slides (PNG or JPEG, select multiple — combined into a PDF carousel, in the order selected)
           <input type="file" name="images[]" accept="image/png,image/jpeg" multiple form="newPostForm">
         </label>
@@ -240,7 +240,7 @@ require __DIR__ . '/../includes/layout_top.php';
         </label>
       </div>
 
-      <div id="aiGenerateFields" style="width:100%; margin-top:12px; display:none;">
+      <div id="aiGenerateFields" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
         <label>Topic / Title
           <input type="text" id="aiTopic">
         </label>
@@ -292,7 +292,7 @@ require __DIR__ . '/../includes/layout_top.php';
         <p id="aiGenerateStatus" class="muted"></p>
       </div>
 
-      <div id="creativeSlidesPanel" style="width:100%; margin-top:12px; display:none;">
+      <div id="creativeSlidesPanel" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
         <label>Color Palette <span class="muted">(optional)</span>
           <select id="aiTemplateSelect">
             <option value="">Auto</option>
@@ -380,8 +380,8 @@ require __DIR__ . '/../includes/layout_top.php';
     if (!select || !imageField || !carouselField) return;
     var toggle = function () {
       var usingCreativeJson = (aiToggle && aiToggle.checked) || (manualToggle && manualToggle.checked);
-      imageField.style.display = (!usingCreativeJson && select.value === 'Single Image') ? 'block' : 'none';
-      carouselField.style.display = (!usingCreativeJson && select.value === 'Carousel') ? 'block' : 'none';
+      imageField.style.display = (!usingCreativeJson && select.value === 'Single Image') ? 'flex' : 'none';
+      carouselField.style.display = (!usingCreativeJson && select.value === 'Carousel') ? 'flex' : 'none';
     };
     window.newPostUpdateUploadFields = toggle;
     select.addEventListener('change', toggle);
