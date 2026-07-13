@@ -68,28 +68,35 @@ function update_blog_post(int $userId, int $id, array $fields): void
 }
 
 // Resolves which platform to actually publish a post to. If a
-// workspace has both WordPress and Jekyll configured, the post's own
-// publish_target (user-selected in the Blog Studio editor) decides. If
-// only one platform is configured, that one is used regardless of the
-// column's value — every post defaults to 'wordpress' at creation
-// whether or not WordPress is even set up for this workspace, so that
-// default can't be trusted blindly. Returns null if neither is
-// configured. Callers must have required wordpress_api.php and
-// jekyll_api.php already (for wordpress_configured()/jekyll_configured()).
+// workspace has 2+ of WordPress/Jekyll/Grav configured, the post's own
+// publish_target (user-selected in the Blog Studio editor) decides,
+// falling back to the first configured platform if it isn't one of
+// them. If only one platform is configured, that one is used
+// regardless of the column's value — every post defaults to
+// 'wordpress' at creation whether or not WordPress is even set up for
+// this workspace, so that default can't be trusted blindly. Returns
+// null if none are configured. Callers must have required
+// wordpress_api.php, jekyll_api.php, and grav_api.php already.
 function blog_resolve_publish_target(array $workspace, array $post): ?string
 {
-    $wp = wordpress_configured($workspace);
-    $jk = jekyll_configured($workspace);
-    if ($wp && $jk) {
-        return in_array($post['publish_target'] ?? null, ['wordpress', 'jekyll'], true) ? $post['publish_target'] : 'wordpress';
+    $configured = [];
+    if (wordpress_configured($workspace)) {
+        $configured[] = 'wordpress';
     }
-    if ($wp) {
-        return 'wordpress';
+    if (jekyll_configured($workspace)) {
+        $configured[] = 'jekyll';
     }
-    if ($jk) {
-        return 'jekyll';
+    if (grav_configured($workspace)) {
+        $configured[] = 'grav';
     }
-    return null;
+    if (!$configured) {
+        return null;
+    }
+    if (count($configured) === 1) {
+        return $configured[0];
+    }
+    $stored = $post['publish_target'] ?? null;
+    return in_array($stored, $configured, true) ? $stored : $configured[0];
 }
 
 function delete_blog_post(int $userId, int $id): void

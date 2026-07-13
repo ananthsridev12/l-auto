@@ -539,3 +539,12 @@ ALTER TABLE workspaces ADD COLUMN jekyll_branch VARCHAR(100) NULL;
 ALTER TABLE workspaces ADD COLUMN jekyll_token VARCHAR(255) NULL;
 ALTER TABLE workspaces ADD COLUMN jekyll_posts_path VARCHAR(255) NULL;
 ALTER TABLE workspaces ADD COLUMN jekyll_site_url VARCHAR(500) NULL;
+
+-- ── Grav as a third Blog Studio publish target ──
+-- Grav is a live PHP CMS (no build/deploy step) with an official REST
+-- API plugin (getgrav/grav-plugin-api) — publishing here makes the
+-- post live immediately via includes/grav_api.php.
+ALTER TABLE workspaces ADD COLUMN grav_site_url VARCHAR(500) NULL;
+ALTER TABLE workspaces ADD COLUMN grav_api_key VARCHAR(255) NULL;
+ALTER TABLE workspaces ADD COLUMN grav_route_prefix VARCHAR(255) NULL;
+ALTER TABLE workspaces ADD COLUMN grav_template VARCHAR(100) NULL;

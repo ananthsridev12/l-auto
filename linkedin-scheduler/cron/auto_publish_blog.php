@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/workspace.php';
 require_once __DIR__ . '/../includes/blog_posts.php';
 require_once __DIR__ . '/../includes/wordpress_api.php';
 require_once __DIR__ . '/../includes/jekyll_api.php';
+require_once __DIR__ . '/../includes/grav_api.php';
 
 // Same stale-guard as cron/auto_post.php — a cron outage or a schedule
 // set far in the past shouldn't fire a backlog all at once.
@@ -16,7 +17,8 @@ $pdo = db();
 
 $stmt = $pdo->query(
     "SELECT bp.*, w.wordpress_url, w.wordpress_username, w.wordpress_app_password,
-            w.jekyll_repo, w.jekyll_branch, w.jekyll_token, w.jekyll_posts_path, w.jekyll_site_url
+            w.jekyll_repo, w.jekyll_branch, w.jekyll_token, w.jekyll_posts_path, w.jekyll_site_url,
+            w.grav_site_url, w.grav_api_key, w.grav_route_prefix, w.grav_template
      FROM blog_posts bp
      JOIN workspaces w ON w.id = bp.workspace_id
      WHERE bp.status = 'scheduled' AND bp.scheduled_at <= NOW()"
@@ -48,17 +50,24 @@ foreach ($due as $post) {
         'jekyll_token'           => $post['jekyll_token'],
         'jekyll_posts_path'      => $post['jekyll_posts_path'],
         'jekyll_site_url'        => $post['jekyll_site_url'],
+        'grav_site_url'          => $post['grav_site_url'],
+        'grav_api_key'           => $post['grav_api_key'],
+        'grav_route_prefix'      => $post['grav_route_prefix'],
+        'grav_template'          => $post['grav_template'],
     ];
     $target = blog_resolve_publish_target($workspace, $post);
     if ($target === null) {
-        mark_blog_post_failed((int) $post['id'], 'No WordPress or Jekyll connection configured for this workspace.');
+        mark_blog_post_failed((int) $post['id'], 'No WordPress, Jekyll, or Grav connection configured for this workspace.');
         $failed++;
         echo "[failed] #{$post['id']} \"{$post['title']}\": no publish target configured\n";
         continue;
     }
-    $result = $target === 'jekyll'
-        ? jekyll_publish_post($workspace, $post)
-        : wordpress_publish_post($workspace, $post);
+    $publishers = [
+        'wordpress' => 'wordpress_publish_post',
+        'jekyll'    => 'jekyll_publish_post',
+        'grav'      => 'grav_publish_post',
+    ];
+    $result = $publishers[$target]($workspace, $post);
     if ($result['success']) {
         mark_blog_post_published((int) $post['id'], $result['external_post_id'], $result['external_url'] ?? null, $target);
         $published++;

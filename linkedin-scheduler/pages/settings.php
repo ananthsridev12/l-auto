@@ -9,6 +9,7 @@ require_once __DIR__ . '/../includes/kb_documents.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/wordpress_api.php';
 require_once __DIR__ . '/../includes/jekyll_api.php';
+require_once __DIR__ . '/../includes/grav_api.php';
 
 require_login();
 $userId = current_user_id();
@@ -142,6 +143,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = jekyll_test_connection($ws);
         flash($result['success'] ? 'success' : 'error', $result['success']
             ? "Connected — token has access to \"{$result['user']}\"."
+            : $result['error']);
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'grav_settings') {
+        db()->prepare('UPDATE workspaces SET grav_site_url = ?, grav_api_key = ?, grav_route_prefix = ?, grav_template = ? WHERE id = ? AND user_id = ?')
+            ->execute([
+                rtrim(trim($_POST['grav_site_url'] ?? ''), '/') ?: null,
+                trim($_POST['grav_api_key'] ?? '') ?: null,
+                trim($_POST['grav_route_prefix'] ?? '', '/') ?: null,
+                trim($_POST['grav_template'] ?? '') ?: null,
+                $workspaceId, $userId,
+            ]);
+        flash('success', 'Grav connection saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'grav_test') {
+        $ws = fetch_workspace($userId, $workspaceId);
+        $result = grav_test_connection($ws);
+        flash($result['success'] ? 'success' : 'error', $result['success']
+            ? 'Connected — Grav API responded successfully.'
             : $result['error']);
         redirect('pages/settings.php');
     }
@@ -977,6 +1000,35 @@ require __DIR__ . '/../includes/layout_top.php';
     <form method="post" style="margin-top:12px;">
       <input type="hidden" name="csrf" value="<?= h($token) ?>">
       <input type="hidden" name="form" value="jekyll_test">
+      <button type="submit" class="btn-tiny">Test Connection</button>
+    </form>
+  <?php endif; ?>
+</section>
+
+<section class="card" data-tab="integrations">
+  <h2>Grav — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Connect a Grav CMS site to publish <a href="<?= h(app_path('pages/blog_studio.php')) ?>">Blog Studio</a> posts to directly — no git, no build/deploy step. Grav is a live PHP site, so a post created here is <strong>live immediately</strong>. Requires the official <strong>API</strong> plugin (<code>getgrav/grav-plugin-api</code>) installed and enabled on that site: in Grav's own Admin Panel (not cPanel), go to Plugins → Add and install "API", then generate a key from your user profile's API Keys section.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="grav_settings">
+    <label>Site URL
+      <input type="text" name="grav_site_url" value="<?= h($workspace['grav_site_url'] ?? '') ?>" placeholder="https://example.com">
+    </label>
+    <label>API Key
+      <input type="password" name="grav_api_key" value="<?= h($workspace['grav_api_key'] ?? '') ?>" placeholder="grav_..." autocomplete="off">
+    </label>
+    <label>Route prefix <span class="muted">(where new posts go)</span>
+      <input type="text" name="grav_route_prefix" value="<?= h($workspace['grav_route_prefix'] ?? '') ?>" placeholder="/blog">
+    </label>
+    <label>Template <span class="muted">(your blog post page's template name)</span>
+      <input type="text" name="grav_template" value="<?= h($workspace['grav_template'] ?? '') ?>" placeholder="item">
+    </label>
+    <button type="submit" class="btn-secondary">Save Grav Connection</button>
+  </form>
+  <?php if (grav_configured($workspace)): ?>
+    <form method="post" style="margin-top:12px;">
+      <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <input type="hidden" name="form" value="grav_test">
       <button type="submit" class="btn-tiny">Test Connection</button>
     </form>
   <?php endif; ?>
