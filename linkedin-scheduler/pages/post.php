@@ -3,6 +3,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
+require_once __DIR__ . '/../includes/linkedin_api.php';
 
 require_login();
 $userId = current_user_id();
@@ -142,7 +143,13 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <?php if ($post['status'] === 'posted'): ?>
         <div class="editor-label">Caption (published — read only)</div>
         <textarea class="caption-editor" readonly><?= h($post['caption']) ?></textarea>
-        <p class="muted">Posted <?= h($post['posted_at']) ?><?= $post['account_name'] ? ' as ' . h($post['account_name']) : '' ?><?= $post['li_post_urn'] ? ' — ' . h($post['li_post_urn']) : '' ?></p>
+        <p class="muted">
+          Posted <?= h($post['posted_at']) ?><?= $post['account_name'] ? ' as ' . h($post['account_name']) : '' ?>
+          <?php $postUrl = li_post_url($post['li_post_urn'] ?? null); ?>
+          <?php if ($postUrl): ?>
+             — <a href="<?= h($postUrl) ?>" target="_blank" rel="noopener noreferrer">View on LinkedIn</a>
+          <?php endif; ?>
+        </p>
 
         <form method="post" onsubmit="return confirm('Only do this if you deleted the post on LinkedIn yourself. This turns it back into an editable draft here — it will NOT delete or repost anything on LinkedIn automatically.');" style="margin-top:12px;">
           <input type="hidden" name="csrf" value="<?= h($token) ?>">

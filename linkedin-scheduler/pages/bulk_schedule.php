@@ -38,7 +38,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $skippedNotScheduled = 0;
     $skippedAlreadyDraft = 0;
 
-    if ($mode === 'to_draft') {
+    if ($mode === 'delete') {
+        $deleteStmt = db()->prepare('DELETE FROM posts WHERE id = ? AND user_id = ?');
+        foreach ($selectedPosts as $p) {
+            $deleteStmt->execute([$p['id'], $userId]);
+            $updated++;
+        }
+        flash($updated > 0 ? 'success' : 'error', "{$updated} post(s) deleted.");
+        redirect('pages/bulk_schedule.php');
+    } elseif ($mode === 'to_draft') {
         foreach ($selectedPosts as $p) {
             if ($p['status'] !== 'scheduled') {
                 $skippedAlreadyDraft++;
@@ -159,6 +167,7 @@ require __DIR__ . '/../includes/layout_top.php';
       <label class="checkbox-row"><input type="radio" name="mode" value="spread"> Auto-spread one per day, starting from a date</label>
       <label class="checkbox-row"><input type="radio" name="mode" value="shift"> Shift already-scheduled posts by N days (ignores drafts)</label>
       <label class="checkbox-row"><input type="radio" name="mode" value="to_draft"> Move selected back to Draft (unschedule, ignores existing drafts)</label>
+      <label class="checkbox-row"><input type="radio" name="mode" value="delete"> Delete selected permanently</label>
 
       <div id="dateFields" class="schedule-row">
         <label>Date <input type="date" name="bulk_date"></label>
@@ -189,6 +198,14 @@ require __DIR__ . '/../includes/layout_top.php';
   }
   modeRadios.forEach(r => r.addEventListener('change', updateModeFields));
   updateModeFields();
+
+  document.getElementById('bulkForm').addEventListener('submit', function (e) {
+    const mode = document.querySelector('input[name=mode]:checked').value;
+    const count = document.querySelectorAll('.row-check:checked').length;
+    if (mode === 'delete' && !confirm(`Delete ${count} post(s) permanently? This can't be undone.`)) {
+      e.preventDefault();
+    }
+  });
 </script>
 <?php endif; ?>
 

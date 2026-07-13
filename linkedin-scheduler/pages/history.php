@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/linkedin_api.php';
 
 require_login();
 $userId = current_user_id();
@@ -30,13 +31,22 @@ require __DIR__ . '/../includes/layout_top.php';
       <thead><tr><th>Campaign ID</th><th>Format</th><th>Account</th><th>Status</th><th>Posted At</th><th>Detail</th></tr></thead>
       <tbody>
         <?php foreach ($posts as $p): ?>
+          <?php $postUrl = $p['status'] === 'posted' ? li_post_url($p['li_post_urn'] ?? null) : null; ?>
           <tr>
             <td><a href="<?= h(app_path('pages/post.php?id=' . $p['id'])) ?>"><?= h($p['campaign_id']) ?></a></td>
             <td><?= h($p['format']) ?></td>
             <td><?= h($p['account_name'] ?? '—') ?></td>
             <td><span class="badge badge-<?= h(strtolower($p['status'])) ?>"><?= h(ucfirst($p['status'])) ?></span></td>
             <td><?= h($p['posted_at'] ?? '—') ?></td>
-            <td class="muted"><?= h($p['status'] === 'posted' ? $p['li_post_urn'] : $p['error_message']) ?></td>
+            <td class="muted">
+              <?php if ($postUrl): ?>
+                <a href="<?= h($postUrl) ?>" target="_blank" rel="noopener noreferrer">View on LinkedIn</a>
+              <?php elseif ($p['status'] === 'posted'): ?>
+                <?= h($p['li_post_urn']) ?>
+              <?php else: ?>
+                <?= h($p['error_message']) ?>
+              <?php endif; ?>
+            </td>
           </tr>
         <?php endforeach; ?>
       </tbody>

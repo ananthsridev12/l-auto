@@ -13,6 +13,21 @@ function li_json_headers(string $accessToken): array
     ];
 }
 
+// Builds the public permalink for a post from the URN li_create_post()
+// stored (e.g. "urn:li:share:712345..." or "urn:li:ugcPost:712345...")
+// — LinkedIn's own "Copy link to post" feature produces this exact
+// /feed/update/{urn}/ format for any post URN type. Returns null for
+// anything that isn't a real URN (empty, or the 'unknown' fallback
+// li_create_post() returns when its response had no x-restli-id header).
+function li_post_url(?string $urn): ?string
+{
+    $urn = trim((string) $urn);
+    if ($urn === '' || $urn === 'unknown' || !str_starts_with($urn, 'urn:li:')) {
+        return null;
+    }
+    return 'https://www.linkedin.com/feed/update/' . rawurlencode($urn) . '/';
+}
+
 function li_upload_image(string $accessToken, string $actingUrn, string $imagePath): string
 {
     $ch = curl_init(LI_API_BASE . '/rest/images?action=initializeUpload');
