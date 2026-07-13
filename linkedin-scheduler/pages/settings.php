@@ -8,6 +8,7 @@ require_once __DIR__ . '/../includes/news_fetch.php';
 require_once __DIR__ . '/../includes/kb_documents.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/wordpress_api.php';
+require_once __DIR__ . '/../includes/jekyll_api.php';
 
 require_login();
 $userId = current_user_id();
@@ -118,6 +119,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = wordpress_test_connection($ws);
         flash($result['success'] ? 'success' : 'error', $result['success']
             ? "Connected — authenticated as \"{$result['user']}\"."
+            : $result['error']);
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'jekyll_settings') {
+        db()->prepare('UPDATE workspaces SET jekyll_repo = ?, jekyll_branch = ?, jekyll_token = ?, jekyll_posts_path = ?, jekyll_site_url = ? WHERE id = ? AND user_id = ?')
+            ->execute([
+                trim($_POST['jekyll_repo'] ?? '') ?: null,
+                trim($_POST['jekyll_branch'] ?? '') ?: null,
+                trim($_POST['jekyll_token'] ?? '') ?: null,
+                trim($_POST['jekyll_posts_path'] ?? '', '/') ?: null,
+                rtrim(trim($_POST['jekyll_site_url'] ?? ''), '/') ?: null,
+                $workspaceId, $userId,
+            ]);
+        flash('success', 'Jekyll connection saved.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'jekyll_test') {
+        $ws = fetch_workspace($userId, $workspaceId);
+        $result = jekyll_test_connection($ws);
+        flash($result['success'] ? 'success' : 'error', $result['success']
+            ? "Connected — token has access to \"{$result['user']}\"."
             : $result['error']);
         redirect('pages/settings.php');
     }
@@ -921,6 +945,38 @@ require __DIR__ . '/../includes/layout_top.php';
     <form method="post" style="margin-top:12px;">
       <input type="hidden" name="csrf" value="<?= h($token) ?>">
       <input type="hidden" name="form" value="wordpress_test">
+      <button type="submit" class="btn-tiny">Test Connection</button>
+    </form>
+  <?php endif; ?>
+</section>
+
+<section class="card" data-tab="integrations">
+  <h2>Jekyll — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Connect a Jekyll site's GitHub repo to publish <a href="<?= h(app_path('pages/blog_studio.php')) ?>">Blog Studio</a> posts to. Jekyll has no live API, so publishing commits a markdown file (with front matter) straight to <code>_posts/</code> in this repo — it does <strong>not</strong> deploy the live site. If your host deploys via cPanel Git Version Control (like this app does), you'll still click "Update from Remote" / "Deploy HEAD Commit" there after each publish. Use a fine-grained GitHub <strong>Personal Access Token</strong> scoped to just this repo with "Contents: Read and write" permission — not a broad account token.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="jekyll_settings">
+    <label>Repo <span class="muted">(owner/repo)</span>
+      <input type="text" name="jekyll_repo" value="<?= h($workspace['jekyll_repo'] ?? '') ?>" placeholder="yourname/your-jekyll-site">
+    </label>
+    <label>Branch
+      <input type="text" name="jekyll_branch" value="<?= h($workspace['jekyll_branch'] ?? '') ?>" placeholder="main">
+    </label>
+    <label>Personal Access Token
+      <input type="password" name="jekyll_token" value="<?= h($workspace['jekyll_token'] ?? '') ?>" placeholder="github_pat_..." autocomplete="off">
+    </label>
+    <label>Posts path
+      <input type="text" name="jekyll_posts_path" value="<?= h($workspace['jekyll_posts_path'] ?? '') ?>" placeholder="_posts">
+    </label>
+    <label>Site URL <span class="muted">(optional — used to build the post link after publishing)</span>
+      <input type="text" name="jekyll_site_url" value="<?= h($workspace['jekyll_site_url'] ?? '') ?>" placeholder="https://example.com">
+    </label>
+    <button type="submit" class="btn-secondary">Save Jekyll Connection</button>
+  </form>
+  <?php if (jekyll_configured($workspace)): ?>
+    <form method="post" style="margin-top:12px;">
+      <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <input type="hidden" name="form" value="jekyll_test">
       <button type="submit" class="btn-tiny">Test Connection</button>
     </form>
   <?php endif; ?>

@@ -50,7 +50,7 @@ function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $
 
 function update_blog_post(int $userId, int $id, array $fields): void
 {
-    $allowed = ['title', 'slug', 'meta_description', 'keywords', 'content_html'];
+    $allowed = ['title', 'slug', 'meta_description', 'keywords', 'content_html', 'publish_target'];
     $sets = [];
     $params = [];
     foreach ($allowed as $col) {
@@ -67,6 +67,31 @@ function update_blog_post(int $userId, int $id, array $fields): void
     db()->prepare('UPDATE blog_posts SET ' . implode(', ', $sets) . ' WHERE id = ? AND user_id = ?')->execute($params);
 }
 
+// Resolves which platform to actually publish a post to. If a
+// workspace has both WordPress and Jekyll configured, the post's own
+// publish_target (user-selected in the Blog Studio editor) decides. If
+// only one platform is configured, that one is used regardless of the
+// column's value — every post defaults to 'wordpress' at creation
+// whether or not WordPress is even set up for this workspace, so that
+// default can't be trusted blindly. Returns null if neither is
+// configured. Callers must have required wordpress_api.php and
+// jekyll_api.php already (for wordpress_configured()/jekyll_configured()).
+function blog_resolve_publish_target(array $workspace, array $post): ?string
+{
+    $wp = wordpress_configured($workspace);
+    $jk = jekyll_configured($workspace);
+    if ($wp && $jk) {
+        return in_array($post['publish_target'] ?? null, ['wordpress', 'jekyll'], true) ? $post['publish_target'] : 'wordpress';
+    }
+    if ($wp) {
+        return 'wordpress';
+    }
+    if ($jk) {
+        return 'jekyll';
+    }
+    return null;
+}
+
 function delete_blog_post(int $userId, int $id): void
 {
     db()->prepare('DELETE FROM blog_posts WHERE id = ? AND user_id = ?')->execute([$id, $userId]);
@@ -79,12 +104,17 @@ function set_blog_post_schedule(int $userId, int $id, string $scheduledAt): void
 }
 
 // Marks the outcome of an actual publish attempt (used by both the
-// "Publish Now" button and cron/auto_publish_blog.php).
-function mark_blog_post_published(int $id, string $externalPostId, ?string $externalUrl): void
+// "Publish Now" button and cron/auto_publish_blog.php). $publishTarget
+// is the platform actually used (from blog_resolve_publish_target()) —
+// persisted here so a post published while only one platform was
+// configured still shows the right platform later, even though the
+// column's own default ('wordpress') may not have been explicitly set
+// on this row before now.
+function mark_blog_post_published(int $id, string $externalPostId, ?string $externalUrl, string $publishTarget): void
 {
     db()->prepare(
-        'UPDATE blog_posts SET status = "published", published_at = NOW(), external_post_id = ?, external_url = ?, error_message = NULL WHERE id = ?'
-    )->execute([$externalPostId, $externalUrl, $id]);
+        'UPDATE blog_posts SET status = "published", published_at = NOW(), external_post_id = ?, external_url = ?, error_message = NULL, publish_target = ? WHERE id = ?'
+    )->execute([$externalPostId, $externalUrl, $publishTarget, $id]);
 }
 
 function mark_blog_post_failed(int $id, string $error): void

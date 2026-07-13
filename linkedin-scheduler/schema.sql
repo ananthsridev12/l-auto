@@ -528,3 +528,14 @@ CREATE TABLE IF NOT EXISTS blog_posts (
 -- its blog_post_id FK is added here now that the target table is real.
 ALTER TABLE content_memory ADD CONSTRAINT fk_content_memory_blog_post
   FOREIGN KEY (blog_post_id) REFERENCES blog_posts(id) ON DELETE CASCADE;
+
+-- ── Jekyll as a second Blog Studio publish target ──
+-- Jekyll has no live API; "publishing" means committing a markdown
+-- file with front matter to the site's GitHub repo via the Contents
+-- API (includes/jekyll_api.php). One repo per workspace, same shape
+-- as the one-WordPress-site-per-workspace columns above.
+ALTER TABLE workspaces ADD COLUMN jekyll_repo VARCHAR(255) NULL;
+ALTER TABLE workspaces ADD COLUMN jekyll_branch VARCHAR(100) NULL;
+ALTER TABLE workspaces ADD COLUMN jekyll_token VARCHAR(255) NULL;
+ALTER TABLE workspaces ADD COLUMN jekyll_posts_path VARCHAR(255) NULL;
+ALTER TABLE workspaces ADD COLUMN jekyll_site_url VARCHAR(500) NULL;

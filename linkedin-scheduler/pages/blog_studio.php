@@ -17,6 +17,7 @@ require_once __DIR__ . '/../includes/content_memory.php';
 require_once __DIR__ . '/../includes/blog_posts.php';
 require_once __DIR__ . '/../includes/blog_generate.php';
 require_once __DIR__ . '/../includes/wordpress_api.php';
+require_once __DIR__ . '/../includes/jekyll_api.php';
 
 require_login();
 $userId = current_user_id();
@@ -72,13 +73,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'save') {
-        update_blog_post($userId, $postId, [
+        $fields = [
             'title'            => trim($_POST['title'] ?? $existing['title']),
             'slug'             => blog_slugify(trim($_POST['slug'] ?? $existing['slug'])),
             'meta_description' => trim($_POST['meta_description'] ?? '') ?: null,
             'keywords'         => trim($_POST['keywords'] ?? '') ?: null,
             'content_html'     => $_POST['content_html'] ?? $existing['content_html'],
-        ]);
+        ];
+        if (in_array($_POST['publish_target'] ?? null, ['wordpress', 'jekyll'], true)) {
+            $fields['publish_target'] = $_POST['publish_target'];
+        }
+        update_blog_post($userId, $postId, $fields);
         flash('success', 'Saved.');
         redirect('pages/blog_studio.php?id=' . $postId);
     }
@@ -102,14 +107,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'publish_now') {
-        if (!wordpress_configured($workspace)) {
-            flash('error', 'Connect WordPress for this workspace in Settings first.');
+        $target = blog_resolve_publish_target($workspace, $existing);
+        if ($target === null) {
+            flash('error', 'Connect WordPress or Jekyll for this workspace in Settings first.');
             redirect('pages/blog_studio.php?id=' . $postId);
         }
-        $result = wordpress_publish_post($workspace, $existing);
+        $result = $target === 'jekyll'
+            ? jekyll_publish_post($workspace, $existing)
+            : wordpress_publish_post($workspace, $existing);
         if ($result['success']) {
-            mark_blog_post_published($postId, $result['external_post_id'], $result['external_url'] ?? null);
-            flash('success', 'Published to WordPress.');
+            mark_blog_post_published($postId, $result['external_post_id'], $result['external_url'] ?? null, $target);
+            flash('success', 'Published to ' . ($target === 'jekyll' ? 'Jekyll (GitHub commit pushed — deploy it from cPanel to go live).' : 'WordPress.'));
         } else {
             mark_blog_post_failed($postId, $result['error']);
             flash('error', $result['error']);
@@ -136,6 +144,10 @@ if ($postId) {
         require __DIR__ . '/../includes/layout_bottom.php';
         exit;
     }
+    $wpConfigured = wordpress_configured($workspace);
+    $jekyllConfigured = jekyll_configured($workspace);
+    $resolvedTarget = blog_resolve_publish_target($workspace, $post);
+    $publishPlatformLabel = $resolvedTarget === 'jekyll' ? 'Jekyll' : 'WordPress';
     ?>
     <div class="page-header">
       <h1><?= h($post['title']) ?></h1>
@@ -149,7 +161,7 @@ if ($postId) {
 
     <?php if ($post['status'] === 'published'): ?>
       <section class="card">
-        <p>Published <?= h(date('j M Y, g:i a', strtotime($post['published_at']))) ?><?php if ($post['external_url']): ?> — <a href="<?= h($post['external_url']) ?>" target="_blank" rel="noopener noreferrer">View on WordPress</a><?php endif; ?></p>
+        <p>Published <?= h(date('j M Y, g:i a', strtotime($post['published_at']))) ?><?php if ($post['external_url']): ?> — <a href="<?= h($post['external_url']) ?>" target="_blank" rel="noopener noreferrer">View on <?= h($post['publish_target'] === 'jekyll' ? 'Jekyll' : 'WordPress') ?></a><?php endif; ?><?php if ($post['publish_target'] === 'jekyll'): ?> <span class="muted">(remember to deploy from cPanel if the site hasn't picked this up yet)</span><?php endif; ?></p>
       </section>
     <?php endif; ?>
 
@@ -173,6 +185,14 @@ if ($postId) {
         <label>Body (HTML)
           <textarea name="content_html" rows="20" style="font-family:monospace;" <?= $post['status'] === 'published' ? 'disabled' : '' ?>><?= h($post['content_html']) ?></textarea>
         </label>
+        <?php if ($post['status'] !== 'published' && $wpConfigured && $jekyllConfigured): ?>
+          <label>Publish to
+            <select name="publish_target">
+              <option value="wordpress"<?= $post['publish_target'] === 'wordpress' ? ' selected' : '' ?>>WordPress</option>
+              <option value="jekyll"<?= $post['publish_target'] === 'jekyll' ? ' selected' : '' ?>>Jekyll (GitHub)</option>
+            </select>
+          </label>
+        <?php endif; ?>
         <?php if ($post['status'] !== 'published'): ?>
           <button type="submit" class="btn-primary">Save</button>
         <?php endif; ?>
@@ -182,9 +202,10 @@ if ($postId) {
     <?php if ($post['status'] !== 'published'): ?>
     <section class="card">
       <h2>Publish</h2>
-      <?php if (!wordpress_configured($workspace)): ?>
-        <p class="muted">Connect WordPress for this workspace in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to publish or schedule.</p>
+      <?php if (!$wpConfigured && !$jekyllConfigured): ?>
+        <p class="muted">Connect WordPress or Jekyll for this workspace in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to publish or schedule.</p>
       <?php else: ?>
+        <p class="muted">Will publish to <strong><?= h($publishPlatformLabel) ?></strong><?= ($wpConfigured && $jekyllConfigured) ? ' — change this above and Save first.' : '.' ?></p>
         <form method="post" style="display:inline-block; margin-right:12px;">
           <input type="hidden" name="csrf" value="<?= h($token) ?>">
           <input type="hidden" name="action" value="publish_now">
