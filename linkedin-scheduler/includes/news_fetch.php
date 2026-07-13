@@ -431,7 +431,7 @@ function news_refresh(int $userId, ?int $workspaceId = null): array
 // the row's "News" field), the image is rendered immediately for
 // Single Image/Carousel so the draft is fully reviewable, and the item
 // is marked used. Returns the new post id.
-function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?string $format = null): int
+function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?string $format = null, string $length = CAPTION_LENGTH_DEFAULT): int
 {
     $pillar = $newsItem['content_pillar_id'] ? fetch_content_pillar($userId, (int) $newsItem['content_pillar_id']) : null;
 
@@ -458,6 +458,7 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         'Post Caption'   => '',
         'Final_Format'   => $format,
         'News'           => $newsLine,
+        'Content Length' => $length,
     ];
 
     // Workspace context (profile fields + uploaded documents) beats the

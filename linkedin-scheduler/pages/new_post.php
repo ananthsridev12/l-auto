@@ -245,6 +245,16 @@ require __DIR__ . '/../includes/layout_top.php';
           <input type="text" id="aiTopic">
         </label>
 
+        <label>Length
+          <select id="aiLength">
+            <option value="very_short">Very Short (~40-60 words)</option>
+            <option value="short">Short (~80-120 words)</option>
+            <option value="medium" selected>Medium (~150-250 words)</option>
+            <option value="long">Long (~300-400 words)</option>
+            <option value="blog_length">Blog Length (~500-700 words)</option>
+          </select>
+        </label>
+
         <label>Persona <span class="muted">(optional)</span>
           <select id="aiPersonaSelect">
             <option value="">— None —</option>

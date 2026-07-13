@@ -90,15 +90,55 @@ STYLE & QUALITY RULES (apply to everything you write):
 - Keep everything specific to the given topic/context — no generic filler
 RULES;
 
-function build_caption_rules(string $cta): string
+// Caption/blog length is a user choice (New Post's AI panel, Content
+// Studio's "Content Length" CSV column, Content Calendar's generate
+// form, Blog Studio, News Studio) rather than a fixed constant. Named
+// tiers, not raw word-count inputs, so every caller gets one consistent
+// picker regardless of which content type it's generating — same
+// pattern as ALL_POST_FORMATS/AI_PROVIDER_LABELS above: a fixed list
+// defined here, not a runtime-configurable admin setting.
+const CAPTION_LENGTH_PRESETS = [
+    'very_short'  => ['label' => 'Very Short (~40-60 words)',    'words' => '40 to 60 words'],
+    'short'       => ['label' => 'Short (~80-120 words)',        'words' => '80 to 120 words'],
+    'medium'      => ['label' => 'Medium (~150-250 words)',      'words' => '150 to 250 words'],
+    'long'        => ['label' => 'Long (~300-400 words)',        'words' => '300 to 400 words'],
+    'blog_length' => ['label' => 'Blog Length (~500-700 words)', 'words' => '500 to 700 words'],
+];
+// 'medium' matches what every caption used before this was
+// configurable, so anything that doesn't pass a length (old code
+// paths, automated cron drafts with no per-run UI) behaves unchanged.
+const CAPTION_LENGTH_DEFAULT = 'medium';
+
+const BLOG_LENGTH_PRESETS = [
+    'w100'  => ['label' => '100 words (Quick Update)',   'words' => 'approximately 100 words'],
+    'w200'  => ['label' => '200 words (Short)',          'words' => 'approximately 200 words'],
+    'w500'  => ['label' => '500 words (Standard)',       'words' => 'approximately 500 words'],
+    'w1000' => ['label' => '1000 words (In-Depth)',      'words' => 'approximately 1000 words'],
+    'w2000' => ['label' => '2000 words (Comprehensive)', 'words' => 'approximately 2000 words'],
+];
+// 'w1000' is closest to the old fixed 700-1200 word blog default.
+const BLOG_LENGTH_DEFAULT = 'w1000';
+
+// Accepts a preset key ("short") or its spaced/hyphenated label form
+// ("Very Short", "very-short") so free-text CSV input matches without
+// requiring the exact internal key spelling.
+function resolve_length_preset(?string $key, array $presets, string $defaultKey): string
+{
+    $key = strtolower(trim((string) $key));
+    $key = preg_replace('/[\s-]+/', '_', $key);
+    return $presets[$key]['words'] ?? $presets[$defaultKey]['words'];
+}
+
+function build_caption_rules(string $cta, string $length = CAPTION_LENGTH_DEFAULT): string
 {
     $ctaLine = $cta !== ''
         ? "End with this exact line: \"{$cta}\""
         : 'End with a natural closing line inviting engagement (a question or a soft call to action)';
+    $wordCount = resolve_length_preset($length, CAPTION_LENGTH_PRESETS, CAPTION_LENGTH_DEFAULT);
 
     return <<<RULES
 CAPTION RULES:
-- 150 to 250 words
+- {$wordCount}
 - Short paragraphs, 2 to 4 lines each
 - Start directly with a hook line — no greeting or preamble
 - {$ctaLine}
@@ -136,11 +176,12 @@ NEWSBLOCK;
     $cta      = trim($row['CTA'] ?? '');
     $tagPage  = trim($row['Tag Page'] ?? '');
     $caption  = trim($row['Post Caption'] ?? '');
+    $length   = trim($row['Content Length'] ?? 'medium');
 
     if ($format === 'Text Post') {
         $captionBlock = $caption !== ''
             ? "Use this exact caption (do not change it):\n\"\"\"\n{$caption}\n\"\"\""
-            : build_caption_rules($cta);
+            : build_caption_rules($cta, $length);
 
         return <<<PROMPT
 {$context}You are a LinkedIn content specialist writing a text-only post for a B2B engineering/manufacturing audience.
@@ -167,7 +208,7 @@ PROMPT;
 
     $captionBlock = $caption !== ''
         ? "Use this exact caption (do not change it):\n\"\"\"\n{$caption}\n\"\"\""
-        : build_caption_rules($cta);
+        : build_caption_rules($cta, $length);
 
     if ($format === 'Single Image') {
         return <<<PROMPT

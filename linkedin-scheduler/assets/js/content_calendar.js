@@ -43,6 +43,7 @@
     fd.append('csrf', window.CALENDAR_CSRF);
     fd.append('period_days', document.getElementById('periodDays').value);
     fd.append('posts_per_week', document.getElementById('postsPerWeek').value);
+    fd.append('content_length', document.getElementById('calLength').value);
     pillarInputs.forEach(function (input) {
       var val = parseFloat(input.value) || 0;
       if (val > 0) fd.append('pillar_weights[' + input.dataset.pillarId + ']', val);

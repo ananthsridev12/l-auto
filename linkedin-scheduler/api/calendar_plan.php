@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/calendar_planner.php';
+require_once __DIR__ . '/../includes/ai_generate.php'; // CAPTION_LENGTH_PRESETS
 
 require_login();
 $userId = current_user_id();
@@ -62,11 +63,16 @@ if (!$formatWeights) {
 }
 
 $personas = fetch_personas($userId, $workspaceId);
+$contentLength = strtolower(trim($_POST['content_length'] ?? CAPTION_LENGTH_DEFAULT));
+if (!isset(CAPTION_LENGTH_PRESETS[$contentLength])) {
+    $contentLength = CAPTION_LENGTH_DEFAULT;
+}
 $mixConfig = [
     'period_days'     => $periodDays,
     'posts_per_week'  => $postsPerWeek,
     'pillar_weights'  => $pillarWeights,
     'format_weights'  => $formatWeights,
+    'content_length'  => $contentLength,
 ];
 $plan = generate_calendar_plan($mixConfig, $pillars, $personas);
 

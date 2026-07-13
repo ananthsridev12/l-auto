@@ -58,8 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'Add an AI provider key in Settings first.');
             redirect('pages/news_studio.php');
         }
+        $length = strtolower(trim($_POST['length'] ?? CAPTION_LENGTH_DEFAULT));
+        if (!isset(CAPTION_LENGTH_PRESETS[$length])) {
+            $length = CAPTION_LENGTH_DEFAULT;
+        }
         try {
-            $postId = news_generate_draft($userId, $item, $aiConfig);
+            $postId = news_generate_draft($userId, $item, $aiConfig, null, $length);
             flash('success', 'Draft created — review it below or open it to edit/schedule.');
             redirect('pages/post.php?id=' . $postId);
         } catch (Throwable $e) {
@@ -104,7 +108,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $researchContext = $researchLines ? implode("\n", $researchLines) : null;
 
             $meta = array_filter([$item['source'] ? 'reported by ' . $item['source'] : null, $item['published_at'] ? date('j M Y', strtotime($item['published_at'])) : null]);
-            $topic = ['title' => $item['title'], 'news_line' => $meta ? '(' . implode(', ', $meta) . ')' : null];
+            $blogLength = strtolower(trim($_POST['length'] ?? BLOG_LENGTH_DEFAULT));
+            if (!isset(BLOG_LENGTH_PRESETS[$blogLength])) {
+                $blogLength = BLOG_LENGTH_DEFAULT;
+            }
+            $topic = ['title' => $item['title'], 'news_line' => $meta ? '(' . implode(', ', $meta) . ')' : null, 'length' => $blogLength];
 
             $relatedMemory = content_memory_related_for_topic($workspaceId, $item['title'], $aiConfig, 'blog');
             $existingPosts = array_map(
@@ -225,12 +233,22 @@ require __DIR__ . '/../includes/layout_top.php';
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
             <input type="hidden" name="form" value="create_draft">
             <input type="hidden" name="item_id" value="<?= (int) $item['id'] ?>">
+            <select name="length" style="width:auto;" title="Caption length">
+              <?php foreach (CAPTION_LENGTH_PRESETS as $lkey => $lpreset): ?>
+                <option value="<?= h($lkey) ?>"<?= $lkey === CAPTION_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
+              <?php endforeach; ?>
+            </select>
             <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Create Draft</button>
           </form>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
             <input type="hidden" name="form" value="write_blog_post">
             <input type="hidden" name="item_id" value="<?= (int) $item['id'] ?>">
+            <select name="length" style="width:auto;" title="Blog post length">
+              <?php foreach (BLOG_LENGTH_PRESETS as $lkey => $lpreset): ?>
+                <option value="<?= h($lkey) ?>"<?= $lkey === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
+              <?php endforeach; ?>
+            </select>
             <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
           </form>
           <form method="post">

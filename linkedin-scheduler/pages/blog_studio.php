@@ -34,6 +34,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'generate') {
         $topicTitle = trim($_POST['topic'] ?? '');
+        $length = strtolower(trim($_POST['length'] ?? BLOG_LENGTH_DEFAULT));
+        if (!isset(BLOG_LENGTH_PRESETS[$length])) {
+            $length = BLOG_LENGTH_DEFAULT;
+        }
         if ($topicTitle === '') {
             flash('error', 'Enter a topic to write about.');
             redirect('pages/blog_studio.php');
@@ -48,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 fn ($p) => ['title' => $p['title'], 'slug' => $p['slug']],
                 fetch_blog_posts($userId, $workspaceId, 'published')
             );
-            $creative = generate_blog_post_via_ai(['title' => $topicTitle], $aiConfig, $workspace, $relatedMemory, null, $existingPosts);
+            $creative = generate_blog_post_via_ai(['title' => $topicTitle, 'length' => $length], $aiConfig, $workspace, $relatedMemory, null, $existingPosts);
             $newPostId = create_blog_post($userId, $workspaceId, $creative, null);
             save_blog_content_memory($workspaceId, $newPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
             flash('success', 'Blog post drafted — review and edit before publishing.');
@@ -229,6 +233,13 @@ if ($postId) {
         <input type="hidden" name="action" value="generate">
         <label>Topic
           <input type="text" name="topic" placeholder="e.g. Why predictive maintenance is going mainstream in 2026" required>
+        </label>
+        <label>Length
+          <select name="length">
+            <?php foreach (BLOG_LENGTH_PRESETS as $key => $preset): ?>
+              <option value="<?= h($key) ?>"<?= $key === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($preset['label']) ?></option>
+            <?php endforeach; ?>
+          </select>
         </label>
         <button type="submit" class="btn-primary" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Generate</button>
       </form>

@@ -42,6 +42,15 @@ if (!ai_configured($aiConfig)) {
 $pillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
 $persona = $post['persona_id'] ? fetch_persona($userId, (int) $post['persona_id']) : null;
 
+// Caption length was chosen once for the whole batch (Content Calendar's
+// "Generate New Calendar" form) and stashed in calendar_batches.mix_config
+// alongside the pillar/format mix — reused here per post so every slot in
+// the batch honors it without needing its own UI.
+$batchStmt = db()->prepare('SELECT mix_config FROM calendar_batches WHERE id = ?');
+$batchStmt->execute([(int) $post['calendar_batch_id']]);
+$mixConfig = json_decode((string) $batchStmt->fetchColumn(), true) ?: [];
+$contentLength = $mixConfig['content_length'] ?? 'medium';
+
 $row = [
     'Topic / Title'  => $pillar['name'] ?? 'General update',
     'Target Persona' => $persona['name'] ?? '',
@@ -50,6 +59,7 @@ $row = [
     'Tag Page'       => '',
     'Post Caption'   => '',
     'Final_Format'   => $post['format'],
+    'Content Length' => $contentLength,
 ];
 
 // The post's workspace (set at plan time) carries the knowledge-hub

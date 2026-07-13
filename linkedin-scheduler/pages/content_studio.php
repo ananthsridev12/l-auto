@@ -22,6 +22,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card" id="step1">
   <h2>Step 1 — Upload CSV</h2>
+  <p class="muted">New to this? <a href="<?= h(app_path('assets/templates/content_studio_template.csv')) ?>" download>Download a CSV template</a> with the expected columns, including <strong>Content Length</strong> — Very Short / Short / Medium / Long / Blog Length, controls how long AI writes the caption for that row (leave blank for Medium; only matters when Post Caption/Creative Content are left blank for AI to fill in).</p>
   <input type="file" id="csvFile" accept=".csv">
   <button type="button" id="csvUploadBtn" class="btn-primary">Upload &amp; Generate</button>
   <p id="csvStatus" class="muted"></p>

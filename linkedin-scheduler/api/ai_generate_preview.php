@@ -50,6 +50,7 @@ $row = [
     'Tag Page'       => trim($_POST['tag_page'] ?? ''),
     'Post Caption'   => trim($_POST['caption'] ?? ''),
     'Final_Format'   => $format,
+    'Content Length' => trim($_POST['length'] ?? 'medium'),
 ];
 
 if ($row['Topic / Title'] === '' && $row['Post Caption'] === '') {

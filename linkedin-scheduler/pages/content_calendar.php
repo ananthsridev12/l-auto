@@ -46,6 +46,15 @@ require __DIR__ . '/../includes/layout_top.php';
     <label>Posts per week
       <input type="number" id="postsPerWeek" value="5" min="1" max="7">
     </label>
+    <label>Caption length
+      <select id="calLength">
+        <option value="very_short">Very Short (~40-60 words)</option>
+        <option value="short">Short (~80-120 words)</option>
+        <option value="medium" selected>Medium (~150-250 words)</option>
+        <option value="long">Long (~300-400 words)</option>
+        <option value="blog_length">Blog Length (~500-700 words)</option>
+      </select>
+    </label>
 
     <div class="editor-label" style="margin-top:16px;">Content Pillar Mix (%)</div>
     <p class="muted" id="rollupDisplay">Company: — % / Personal: — %</p>

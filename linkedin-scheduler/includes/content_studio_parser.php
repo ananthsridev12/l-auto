@@ -31,6 +31,11 @@ function content_studio_build_preview(string $path): array
             'Post Caption'     => trim($row['Post Caption'] ?? ''),
             'Creative Content' => trim($row['Creative Content'] ?? ''),
             'Final_Format'     => $format,
+            // Short/Medium/Long — only matters for AI-generated rows
+            // (blank Creative Content); resolve_length_preset()
+            // (includes/ai_generate.php) falls back to Medium for
+            // anything blank/unrecognized, so this column is optional.
+            'Content Length'   => trim($row['Content Length'] ?? ''),
         ];
 
         $skip = false;

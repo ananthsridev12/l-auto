@@ -14,9 +14,13 @@
 // Memory & Context. Internal links are woven into the same generation
 // call by passing existing published posts' title/slug pairs.
 
-// $topic: ['title' => string, 'news_line' => ?string].
+// $topic: ['title' => string, 'news_line' => ?string, 'length' => ?string].
 // $researchContext: sibling headlines text, or null.
 // $existingPosts: [['title'=>...,'slug'=>...], ...] for internal linking.
+// 'length' is one of BLOG_LENGTH_PRESETS' keys (includes/ai_generate.php)
+// — defaults to BLOG_LENGTH_DEFAULT ('w1000', closest to the fixed
+// 700-1200 words every blog post used before this was configurable)
+// when absent/invalid.
 function build_blog_prompt(array $topic, ?array $workspace, array $relatedMemory, ?string $researchContext, array $existingPosts): string
 {
     $context = build_context_block(null, null, null, $workspace, $relatedMemory);
@@ -38,12 +42,13 @@ function build_blog_prompt(array $topic, ?array $workspace, array $relatedMemory
     }
 
     $newsLine = trim((string) ($topic['news_line'] ?? ''));
+    $wordCount = resolve_length_preset($topic['length'] ?? BLOG_LENGTH_DEFAULT, BLOG_LENGTH_PRESETS, BLOG_LENGTH_DEFAULT);
     $parts[] = <<<PROMPT
 TASK: Write an original, SEO-friendly blog post on this topic: "{$topic['title']}"
 {$newsLine}
 
 Requirements:
-- 700-1200 words, written in the voice/tone described above.
+- {$wordCount}, written in the voice/tone described above.
 - Structure with an engaging intro, 3-6 <h2> subheadings, and a short conclusion with a natural call to action.
 - Original analysis and perspective, not a rehash of any single source.
 - Naturally incorporate the target keywords if any are implied by the topic.

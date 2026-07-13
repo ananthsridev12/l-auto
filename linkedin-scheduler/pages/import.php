@@ -19,6 +19,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card" id="step1">
   <h2>Step 1 — Upload CSV</h2>
+  <p class="muted">New to this? <a href="<?= h(app_path('assets/templates/import_template.csv')) ?>" download>Download a CSV template</a> with the expected columns.</p>
   <input type="file" id="csvFile" accept=".csv">
   <button type="button" id="csvUploadBtn" class="btn-primary">Upload &amp; Preview</button>
   <p id="csvStatus" class="muted"></p>

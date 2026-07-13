@@ -173,6 +173,8 @@
       fd.append('csrf', window.NEW_POST_CSRF);
       fd.append('format', format);
       fd.append('topic', topic);
+      var lengthSelect = document.getElementById('aiLength');
+      fd.append('length', lengthSelect ? lengthSelect.value : 'medium');
       appendKbField(fd, 'aiPersonaSelect', 'aiPersona', 'persona_id', 'persona');
       appendKbField(fd, 'aiPillarSelect', 'aiType', 'pillar_id', 'type');
       appendKbField(fd, 'aiCtaSelect', 'aiCta', 'cta_id', 'cta');
