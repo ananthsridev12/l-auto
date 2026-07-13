@@ -845,6 +845,7 @@ body.centered-page {
   margin: 6px 0 14px;
 }
 .template-option {
+  position: relative;
   width: 92px;
   cursor: pointer;
   border: 2px solid transparent;
@@ -852,7 +853,7 @@ body.centered-page {
   padding: 3px;
   text-align: center;
 }
-.template-option input { position: absolute; opacity: 0; pointer-events: none; }
+.template-option input { position: absolute; opacity: 0; pointer-events: none; width: auto; }
 .template-option img {
   width: 100%;
   aspect-ratio: 1 / 1;
