@@ -8,8 +8,10 @@
 //   1. Create a Personal workspace (self_brief -> about) if missing.
 //   2. Create ONE Company workspace (brand_brief -> about) named after
 //      their first connected company LinkedIn account (else "My Company"),
-//      linked to that account — only when they have any company-flavored
-//      data (brand_brief, company pillars, or a company account).
+//      linked to that account — only when they have a real company
+//      account or a hand-written brand_brief (default starter-KB pillars
+//      tagged 'company' do NOT count — every signup gets those, so they're
+//      not a reliable signal of an actual company).
 //   3. Backfill workspace_id everywhere:
 //      - pillars by their category (personal -> Personal ws, else Company
 //        ws when one exists, else Personal)
@@ -51,10 +53,18 @@ foreach ($users as $u) {
         $stmt = $pdo->prepare("SELECT id, display_name FROM linkedin_accounts WHERE user_id = ? AND account_type = 'company' ORDER BY id LIMIT 1");
         $stmt->execute([$userId]);
         $companyAccount = $stmt->fetch();
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM content_pillars WHERE user_id = ? AND category = 'company' AND workspace_id IS NULL");
-        $stmt->execute([$userId]);
-        $hasCompanyPillars = (int) $stmt->fetchColumn() > 0;
-        if ($companyAccount || trim((string) $u['brand_brief']) !== '' || $hasCompanyPillars) {
+        // NOTE: previously also auto-created a company workspace when the
+        // user had any content_pillars with category='company', but the
+        // default starter Knowledge Base (includes/kb_seed.php) seeds 5
+        // company-category pillars for EVERY signup whether or not they
+        // ever connect a company page — that made this heuristic a false
+        // positive for personal-only users, attaching an unwanted company
+        // workspace (and, via Settings' unfiltered account picker, their
+        // personal account) with no way to tell from the UI. A real
+        // company account or a hand-written brand_brief are the only
+        // reliable signals; a user who genuinely wants a company workspace
+        // without either can still create one manually from Settings.
+        if ($companyAccount || trim((string) $u['brand_brief']) !== '') {
             $pdo->prepare("INSERT INTO workspaces (user_id, type, name, linkedin_account_id, about) VALUES (?, 'company', ?, ?, ?)")
                 ->execute([
                     $userId,

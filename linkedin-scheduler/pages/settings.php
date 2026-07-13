@@ -72,10 +72,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim($_POST['ws_name'] ?? '') ?: $workspace['name'];
         $accountId = (int) ($_POST['ws_linkedin_account_id'] ?? 0) ?: null;
         if ($accountId !== null) {
-            $chk = db()->prepare('SELECT id FROM linkedin_accounts WHERE id = ? AND user_id = ?');
-            $chk->execute([$accountId, $userId]);
+            // Must be owned by this user AND match this workspace's type —
+            // a personal profile attached to a company workspace (or vice
+            // versa) silently mixes that account's posts into the wrong
+            // workspace's calendar with no way to tell from the UI.
+            $chk = db()->prepare('SELECT id FROM linkedin_accounts WHERE id = ? AND user_id = ? AND account_type = ?');
+            $chk->execute([$accountId, $userId, $workspace['type']]);
             if (!$chk->fetch()) {
                 $accountId = null;
+                flash('error', 'That account is a different type than this workspace (' . $workspace['type'] . ') — not attached. Pick a matching account, or connect one first.');
             }
         }
         db()->prepare(
@@ -855,9 +860,13 @@ require __DIR__ . '/../includes/layout_top.php';
       <select name="ws_linkedin_account_id">
         <option value="">— None —</option>
         <?php foreach (fetch_user_accounts($userId) as $acct): ?>
+          <?php if ($acct['account_type'] !== $workspace['type']) continue; ?>
           <option value="<?= (int) $acct['id'] ?>"<?= (int) ($workspace['linkedin_account_id'] ?? 0) === (int) $acct['id'] ? ' selected' : '' ?>><?= h($acct['display_name']) ?> (<?= h($acct['account_type']) ?>)</option>
         <?php endforeach; ?>
       </select>
+      <?php if (!array_filter(fetch_user_accounts($userId), fn ($a) => $a['account_type'] === $workspace['type'])): ?>
+        <span class="muted">No <?= h($workspace['type']) ?> account connected yet — connect one on the <a href="<?= h(app_path('pages/accounts.php')) ?>">Accounts</a> page first.</span>
+      <?php endif; ?>
     </label>
     <label><?= $workspace['type'] === 'personal' ? 'About you' : 'About the company' ?> <span class="muted">(the brief — who, what, voice)</span>
       <textarea name="ws_about" rows="4" placeholder="<?= $workspace['type'] === 'personal' ? "e.g. I'm a reliability engineer turned founder. Voice: candid, a bit informal, share real lessons not just wins." : 'e.g. We sell predictive-maintenance sensors to mid-size manufacturing plants. Voice: direct, data-driven, not salesy.' ?>"><?= h($workspace['about'] ?? '') ?></textarea>
