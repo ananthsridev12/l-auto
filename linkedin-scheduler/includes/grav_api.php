@@ -93,6 +93,7 @@ function grav_publish_post(array $workspace, array $blogPost): array
 
     $body = [
         'route'    => $route,
+        'title'    => $blogPost['title'],
         'template' => grav_template($workspace),
         'header'   => [
             'title' => $blogPost['title'],
