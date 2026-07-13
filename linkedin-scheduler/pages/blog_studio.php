@@ -183,7 +183,7 @@ if ($postId) {
     <section class="card">
       <h2>Publish</h2>
       <?php if (!wordpress_configured($workspace)): ?>
-        <p class="muted">Connect WordPress for this workspace in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> to publish or schedule.</p>
+        <p class="muted">Connect WordPress for this workspace in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to publish or schedule.</p>
       <?php else: ?>
         <form method="post" style="display:inline-block; margin-right:12px;">
           <input type="hidden" name="csrf" value="<?= h($token) ?>">

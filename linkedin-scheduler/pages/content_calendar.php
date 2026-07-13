@@ -30,7 +30,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <?php if (!$pillars): ?>
   <section class="card">
-    <p class="muted">You need at least one content pillar first — add one in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a>, or load the starter set from there.</p>
+    <p class="muted">You need at least one content pillar first — add one in <a href="<?= h(app_path('pages/settings.php')) ?>#content">Settings</a>, or load the starter set from there.</p>
   </section>
 <?php else: ?>
 <section class="card">

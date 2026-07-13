@@ -114,7 +114,7 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
 </div>
 
 <?php if ($formatDisabled): ?>
-  <p class="badge badge-warning">"<?= h($post['format']) ?>" posting is disabled in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> — this post can't be scheduled or posted until it's enabled, or you change its format.</p>
+  <p class="badge badge-warning">"<?= h($post['format']) ?>" posting is disabled in <a href="<?= h(app_path('pages/settings.php')) ?>#account">Settings</a> — this post can't be scheduled or posted until it's enabled, or you change its format.</p>
 <?php endif; ?>
 
 <div class="post-card">

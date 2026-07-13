@@ -740,7 +740,14 @@ require __DIR__ . '/../includes/layout_top.php';
 ?>
 <div class="page-header"><h1>Settings</h1></div>
 
-<section class="card">
+<nav class="settings-tabs" id="settingsTabs">
+  <button type="button" class="settings-tab-btn" data-tab-target="account">Account</button>
+  <button type="button" class="settings-tab-btn" data-tab-target="brand">Brand &amp; Workspace</button>
+  <button type="button" class="settings-tab-btn" data-tab-target="content">Content Strategy</button>
+  <button type="button" class="settings-tab-btn" data-tab-target="integrations">Integrations</button>
+</nav>
+
+<section class="card" data-tab="account">
   <h2>Profile</h2>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -757,12 +764,12 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="account">
   <h2>LinkedIn Accounts</h2>
   <p class="muted">Manage which personal profile and Company Pages are connected from the <a href="<?= h(app_path('pages/accounts.php')) ?>">Accounts</a> page.</p>
 </section>
 
-<section class="card">
+<section class="card" data-tab="account">
   <h2>Post Formats</h2>
   <p class="muted">Only checked formats will auto-schedule from CSV import or be schedulable from the post editor. Anything else lands in Drafts instead. Poll is unchecked by default because LinkedIn's API has no way to actually publish a real poll — a "Poll" post would otherwise just go out as plain text under a misleading label.</p>
   <form method="post" class="stacked-form">
@@ -779,7 +786,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="integrations">
   <h2>AI Provider</h2>
   <p class="muted">Used by <a href="<?= h(app_path('pages/content_studio.php')) ?>">Content Studio</a> and New Post's "Generate with AI" to write captions and slide copy when you haven't written them yourself. Pick which provider to use and paste your key for it — only the selected provider's key matters. Gemini has a free tier (get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>); Claude and OpenAI are paid per-call unless this site has a shared key configured for them, in which case leaving your own key blank will use that instead.</p>
   <form method="post" class="stacked-form">
@@ -801,7 +808,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="integrations">
   <h2>Reddit (News Studio trend source)</h2>
   <p class="muted">Lets News Studio pull trending discussion from subreddits you add below, alongside Google News. Create a free "script" app at <a href="https://www.reddit.com/prefs/apps" target="_blank" rel="noopener">reddit.com/prefs/apps</a> (no approval wait) and paste its Client ID/Secret here — this app never posts to Reddit or touches your Reddit account, it only reads public subreddit listings.</p>
   <form method="post" class="stacked-form">
@@ -817,7 +824,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="brand">
   <h2>Workspaces</h2>
   <p class="muted">Everything below Settings' AI Provider section is <strong>per workspace</strong> — knowledge profile, personas, content pillars, CTAs, news topics, and design defaults are all separate for your Personal voice and for each company page. Switch workspaces with the selector at the top of the sidebar; every page (New Post, Content Calendar, News Studio, Drafts…) follows it.</p>
   <?php foreach ($workspaces as $wsRow): ?>
@@ -847,7 +854,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="brand">
   <h2>Knowledge Hub — <?= h($workspace['name']) ?> profile</h2>
   <p class="muted">This is who <?= $workspace['type'] === 'personal' ? 'you are' : 'this company is' ?> — every AI generation in this workspace automatically receives all of it as context, so the more you fill in, the more on-voice the content. (Uploadable reference documents are coming to this hub next.)</p>
   <form method="post" class="stacked-form">
@@ -893,7 +900,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="integrations">
   <h2>WordPress — <?= h($workspace['name']) ?></h2>
   <p class="muted">Connect a WordPress site to publish <a href="<?= h(app_path('pages/blog_studio.php')) ?>">Blog Studio</a> posts to directly. Use an <strong>Application Password</strong> (WordPress admin &gt; Users &gt; Profile &gt; Application Passwords), not your account password — it's scoped and revocable independently.</p>
   <form method="post" class="stacked-form">
@@ -919,7 +926,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php endif; ?>
 </section>
 
-<section class="card">
+<section class="card" data-tab="brand">
   <h2>Reference Documents — <?= h($workspace['name']) ?></h2>
   <p class="muted">Upload PDFs, Word docs, or text files with facts, positioning, product details, or data you want the AI to draw on — pitch decks, one-pagers, FAQs, case studies. Extracted text is added to this workspace's AI context automatically. For longer documents, click "Summarize" once your AI provider is configured — it condenses the document into a compact summary that's reused instead of the full text on every generation.</p>
   <?php if ($knowledgeDocuments): ?>
@@ -968,7 +975,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="brand">
   <h2>Brand Palettes</h2>
   <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; Accent, CTA, and Signature colors are optional — leave "Auto-generate" checked to derive them automatically with guaranteed-readable contrast. Signature specifically controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes. Each palette can also have its own background photo (upload it square, matching the post's 1:1 shape, for a clean fit — off-square images are still center-cropped automatically) — select "Image" as the Background when generating a post using that palette. Your palette's Background color is drawn as a semi-transparent tint over the photo so text stays readable.</p>
   <?php if ($brandPalettes): ?>
@@ -1061,7 +1068,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <p class="muted" style="margin-top:8px;">Click "Edit" on a palette above to load its current colors into this form and update it in place — submitting a name that matches an existing palette always updates that palette rather than creating a duplicate.</p>
 </section>
 
-<section class="card">
+<section class="card" data-tab="brand">
   <h2>Footer Images — <?= h($workspace['name']) ?></h2>
   <p class="muted">Shown in the circular footer on the last (CTA) slide of a carousel. Logo is used for company-category posts, Photo for personal-category posts (see the Company/Personal tag on Content Pillars below). These are set per workspace — falls back to your account-wide upload (if any from before workspaces existed), then a bundled default, until this workspace has its own.</p>
   <?php foreach (['logo' => 'Logo (company posts)', 'photo' => 'Photo (personal posts)'] as $slot => $label): ?>
@@ -1094,7 +1101,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php endforeach; ?>
 </section>
 
-<section class="card">
+<section class="card" data-tab="brand">
   <h2>Brand Logo — <?= h($workspace['name']) ?></h2>
   <p class="muted">Shown top-left on every generated slide in this workspace, across every Design Template and Color Palette. Aspect ratio is preserved (not cropped) — a transparent-background PNG wordmark works best. No logo means nothing is drawn.</p>
   <div class="account-row">
@@ -1122,7 +1129,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </div>
 </section>
 
-<section class="card">
+<section class="card" data-tab="brand">
   <h2>Brand Fonts</h2>
   <p class="muted">Upload your own typefaces (Regular + Bold, .ttf or .otf), or add one already on the server below without uploading — a library to pick from, not a single active font. Assign one to <strong>Heading</strong> (headline text), one to <strong>Body</strong> (body text, numbered points, CTA banner, counter), and optionally one to <strong>Signature</strong> (the footer name) independently. Leave any unassigned to fall back to the next rule — Signature falls back to the Heading/Body toggle below, Heading/Body fall back to the built-in Inter.</p>
   <?php if ($brandFonts): ?>
@@ -1265,7 +1272,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php endif; ?>
 </section>
 
-<section class="card">
+<section class="card" data-tab="content">
   <h2>Personas, Pillars &amp; CTAs</h2>
   <p class="muted">Every new account starts with a generic starter set of personas, content pillars, and CTAs (editable/removable below). If you deleted them or never got them, load them again any time — this only adds what's missing, it never duplicates.</p>
   <form method="post">
@@ -1275,7 +1282,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="content">
   <h2>Personas</h2>
   <p class="muted">Target audiences you write for. Pick one from New Post's "Generate with AI" panel instead of retyping who the post is for.</p>
   <?php if ($personas): ?>
@@ -1309,7 +1316,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="content">
   <h2>Content Pillars</h2>
   <p class="muted">The recurring themes you post about. Pick one from New Post's "Generate with AI" panel to keep content on-strategy.</p>
   <?php if ($contentPillars): ?>
@@ -1365,7 +1372,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="brand">
   <h2>Default Design Templates</h2>
   <p class="muted">Auto-assigns a Design Template and Color Palette during bulk generation (Content Studio CSV upload, Content Calendar Generator) so you don't have to pick them for every row by hand — the pickers still show on each row for a manual override, it's just already set sensibly. A Content Pillar's own Design Template/Color Palette above takes priority over these when a row/post is tagged with that pillar.</p>
   <form method="post" class="stacked-form">
@@ -1389,7 +1396,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="integrations">
   <h2>News Auto-Content</h2>
   <p class="muted">The <a href="<?= h(app_path('pages/news_studio.php')) ?>">News Studio</a> searches Google News for every Content Pillar name above, plus the extra keywords below, and turns trending headlines into draft posts written in your voice. With auto-drafting on, the daily cron generates drafts each morning for you to review — nothing is ever posted without your approval.</p>
   <form method="post" class="stacked-form">
@@ -1474,7 +1481,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="content">
   <h2>CTA Library</h2>
   <p class="muted">Reusable calls-to-action, optionally tagged with a funnel stage. Pick one from New Post's "Generate with AI" panel instead of writing a CTA from scratch each time.</p>
   <?php if ($ctaLibrary): ?>
@@ -1513,7 +1520,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
-<section class="card">
+<section class="card" data-tab="content">
   <h2>Tag Directory</h2>
   <p class="muted">LinkedIn only lets an app look up pages you administer — there's no way to search other companies by name. To tag a page you don't manage, find its numeric LinkedIn organization ID (visible in that page's public HTML source, e.g. as "urn:li:organization:12345") and add it here once. It'll then show up in the "@ Tag" button in the caption editor for every future post.</p>
 
@@ -1635,6 +1642,38 @@ document.querySelectorAll('.color-field').forEach(function (field) {
     cancelBtn.style.display = 'none';
   });
 })();
+</script>
+
+<script>
+  (function () {
+    var VALID_TABS = ['account', 'brand', 'content', 'integrations'];
+    var tabBtns = document.querySelectorAll('#settingsTabs .settings-tab-btn');
+    var panels = document.querySelectorAll('[data-tab]');
+
+    function activate(tab) {
+      if (VALID_TABS.indexOf(tab) === -1) tab = VALID_TABS[0];
+      tabBtns.forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.tabTarget === tab);
+      });
+      panels.forEach(function (panel) {
+        panel.style.display = panel.dataset.tab === tab ? '' : 'none';
+      });
+      try { localStorage.setItem('settingsActiveTab', tab); } catch (e) {}
+    }
+
+    tabBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        activate(btn.dataset.tabTarget);
+        history.replaceState(null, '', '#' + btn.dataset.tabTarget);
+      });
+    });
+
+    var initial = (location.hash || '').replace('#', '');
+    if (VALID_TABS.indexOf(initial) === -1) {
+      try { initial = localStorage.getItem('settingsActiveTab') || VALID_TABS[0]; } catch (e) { initial = VALID_TABS[0]; }
+    }
+    activate(initial);
+  })();
 </script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

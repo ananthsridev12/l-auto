@@ -66,7 +66,7 @@ require __DIR__ . '/../includes/layout_top.php';
       <?php if (!$post['linkedin_account_id']): ?>
         <p class="badge badge-warning">No LinkedIn account assigned — <a href="<?= h(app_path('pages/post.php?id=' . $post['id'])) ?>">assign one</a> before posting.</p>
       <?php elseif ($formatDisabled): ?>
-        <p class="badge badge-warning">"<?= h($post['format']) ?>" posting is disabled in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a>.</p>
+        <p class="badge badge-warning">"<?= h($post['format']) ?>" posting is disabled in <a href="<?= h(app_path('pages/settings.php')) ?>#account">Settings</a>.</p>
       <?php else: ?>
         <p class="muted">Posting as <?= h($post['account_name']) ?></p>
       <?php endif; ?>

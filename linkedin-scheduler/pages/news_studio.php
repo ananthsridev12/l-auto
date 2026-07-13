@@ -175,7 +175,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </div>
   <p class="muted">
     Google News is searched for your <?= count($queries) ?> topic(s) — every Content Pillar name plus the news keywords and direct RSS feeds in
-    <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> (results can be limited to your trusted publishers there too). Fresh headlines land below; each one can become a draft post
+    <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> (results can be limited to your trusted publishers there too). Fresh headlines land below; each one can become a draft post
     written in your voice (your take on the story, not a summary). Drafts wait for your review — nothing posts without approval.
     <?php if ($autoEnabled): ?>
       Auto-drafting is <strong>on</strong>: the daily cron generates up to <?= $draftsPerDay ?> draft(s) each morning.

@@ -202,7 +202,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <?php if (empty($availableFormats)): ?>
   <section class="card">
-    <p class="muted">Text Post, Single Image, and Carousel are all disabled in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> — enable at least one to compose a new post here.</p>
+    <p class="muted">Text Post, Single Image, and Carousel are all disabled in <a href="<?= h(app_path('pages/settings.php')) ?>#account">Settings</a> — enable at least one to compose a new post here.</p>
   </section>
 <?php else: ?>
 <div class="post-card">
@@ -232,7 +232,7 @@ require __DIR__ . '/../includes/layout_top.php';
           Generate with AI instead
         </label>
         <?php if (!ai_configured($aiConfig)): ?>
-          <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>">Settings</a> to use this.</p>
+          <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to use this.</p>
         <?php endif; ?>
         <label class="checkbox-row" id="manualToggleLabel">
           <input type="checkbox" id="manualCreativeToggle">
