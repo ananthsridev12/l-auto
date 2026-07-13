@@ -84,11 +84,26 @@ foreach ($companyWorkspaces as $ws) {
 
     echo "user {$userId}: fixing company workspace #{$wsId} \"{$ws['name']}\" ({$reason}) -> moving content to Personal #{$personalId}\n";
 
+    // Several of these tables carry a UNIQUE KEY scoped to (user_id,
+    // workspace_id, ...) — e.g. news_items on url_hash, content_pillars/
+    // personas/news_topics on name/query. If Personal already has a row
+    // with the same key (the same news URL got fetched under both
+    // workspaces before this was noticed, say), a plain UPDATE throws an
+    // uncaught duplicate-key exception and aborts the whole script
+    // mid-loop. UPDATE IGNORE skips just that row instead of erroring;
+    // whatever's left still pointing at the company workspace afterward
+    // lost the naming/URL collision to an already-equivalent Personal
+    // row, so it's a safe-to-discard duplicate, not lost data.
     foreach (['content_pillars', 'personas', 'cta_library', 'news_topics', 'news_items', 'news_trusted_sources', 'calendar_batches', 'posts'] as $tbl) {
-        $upd = $pdo->prepare("UPDATE {$tbl} SET workspace_id = ? WHERE workspace_id = ?");
+        $upd = $pdo->prepare("UPDATE IGNORE {$tbl} SET workspace_id = ? WHERE workspace_id = ?");
         $upd->execute([$personalId, $wsId]);
         if ($upd->rowCount() > 0) {
             echo "  moved {$upd->rowCount()} row(s) in {$tbl}\n";
+        }
+        $del = $pdo->prepare("DELETE FROM {$tbl} WHERE workspace_id = ?");
+        $del->execute([$wsId]);
+        if ($del->rowCount() > 0) {
+            echo "  discarded {$del->rowCount()} duplicate row(s) in {$tbl} (already present in Personal)\n";
         }
     }
 
