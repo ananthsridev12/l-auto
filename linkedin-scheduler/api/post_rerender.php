@@ -122,10 +122,11 @@ foreach ($newSlides as $order => $slide) {
 
 db()->prepare('UPDATE posts SET creative_json = ? WHERE id = ?')->execute([json_encode($creative), $postId]);
 
-// ?v= busts the browser cache — the re-render reuses the same filenames.
-$v = time();
+// slide_public_url() itself appends a filemtime-based cache-buster now,
+// so the freshly-rendered file (just imagepng()'d above) always gets a
+// URL distinct from whatever the browser had cached pre-rerender.
 json_response([
     'success' => true,
     'post_id' => $postId,
-    'slides'  => array_map(fn ($s) => ['url' => slide_public_url($s['filepath']) . '?v=' . $v], $newSlides),
+    'slides'  => array_map(fn ($s) => ['url' => slide_public_url($s['filepath'])], $newSlides),
 ]);

@@ -49,5 +49,5 @@ try {
 
 json_response([
     'success' => true,
-    'slides'  => array_map(fn ($s) => ['url' => slide_public_url($s['filepath']) . '?t=' . time()], $slides),
+    'slides'  => array_map(fn ($s) => ['url' => slide_public_url($s['filepath'])], $slides),
 ]);

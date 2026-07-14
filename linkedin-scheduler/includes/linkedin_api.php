@@ -226,7 +226,13 @@ function publish_post_now(int $postId, int $userId): array
             get_mention_candidates($userId)
         );
 
-        $upd = db()->prepare('UPDATE posts SET status = "posted", posted_at = NOW(), li_post_urn = ?, error_message = NULL WHERE id = ?');
+        // Calendar only shows posts with scheduled_at set (pages/calendar.php).
+        // A draft posted straight via "Post Now" without ever being
+        // scheduled would otherwise never appear there at all — backfill
+        // it to the actual post time so it shows up under today. Leaves
+        // an existing scheduled_at (the date it was originally planned
+        // for) untouched.
+        $upd = db()->prepare('UPDATE posts SET status = "posted", posted_at = NOW(), scheduled_at = COALESCE(scheduled_at, NOW()), li_post_urn = ?, error_message = NULL WHERE id = ?');
         $upd->execute([$postUrn, $postId]);
 
         return ['success' => true, 'post_urn' => $postUrn];

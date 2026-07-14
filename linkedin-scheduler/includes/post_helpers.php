@@ -24,10 +24,18 @@ function fetch_post_with_slides(int $postId, int $userId): ?array
     return $post;
 }
 
+// Appends the file's own mtime as a cache-busting query param. Re-render
+// flows (api/post_rerender.php, etc.) overwrite the same filename in
+// place rather than writing a new one, so without this the URL never
+// changes and browsers keep serving the pre-regenerate image on the
+// next full page load — the in-place AJAX preview looked right, but a
+// reload showed the stale copy.
 function slide_public_url(string $filepath): string
 {
     $relative = ltrim(str_replace(UPLOAD_DIR, '', $filepath), '/');
-    return app_path('uploads/' . $relative);
+    $url = app_path('uploads/' . $relative);
+    $mtime = @filemtime($filepath);
+    return $mtime !== false ? $url . '?v=' . $mtime : $url;
 }
 
 function fetch_user_accounts(int $userId): array
