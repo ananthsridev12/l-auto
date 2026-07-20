@@ -21,7 +21,11 @@ define('APP_SECRET', 'random-32-char-string-for-sessions');
 define('LI_CLIENT_ID',     'your-linkedin-app-client-id');
 define('LI_CLIENT_SECRET', 'your-linkedin-app-client-secret');
 
-define('LI_VERSION',      '202506');
+// LinkedIn deprecates each version ~12 months after release — if
+// posting starts failing with HTTP 426 "NONEXISTENT_VERSION", bump
+// this to a current YYYYMM value (check LinkedIn's developer docs for
+// the latest).
+define('LI_VERSION',      '202606');
 define('LI_REDIRECT_URI', APP_URL . '/auth/linkedin_callback.php');
 define('LI_API_BASE',     'https://api.linkedin.com');
 define('LI_AUTH_URL',     'https://www.linkedin.com/oauth/v2/authorization');
