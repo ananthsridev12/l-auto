@@ -7,7 +7,7 @@
 //
 // The client sends the edited creative, but only the fields the editor
 // actually exposes are taken from it (slides, template, layout,
-// background) — everything else (format, series_label, hashtags,
+// background, size) — everything else (format, series_label, hashtags,
 // caption) is kept from the stored creative, so a tampered request
 // can't switch a post's format or smuggle in unrelated keys.
 
@@ -72,7 +72,7 @@ if (!$slides) {
 }
 $creative['slides'] = $slides;
 
-foreach (['template', 'layout', 'background'] as $key) {
+foreach (['template', 'layout', 'background', 'size'] as $key) {
     if (isset($edited[$key]) && $edited[$key] !== '' && $edited[$key] !== null) {
         $creative[$key] = $edited[$key];
     } else {

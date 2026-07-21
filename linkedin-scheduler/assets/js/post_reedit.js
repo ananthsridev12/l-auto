@@ -39,6 +39,10 @@
     if (bg && bg !== 'flat') {
       creative.background = bg;
     }
+    var size = document.getElementById('reeditSizeSelect').value;
+    if (size && size !== 'square') {
+      creative.size = size;
+    }
 
     var fd = new FormData();
     fd.append('csrf', window.POST_REEDIT.csrf);

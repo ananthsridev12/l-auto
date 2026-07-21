@@ -314,6 +314,12 @@ require __DIR__ . '/../includes/layout_top.php';
             <option value="image">Image (needs a palette with a background photo uploaded)</option>
           </select>
         </label>
+        <label>Size <span class="muted">(optional)</span>
+          <select id="aiSizeSelect">
+            <option value="square">Square (1:1)</option>
+            <option value="portrait">Portrait (4:5, Document)</option>
+          </select>
+        </label>
         <div id="aiSlidesReview"></div>
         <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
 

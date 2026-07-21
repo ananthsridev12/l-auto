@@ -316,6 +316,13 @@
     } else {
       delete currentCreative.background;
     }
+    var sizeSelect = document.getElementById('aiSizeSelect');
+    var size = sizeSelect ? sizeSelect.value : 'square';
+    if (size && size !== 'square') {
+      currentCreative.size = size;
+    } else {
+      delete currentCreative.size;
+    }
     return currentCreative;
   }
 

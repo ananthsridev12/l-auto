@@ -187,6 +187,20 @@
       backgroundWrap.appendChild(backgroundSelect);
       card.appendChild(backgroundWrap);
 
+      var sizeWrap = document.createElement('label');
+      sizeWrap.textContent = 'Size ';
+      var sizeSelect = document.createElement('select');
+      sizeSelect.className = 'size-select';
+      [['square', 'Square (1:1)'], ['portrait', 'Portrait (4:5, Document)']].forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt[0];
+        o.textContent = opt[1];
+        if ((c.size || 'square') === opt[0]) o.selected = true;
+        sizeSelect.appendChild(o);
+      });
+      sizeWrap.appendChild(sizeSelect);
+      card.appendChild(sizeWrap);
+
       var slidesWrap = document.createElement('div');
       slidesWrap.className = 'slides-wrap';
       (c.slides || []).forEach(function (slide, si) {
@@ -273,6 +287,12 @@
         c.background = background;
       } else {
         delete c.background;
+      }
+      var size = card.querySelector('.size-select').value;
+      if (size && size !== 'square') {
+        c.size = size;
+      } else {
+        delete c.size;
       }
       card.querySelectorAll('.slide-fieldset').forEach(function (fs) {
         var si = parseInt(fs.dataset.slideIndex, 10);

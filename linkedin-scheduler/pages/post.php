@@ -241,6 +241,12 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <option value="image"<?= ($creative['background'] ?? '') === 'image' ? ' selected' : '' ?>>Image (needs a palette with a background photo uploaded)</option>
     </select>
   </label>
+  <label>Size
+    <select id="reeditSizeSelect">
+      <option value="square"<?= ($creative['size'] ?? 'square') === 'square' ? ' selected' : '' ?>>Square (1:1)</option>
+      <option value="portrait"<?= ($creative['size'] ?? '') === 'portrait' ? ' selected' : '' ?>>Portrait (4:5, Document)</option>
+    </select>
+  </label>
   <button type="button" id="reeditRenderBtn" class="btn-secondary" style="margin-top:12px;">Re-render Image</button>
   <p id="reeditStatus" class="muted"></p>
 </section>

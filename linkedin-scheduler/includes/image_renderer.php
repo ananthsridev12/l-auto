@@ -26,6 +26,22 @@ const RENDER_SCALE = RENDER_SIZE / 1080.0;
 const RENDER_PAD  = 100; // rs(80)
 const RENDER_BAR  = 10;  // rs(8)
 
+// Width stays RENDER_SIZE (1350) for every size — only height varies —
+// which is what keeps this a small, additive change rather than a full
+// rewrite: every width-derived value in this file (render_content_edges(),
+// headline/body/points/CTA wrapping and positioning) is untouched by
+// size selection. Only the handful of places that fill/anchor to the
+// full canvas HEIGHT (background fill, the left accent bar, the
+// bottom-anchored 'triangles' decoration, and the footer's Y-clamp)
+// take an explicit $canvasH param, defaulting to RENDER_SIZE so any
+// call site that doesn't pass one keeps today's exact square behavior.
+// 'portrait' is LinkedIn's Document/Carousel-post recommended size
+// (1080x1350 native), scaled by the same 1.25x RENDER_SCALE factor.
+const RENDER_SIZES = [
+    'square'   => [RENDER_SIZE, RENDER_SIZE],
+    'portrait' => [RENDER_SIZE, 1688],
+];
+
 // Scales a pixel value originally designed against a 1080 canvas to the
 // current RENDER_SIZE. Used for every size literal in this file (font
 // sizes, gaps, badge/shape dimensions, footer clamp Y positions) so the
@@ -733,7 +749,7 @@ function render_draw_logo($im, ?string $logoPath, float $cx, float $y): float
 // reuses the same color the user already picked for that palette (no
 // separate "overlay color" control) so text drawn afterward keeps a
 // predictable, palette-matched contrast margin regardless of the photo.
-function render_draw_background_image($im, string $path, array $bgRgb): bool
+function render_draw_background_image($im, string $path, array $bgRgb, int $canvasH = RENDER_SIZE): bool
 {
     $info = @getimagesize($path);
     if (!$info) {
@@ -750,7 +766,7 @@ function render_draw_background_image($im, string $path, array $bgRgb): bool
 
     $sw = imagesx($src);
     $sh = imagesy($src);
-    $scale = max(RENDER_SIZE / $sw, RENDER_SIZE / $sh);
+    $scale = max(RENDER_SIZE / $sw, $canvasH / $sh);
     $scaledW = (int) ceil($sw * $scale);
     $scaledH = (int) ceil($sh * $scale);
     $scaled = imagecreatetruecolor($scaledW, $scaledH);
@@ -758,8 +774,8 @@ function render_draw_background_image($im, string $path, array $bgRgb): bool
     imagedestroy($src);
 
     $cropX = intdiv($scaledW - RENDER_SIZE, 2);
-    $cropY = intdiv($scaledH - RENDER_SIZE, 2);
-    imagecopy($im, $scaled, 0, 0, $cropX, $cropY, RENDER_SIZE, RENDER_SIZE);
+    $cropY = intdiv($scaledH - $canvasH, 2);
+    imagecopy($im, $scaled, 0, 0, $cropX, $cropY, RENDER_SIZE, $canvasH);
     imagedestroy($scaled);
 
     // 50% opacity — enough to guarantee the same contrast margin flat/
@@ -767,19 +783,19 @@ function render_draw_background_image($im, string $path, array $bgRgb): bool
     // photo rather than a fully obscured brand-color rectangle.
     imagealphablending($im, true);
     $overlay = imagecolorallocatealpha($im, $bgRgb[0], $bgRgb[1], $bgRgb[2], 64);
-    imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, $overlay);
+    imagefilledrectangle($im, 0, 0, RENDER_SIZE, $canvasH, $overlay);
     return true;
 }
 
-function render_draw_background($im, array $paletteColors, string $bgStyle, ?string $bgImagePath = null): void
+function render_draw_background($im, array $paletteColors, string $bgStyle, ?string $bgImagePath = null, int $canvasH = RENDER_SIZE): void
 {
-    if ($bgStyle === 'image' && $bgImagePath && is_file($bgImagePath) && render_draw_background_image($im, $bgImagePath, $paletteColors['bg'])) {
+    if ($bgStyle === 'image' && $bgImagePath && is_file($bgImagePath) && render_draw_background_image($im, $bgImagePath, $paletteColors['bg'], $canvasH)) {
         return;
     }
     $top = $paletteColors['bg'];
     if ($bgStyle !== 'gradient') {
         [$r, $g, $b] = $top;
-        imagefilledrectangle($im, 0, 0, RENDER_SIZE, RENDER_SIZE, imagecolorallocate($im, $r, $g, $b));
+        imagefilledrectangle($im, 0, 0, RENDER_SIZE, $canvasH, imagecolorallocate($im, $r, $g, $b));
         return;
     }
     // Mixing toward accent (as opposed to headline/text) was too subtle
@@ -790,8 +806,8 @@ function render_draw_background($im, array $paletteColors, string $bgStyle, ?str
     // on every palette while staying well short of headline's own
     // darkness/lightness, so text drawn over it keeps its contrast margin.
     $bottom = mix_colors($top, $paletteColors['headline'], 0.32);
-    for ($y = 0; $y < RENDER_SIZE; $y++) {
-        [$r, $g, $b] = mix_colors($top, $bottom, $y / (RENDER_SIZE - 1));
+    for ($y = 0; $y < $canvasH; $y++) {
+        [$r, $g, $b] = mix_colors($top, $bottom, $y / ($canvasH - 1));
         imagefilledrectangle($im, 0, $y, RENDER_SIZE, $y, imagecolorallocate($im, $r, $g, $b));
     }
 }
@@ -803,13 +819,13 @@ function render_draw_background($im, array $paletteColors, string $bgStyle, ?str
 // 'minimal' drops the bar entirely; 'bold' widens it for more visual
 // weight; content positioning (render_content_edges()) stays fixed
 // across all three so this never has to move where text starts.
-function render_draw_bar($im, array $p, string $layout = 'classic'): void
+function render_draw_bar($im, array $p, string $layout = 'classic', int $canvasH = RENDER_SIZE): void
 {
     if ($layout === 'minimal') {
         return;
     }
     $width = $layout === 'bold' ? rs(14) : RENDER_BAR;
-    imagefilledrectangle($im, 0, 0, $width, RENDER_SIZE, $p['bar']);
+    imagefilledrectangle($im, 0, 0, $width, $canvasH, $p['bar']);
 }
 
 function render_draw_counter($im, int $n, int $total, array $p): void
@@ -1167,12 +1183,12 @@ function render_decoration_halftone($im, array $p): void
     }
 }
 
-function render_decoration_triangles($im, array $p): void
+function render_decoration_triangles($im, array $p, int $canvasH = RENDER_SIZE): void
 {
     $rgb = imagecolorsforindex($im, $p['accent']);
     $tint = imagecolorallocatealpha($im, $rgb['red'], $rgb['green'], $rgb['blue'], 70);
     $size = rs(20); $rows = 5;
-    $x0 = 0; $y0 = RENDER_SIZE;
+    $x0 = 0; $y0 = $canvasH;
     for ($row = 0; $row < $rows; $row++) {
         for ($col = 0; $col < $rows - $row; $col++) {
             $x = $x0 + $col * $size;
@@ -1182,12 +1198,12 @@ function render_decoration_triangles($im, array $p): void
     }
 }
 
-function render_draw_decoration($im, array $p, ?string $decoration): void
+function render_draw_decoration($im, array $p, ?string $decoration, int $canvasH = RENDER_SIZE): void
 {
     match ($decoration) {
         'bleed_circle' => render_decoration_bleed_circle($im, $p),
         'halftone'     => render_decoration_halftone($im, $p),
-        'triangles'    => render_decoration_triangles($im, $p),
+        'triangles'    => render_decoration_triangles($im, $p, $canvasH),
         default        => null,
     };
 }
@@ -1389,10 +1405,16 @@ function render_fit_footer_name_size(string $name, float $maxPx, int $preferredS
 // is the manual Settings size override (see includes/helpers.php
 // get_footer_name_size()) — null for either keeps today's auto-derived
 // palette color / auto size, so existing users see no change.
-function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null): void
+function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE): void
 {
     [$cx, $rx] = render_content_edges();
-    $fy = max(rs(800), min($contentY + rs(50), RENDER_SIZE - RENDER_PAD - rs(56)));
+    // Floor was a fixed rs(800) offset from the top of a 1350-tall square
+    // canvas — 350px (rs(280)) from the bottom. Expressed as a distance
+    // from $canvasH instead, so a taller (portrait) canvas gets the same
+    // effective clearance rather than clamping the footer at the same
+    // absolute Y a square canvas used, which would land mid-page on a
+    // taller image. Ceiling was already RENDER_SIZE-relative.
+    $fy = max($canvasH - rs(280), min($contentY + rs(50), $canvasH - RENDER_PAD - rs(56)));
     $nameColor = $nameColorRgb ? imagecolorallocate($im, $nameColorRgb[0], $nameColorRgb[1], $nameColorRgb[2]) : null;
 
     // 26 (was 22) — the footer signature is the smallest bold text in the
@@ -1418,10 +1440,12 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
     render_text($im, $cx, $fy + rs(12), $name, $nameSize, true, $nameColor ?? $p['name'], $fontRole);
 }
 
-function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null): void
+function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE): void
 {
     [$cx, $rx] = render_content_edges();
-    $fy = max(rs(720), min($contentY + rs(50), RENDER_SIZE - RENDER_PAD - rs(148)));
+    // Same bottom-relative floor conversion as render_footer_simple() —
+    // was rs(720), i.e. 450px (rs(360)) from the bottom of a 1350 canvas.
+    $fy = max($canvasH - rs(360), min($contentY + rs(50), $canvasH - RENDER_PAD - rs(148)));
     if ($layout === 'minimal') {
         // no divider
     } elseif ($layout === 'bold') {
@@ -1560,12 +1584,12 @@ function render_resolve_design_preset(string $id): array
 
 // ── Slide renderers ──────────────────────────────────────────────────
 
-function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null): void
+function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
-    render_draw_decoration($im, $p, $preset['decoration']);
-    render_draw_bar($im, $p, $preset['barStyle']);
+    render_draw_decoration($im, $p, $preset['decoration'], $canvasH);
+    render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, 1, $total, $p);
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
@@ -1576,7 +1600,7 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
 
@@ -1589,22 +1613,22 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
         ? render_body_freestanding($im, $body, $y, $p, $cx, $cw)
         : render_body_boxed($im, $body, $y, $p, $cx, $cw);
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
-function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null): void
+function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
-    render_draw_decoration($im, $p, $preset['decoration']);
-    render_draw_bar($im, $p, $preset['barStyle']);
+    render_draw_decoration($im, $p, $preset['decoration'], $canvasH);
+    render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
 
@@ -1630,22 +1654,22 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
-function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null): void
+function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
-    render_draw_decoration($im, $p, $preset['decoration']);
-    render_draw_bar($im, $p, $preset['barStyle']);
+    render_draw_decoration($im, $p, $preset['decoration'], $canvasH);
+    render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
+        render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
 
@@ -1669,22 +1693,22 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
         $y = render_cta_banner($im, $point, $y, $p, $bannerSize, $preset['ctaStyle']);
     }
 
-    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
+    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
-function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null): void
+function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
-    render_draw_decoration($im, $p, $preset['decoration']);
-    render_draw_bar($im, $p, $preset['barStyle']);
+    render_draw_decoration($im, $p, $preset['decoration'], $canvasH);
+    render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     $slide = $data['slides'][0];
 
     $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
 
@@ -1708,7 +1732,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
 // ── Main entry point ─────────────────────────────────────────────────
@@ -1751,6 +1775,8 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $bgStyle = in_array($data['background'] ?? '', ['gradient', 'image'], true) ? $data['background'] : 'flat';
     $bgImagePath = ($bgStyle === 'image' && $userId) ? render_resolve_palette_background_image($data['template'] ?? null, $userId) : null;
     $logoPath = $userId ? resolve_brand_logo($userId, $workspaceId) : null;
+    $size = array_key_exists($data['size'] ?? '', RENDER_SIZES) ? $data['size'] : 'square';
+    [$canvasW, $canvasH] = RENDER_SIZES[$size];
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
@@ -1760,10 +1786,10 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
 
     $result = [];
     if ($isSingle) {
-        $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
-        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath);
+        $im = imagecreatetruecolor($canvasW, $canvasH);
+        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH);
         $p = render_allocate_palette_colors($im, $paletteColors);
-        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
+        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         $filename = 'slide_01.png';
         $path = $outDir . '/' . $filename;
         imagepng($im, $path);
@@ -1774,16 +1800,16 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
 
     foreach ($slides as $slide) {
         $n = (int) $slide['slide_number'];
-        $im = imagecreatetruecolor(RENDER_SIZE, RENDER_SIZE);
-        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath);
+        $im = imagecreatetruecolor($canvasW, $canvasH);
+        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH);
         $p = render_allocate_palette_colors($im, $paletteColors);
 
         if ($n === 1) {
-            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
+            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         } elseif ($n === $total) {
-            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
+            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         } else {
-            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride);
+            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         }
 
         $filename = sprintf('slide_%02d.png', $n);

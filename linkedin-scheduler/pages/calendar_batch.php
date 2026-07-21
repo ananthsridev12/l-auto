@@ -115,6 +115,12 @@ require __DIR__ . '/../includes/layout_top.php';
                 <option value="image"<?= ($p['creative']['background'] ?? '') === 'image' ? ' selected' : '' ?>>Image</option>
               </select>
             </label>
+            <label class="field-row">Size
+              <select class="size-select">
+                <option value="square"<?= ($p['creative']['size'] ?? 'square') === 'square' ? ' selected' : '' ?>>Square (1:1)</option>
+                <option value="portrait"<?= ($p['creative']['size'] ?? '') === 'portrait' ? ' selected' : '' ?>>Portrait (4:5, Document)</option>
+              </select>
+            </label>
             <button type="button" class="btn-tiny regenerate-btn">Regenerate</button>
           <?php endif; ?>
         </div>
