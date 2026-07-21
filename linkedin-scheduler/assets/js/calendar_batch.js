@@ -4,6 +4,13 @@
   var status = window.CALENDAR_BATCH_STATUS;
   var batchId = window.CALENDAR_BATCH_ID;
 
+  document.addEventListener('change', function (e) {
+    if (!e.target.classList.contains('cta-enabled-toggle')) return;
+    var card = e.target.closest('.review-card');
+    var input = card && card.querySelector('.cta-text-input');
+    if (input) input.style.display = e.target.checked ? 'block' : 'none';
+  });
+
   function post(url, fields) {
     var fd = new FormData();
     fd.append('csrf', window.CALENDAR_CSRF);
@@ -119,6 +126,22 @@
         var size = sizeSelect && sizeSelect.value !== 'square' ? sizeSelect.value : null;
         var textPositionSelect = card.querySelector('.text-position-select');
         var textPosition = textPositionSelect && textPositionSelect.value !== 'top' ? textPositionSelect.value : null;
+
+        // "Include a CTA" is the source of truth when checked: on a
+        // Carousel it forces the last (CTA) slide's line to this exact
+        // text; otherwise it's appended to the caption unless already
+        // present there (e.g. the AI already wrote a matching closing line).
+        var ctaCheckbox = card.querySelector('.cta-enabled-toggle');
+        var ctaTextInput = card.querySelector('.cta-text-input');
+        var ctaValue = ctaCheckbox && ctaCheckbox.checked && ctaTextInput ? ctaTextInput.value.trim() : '';
+        if (ctaValue) {
+          if (slides.length > 1) {
+            slides[slides.length - 1].points = [ctaValue];
+          } else if (captionInput.value.indexOf(ctaValue) === -1) {
+            captionInput.value = captionInput.value.replace(/\s+$/, '') + (captionInput.value.trim() ? '\n\n' : '') + ctaValue;
+          }
+        }
+
         postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition });
       });
       if (!postsData.length) {

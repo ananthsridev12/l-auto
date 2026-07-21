@@ -128,6 +128,24 @@
       card.appendChild(labeledInput('Title', 'title-input', c.title || ''));
       card.appendChild(labeledTextarea('Caption', 'caption-input', c.caption || ''));
 
+      var ctaLabel = document.createElement('label');
+      ctaLabel.className = 'checkbox-row';
+      var ctaCheckbox = document.createElement('input');
+      ctaCheckbox.type = 'checkbox';
+      ctaCheckbox.className = 'cta-enabled-toggle';
+      ctaLabel.appendChild(ctaCheckbox);
+      ctaLabel.appendChild(document.createTextNode(' Include a CTA'));
+      card.appendChild(ctaLabel);
+      var ctaTextInput = document.createElement('input');
+      ctaTextInput.type = 'text';
+      ctaTextInput.className = 'cta-text-input';
+      ctaTextInput.placeholder = 'e.g. Book a call with our team';
+      ctaTextInput.style.display = 'none';
+      card.appendChild(ctaTextInput);
+      ctaCheckbox.addEventListener('change', function () {
+        ctaTextInput.style.display = ctaCheckbox.checked ? 'block' : 'none';
+      });
+
       var templateWrap = document.createElement('label');
       templateWrap.textContent = 'Color Palette ';
       var templateSelect = document.createElement('select');
@@ -321,6 +339,22 @@
         slide.body = fs.querySelector('.body-input').value;
         slide.points = fs.querySelector('.points-input').value.split('\n').map(function (p) { return p.trim(); }).filter(function (p) { return p !== ''; });
       });
+
+      // "Include a CTA" is the source of truth when checked: on a
+      // Carousel it forces the last (CTA) slide's line to this exact
+      // text; otherwise it's appended to the caption unless already
+      // present there (e.g. the AI already wrote a matching closing line).
+      var ctaCheckbox = card.querySelector('.cta-enabled-toggle');
+      var ctaTextInput = card.querySelector('.cta-text-input');
+      var ctaValue = ctaCheckbox && ctaCheckbox.checked && ctaTextInput ? ctaTextInput.value.trim() : '';
+      if (ctaValue) {
+        if (c.slides && c.slides.length > 1) {
+          c.slides[c.slides.length - 1].points = [ctaValue];
+        } else if (!c.caption || c.caption.indexOf(ctaValue) === -1) {
+          c.caption = c.caption ? c.caption.replace(/\s+$/, '') + '\n\n' + ctaValue : ctaValue;
+          card.querySelector('.caption-input').value = c.caption;
+        }
+      }
     });
   }
 

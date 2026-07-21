@@ -5,6 +5,9 @@
   var manualToggle = document.getElementById('manualCreativeToggle');
   var aiFields = document.getElementById('aiGenerateFields');
   var slidesPanel = document.getElementById('creativeSlidesPanel');
+  var ctaPanel = document.getElementById('ctaFieldsPanel');
+  var ctaEnabled = document.getElementById('ctaEnabled');
+  var ctaText = document.getElementById('ctaText');
   var generateBtn = document.getElementById('aiGenerateBtn');
   var statusEl = document.getElementById('aiGenerateStatus');
   var reviewEl = document.getElementById('aiSlidesReview');
@@ -70,6 +73,7 @@
     }
     if (aiFields) aiFields.style.display = mode === 'ai' ? 'flex' : 'none';
     if (slidesPanel) slidesPanel.style.display = (mode && !isTextPost) ? 'flex' : 'none';
+    if (ctaPanel) ctaPanel.style.display = mode ? 'flex' : 'none';
     if (addSlideBtn) {
       addSlideBtn.style.display = (mode === 'manual' && formatSelect.value === 'Carousel') ? 'inline-block' : 'none';
     }
@@ -134,7 +138,7 @@
   // Each Knowledge Base dropdown reveals its "type my own" text input
   // only when "custom" is selected — otherwise the picked entry's id is
   // sent and the free-text field is ignored.
-  [['aiPersonaSelect', 'aiPersona'], ['aiPillarSelect', 'aiType'], ['aiCtaSelect', 'aiCta']].forEach(function (pair) {
+  [['aiPersonaSelect', 'aiPersona'], ['aiPillarSelect', 'aiType']].forEach(function (pair) {
     var select = document.getElementById(pair[0]);
     var input = document.getElementById(pair[1]);
     if (!select || !input) return;
@@ -143,6 +147,12 @@
       if (select.value !== 'custom') input.value = '';
     });
   });
+
+  if (ctaEnabled && ctaText) {
+    ctaEnabled.addEventListener('change', function () {
+      ctaText.style.display = ctaEnabled.checked ? 'block' : 'none';
+    });
+  }
 
   // Sends the dropdown's picked Knowledge Base id under $idField when a
   // real entry is selected, else the free-text fallback input under
@@ -177,7 +187,8 @@
       fd.append('length', lengthSelect ? lengthSelect.value : 'medium');
       appendKbField(fd, 'aiPersonaSelect', 'aiPersona', 'persona_id', 'persona');
       appendKbField(fd, 'aiPillarSelect', 'aiType', 'pillar_id', 'type');
-      appendKbField(fd, 'aiCtaSelect', 'aiCta', 'cta_id', 'cta');
+      fd.append('cta_id', '');
+      fd.append('cta', ctaEnabled && ctaEnabled.checked && ctaText ? ctaText.value.trim() : '');
       fd.append('caption', caption);
 
       statusEl.textContent = 'Generating...';
@@ -330,7 +341,31 @@
     } else {
       delete currentCreative.size;
     }
+    applyCta();
     return currentCreative;
+  }
+
+  // If "Include a CTA" is checked, makes the checkbox/textbox the source
+  // of truth for the post's CTA: on a Carousel, forces the last slide's
+  // (the CTA slide's) line to this exact text; otherwise appends it to
+  // the caption as its own line, unless it's already there (e.g. the AI
+  // already wrote a matching closing line). No-op when unchecked/blank.
+  function applyCta() {
+    var ctaValue = ctaEnabled && ctaEnabled.checked && ctaText ? ctaText.value.trim() : '';
+    if (!ctaValue) return;
+    if (currentCreative.slides && currentCreative.slides.length > 1) {
+      var lastIndex = currentCreative.slides.length - 1;
+      currentCreative.slides[lastIndex].points = [ctaValue];
+      var lastPointsInput = reviewEl.querySelector('.slide-fieldset[data-slide-index="' + lastIndex + '"] .ai-points-input');
+      if (lastPointsInput) lastPointsInput.value = ctaValue;
+    } else {
+      var caption = currentCreative.caption || '';
+      if (caption.indexOf(ctaValue) === -1) {
+        caption = caption.replace(/\s+$/, '');
+        currentCreative.caption = caption ? caption + '\n\n' + ctaValue : ctaValue;
+        if (captionEl) captionEl.value = currentCreative.caption;
+      }
+    }
   }
 
   var previewBtn = document.getElementById('previewImageBtn');

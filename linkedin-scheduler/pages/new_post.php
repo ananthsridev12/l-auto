@@ -19,7 +19,6 @@ $accounts = fetch_user_accounts($userId);
 $aiConfig = resolve_ai_config($userId);
 $personas = fetch_personas($userId, $workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
-$ctaLibrary = fetch_cta_library($userId, $workspaceId);
 $brandPalettes = fetch_brand_palettes($userId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -240,6 +239,14 @@ require __DIR__ . '/../includes/layout_top.php';
         </label>
       </div>
 
+      <div id="ctaFieldsPanel" style="width:100%; margin-top:12px; display:none;">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ctaEnabled">
+          Include a CTA
+        </label>
+        <input type="text" id="ctaText" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; display:none;">
+      </div>
+
       <div id="aiGenerateFields" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
         <label>Topic / Title
           <input type="text" id="aiTopic">
@@ -276,17 +283,6 @@ require __DIR__ . '/../includes/layout_top.php';
           </select>
         </label>
         <input type="text" id="aiType" placeholder="e.g. Case Study, Checklist" style="width:100%; margin-top:6px; display:none;">
-
-        <label>CTA <span class="muted">(optional)</span>
-          <select id="aiCtaSelect">
-            <option value="">— None —</option>
-            <?php foreach ($ctaLibrary as $cta): ?>
-              <option value="<?= (int) $cta['id'] ?>"><?= h($cta['text']) ?><?= $cta['funnel_stage'] ? ' (' . h($cta['funnel_stage']) . ')' : '' ?></option>
-            <?php endforeach; ?>
-            <option value="custom">Custom / type my own…</option>
-          </select>
-        </label>
-        <input type="text" id="aiCta" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; display:none;">
 
         <button type="button" id="aiGenerateBtn" class="btn-secondary" style="margin-top:8px;">Generate</button>
         <p id="aiGenerateStatus" class="muted"></p>
