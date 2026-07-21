@@ -201,6 +201,20 @@
       sizeWrap.appendChild(sizeSelect);
       card.appendChild(sizeWrap);
 
+      var textPositionWrap = document.createElement('label');
+      textPositionWrap.textContent = 'Text Position ';
+      var textPositionSelect = document.createElement('select');
+      textPositionSelect.className = 'text-position-select';
+      [['top', 'Top (default)'], ['center', 'Center'], ['bottom', 'Bottom']].forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt[0];
+        o.textContent = opt[1];
+        if ((c.text_position || 'top') === opt[0]) o.selected = true;
+        textPositionSelect.appendChild(o);
+      });
+      textPositionWrap.appendChild(textPositionSelect);
+      card.appendChild(textPositionWrap);
+
       var slidesWrap = document.createElement('div');
       slidesWrap.className = 'slides-wrap';
       (c.slides || []).forEach(function (slide, si) {
@@ -293,6 +307,12 @@
         c.size = size;
       } else {
         delete c.size;
+      }
+      var textPosition = card.querySelector('.text-position-select').value;
+      if (textPosition && textPosition !== 'top') {
+        c.text_position = textPosition;
+      } else {
+        delete c.text_position;
       }
       card.querySelectorAll('.slide-fieldset').forEach(function (fs) {
         var si = parseInt(fs.dataset.slideIndex, 10);

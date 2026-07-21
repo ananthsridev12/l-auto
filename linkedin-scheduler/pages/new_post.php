@@ -320,6 +320,13 @@ require __DIR__ . '/../includes/layout_top.php';
             <option value="portrait">Portrait (4:5, Document)</option>
           </select>
         </label>
+        <label>Text Position <span class="muted">(optional)</span>
+          <select id="aiTextPositionSelect">
+            <option value="top">Top (default)</option>
+            <option value="center">Center</option>
+            <option value="bottom">Bottom</option>
+          </select>
+        </label>
         <div id="aiSlidesReview"></div>
         <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
 

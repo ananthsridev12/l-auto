@@ -43,6 +43,10 @@
     if (size && size !== 'square') {
       creative.size = size;
     }
+    var textPosition = document.getElementById('reeditTextPositionSelect').value;
+    if (textPosition && textPosition !== 'top') {
+      creative.text_position = textPosition;
+    }
 
     var fd = new FormData();
     fd.append('csrf', window.POST_REEDIT.csrf);

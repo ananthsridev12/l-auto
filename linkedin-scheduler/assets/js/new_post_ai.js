@@ -316,6 +316,13 @@
     } else {
       delete currentCreative.background;
     }
+    var textPositionSelect = document.getElementById('aiTextPositionSelect');
+    var textPosition = textPositionSelect ? textPositionSelect.value : 'top';
+    if (textPosition && textPosition !== 'top') {
+      currentCreative.text_position = textPosition;
+    } else {
+      delete currentCreative.text_position;
+    }
     var sizeSelect = document.getElementById('aiSizeSelect');
     var size = sizeSelect ? sizeSelect.value : 'square';
     if (size && size !== 'square') {

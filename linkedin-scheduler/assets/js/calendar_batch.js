@@ -117,7 +117,9 @@
         var background = backgroundSelect && backgroundSelect.value !== 'flat' ? backgroundSelect.value : null;
         var sizeSelect = card.querySelector('.size-select');
         var size = sizeSelect && sizeSelect.value !== 'square' ? sizeSelect.value : null;
-        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size });
+        var textPositionSelect = card.querySelector('.text-position-select');
+        var textPosition = textPositionSelect && textPositionSelect.value !== 'top' ? textPositionSelect.value : null;
+        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition });
       });
       if (!postsData.length) {
         contentStatus.textContent = 'Select at least one post to approve.';

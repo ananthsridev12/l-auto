@@ -121,6 +121,13 @@ require __DIR__ . '/../includes/layout_top.php';
                 <option value="portrait"<?= ($p['creative']['size'] ?? '') === 'portrait' ? ' selected' : '' ?>>Portrait (4:5, Document)</option>
               </select>
             </label>
+            <label class="field-row">Text Position
+              <select class="text-position-select">
+                <option value="top"<?= ($p['creative']['text_position'] ?? 'top') === 'top' ? ' selected' : '' ?>>Top (default)</option>
+                <option value="center"<?= ($p['creative']['text_position'] ?? '') === 'center' ? ' selected' : '' ?>>Center</option>
+                <option value="bottom"<?= ($p['creative']['text_position'] ?? '') === 'bottom' ? ' selected' : '' ?>>Bottom</option>
+              </select>
+            </label>
             <button type="button" class="btn-tiny regenerate-btn">Regenerate</button>
           <?php endif; ?>
         </div>

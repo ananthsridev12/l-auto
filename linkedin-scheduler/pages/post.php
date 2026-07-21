@@ -247,6 +247,13 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <option value="portrait"<?= ($creative['size'] ?? '') === 'portrait' ? ' selected' : '' ?>>Portrait (4:5, Document)</option>
     </select>
   </label>
+  <label>Text Position
+    <select id="reeditTextPositionSelect">
+      <option value="top"<?= ($creative['text_position'] ?? 'top') === 'top' ? ' selected' : '' ?>>Top (default)</option>
+      <option value="center"<?= ($creative['text_position'] ?? '') === 'center' ? ' selected' : '' ?>>Center</option>
+      <option value="bottom"<?= ($creative['text_position'] ?? '') === 'bottom' ? ' selected' : '' ?>>Bottom</option>
+    </select>
+  </label>
   <button type="button" id="reeditRenderBtn" class="btn-secondary" style="margin-top:12px;">Re-render Image</button>
   <p id="reeditStatus" class="muted"></p>
 </section>

@@ -7,9 +7,10 @@
 //
 // The client sends the edited creative, but only the fields the editor
 // actually exposes are taken from it (slides, template, layout,
-// background, size) — everything else (format, series_label, hashtags,
-// caption) is kept from the stored creative, so a tampered request
-// can't switch a post's format or smuggle in unrelated keys.
+// background, size, text_position) — everything else (format,
+// series_label, hashtags, caption) is kept from the stored creative, so
+// a tampered request can't switch a post's format or smuggle in
+// unrelated keys.
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
@@ -72,7 +73,7 @@ if (!$slides) {
 }
 $creative['slides'] = $slides;
 
-foreach (['template', 'layout', 'background', 'size'] as $key) {
+foreach (['template', 'layout', 'background', 'size', 'text_position'] as $key) {
     if (isset($edited[$key]) && $edited[$key] !== '' && $edited[$key] !== null) {
         $creative[$key] = $edited[$key];
     } else {

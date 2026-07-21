@@ -1525,6 +1525,67 @@ function render_body_freestanding($im, string $body, float $y, array $p, float $
     return $y;
 }
 
+// Pure measurement, no drawing — mirrors render_body_boxed()'s height
+// math exactly, same pairing as render_numbered_card_height()/
+// render_cta_banner_height() above. Needed so a slide's total content
+// height can be known before anything is drawn (see render_resolve_start_y()).
+function render_body_boxed_height(string $body, float $cw): float
+{
+    if ($body === '') {
+        return 0;
+    }
+    $fs = rs(27);
+    $lines = render_wrap_clamped($body, $fs, false, $cw - rs(24), 5);
+    return count($lines) * render_lh($fs) + rs(28);
+}
+
+// Mirrors render_body_freestanding()'s height math.
+function render_body_freestanding_height(string $body, float $cw): float
+{
+    if ($body === '') {
+        return 0;
+    }
+    $bs = render_fit_headline_size($body, $cw, [rs(26), rs(23), rs(20)], 3, false, 'body');
+    $lines = render_wrap_clamped($body, $bs, false, $cw, 3, 'body');
+    return count($lines) * render_lh($bs);
+}
+
+// Fixed gap contributed by render_headline_rule() for a given layout —
+// deterministic (not content-dependent), so this can be added to a
+// height total without needing to actually draw the rule first.
+function render_headline_rule_gap(string $layout): float
+{
+    if ($layout === 'minimal') {
+        return rs(14) + rs(22);
+    }
+    if ($layout === 'bold') {
+        return rs(14) + rs(8) + rs(22);
+    }
+    return rs(14) + rs(4) + rs(22);
+}
+
+// Resolves where a slide's content block (headline through points/CTA —
+// logo, counter, bar, and decoration are fixed brand chrome and never
+// move) should start. 'top' (default) always returns $topBound
+// unchanged — byte-for-byte identical to this file's original
+// single-position behavior, so existing content sees no change.
+// 'center' centers the block within [$topBound, $bottomBound]; 'bottom'
+// anchors it just above the footer. $bottomBound is the footer's own
+// floor position minus a gap, not its exact clamped Y (which depends on
+// where content ends — using the floor sidesteps that circularity and
+// matches the common case, where well-fit content clamps to the floor
+// anyway).
+function render_resolve_start_y(string $position, float $totalContentHeight, float $topBound, float $bottomBound): float
+{
+    if ($position === 'center') {
+        return $topBound + max(0, ($bottomBound - $topBound - $totalContentHeight) / 2);
+    }
+    if ($position === 'bottom') {
+        return max($topBound, $bottomBound - $totalContentHeight);
+    }
+    return $topBound;
+}
+
 // ── Design template gallery ──────────────────────────────────────────
 // $layout selects one of these presets — see the "Design Template"
 // pickers in Content Studio / New Post / Calendar and
@@ -1584,7 +1645,16 @@ function render_resolve_design_preset(string $id): array
 
 // ── Slide renderers ──────────────────────────────────────────────────
 
-function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE): void
+// $textPosition ('top' default, 'center', 'bottom') repositions the
+// content block (headline through body/points-or-CTA) as a whole —
+// logo, series label, counter, bar, and decoration are fixed brand
+// chrome and never move, regardless of position, same as a caption
+// overlay sitting independently of a logo bug in a corner. 'top' keeps
+// the original single-position code path's exact sequential draw order
+// and byte-for-byte output; 'center'/'bottom' run a measurement pass
+// first (same font-size/wrap decisions either way — only the block's
+// start Y differs) via render_resolve_start_y().
+function render_slide_hook($im, array $slide, int $total, array $p, string $name, string $seriesLabel = '', string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1592,31 +1662,43 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, 1, $total, $p);
 
-    $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
     if ($seriesLabel !== '') {
-        render_text($im, $cx, $y, strtoupper($seriesLabel), rs(16), false, $p['counter']);
-        $y += render_lh(rs(16)) + rs(8);
+        render_text($im, $cx, $topY, strtoupper($seriesLabel), rs(16), false, $p['counter']);
+        $topY += render_lh(rs(16)) + rs(8);
     }
 
     if (render_is_title_only($slide)) {
-        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
         render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
 
-    $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [rs(78), rs(68), rs(58), rs(50), rs(44)], 2, $p, $preset);
-
-    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
-
     $body = $slide['body'] ?? '';
-    $y = $preset['barStyle'] === 'minimal'
-        ? render_body_freestanding($im, $body, $y, $p, $cx, $cw)
-        : render_body_boxed($im, $body, $y, $p, $cx, $cw);
+    $bodyIsBoxed = $preset['barStyle'] !== 'minimal';
+
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(78), rs(68), rs(58), rs(50), rs(44)], 2, $preset);
+    $headlineHeight = count($hLines) * $lh;
+    $ruleGap = render_headline_rule_gap($preset['barStyle']);
+    $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
+
+    $totalContentHeight = $headlineHeight + $ruleGap + $bodyHeight;
+    $bottomBound = ($canvasH - rs(280)) - rs(50);
+    $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
+
+    foreach ($hLines as $line) {
+        render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
+        $y += $lh;
+    }
+    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
+    $y = $bodyIsBoxed
+        ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
+        : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
 
     render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
-function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE): void
+function render_slide_content($im, array $slide, int $total, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1624,32 +1706,50 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
-    $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
 
     if (render_is_title_only($slide)) {
-        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
         render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
 
-    $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [rs(54), rs(48), rs(42), rs(38), rs(34)], 2, $p, $preset);
-
-    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
-
     $body = $slide['body'] ?? '';
-    $y = $preset['barStyle'] === 'bold'
-        ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
-        : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
-    if ($body !== '') {
-        $y += rs(22);
-    }
+    $bodyIsBoxed = $preset['barStyle'] === 'bold';
+
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(54), rs(48), rs(42), rs(38), rs(34)], 2, $preset);
+    $headlineHeight = count($hLines) * $lh;
+    $ruleGap = render_headline_rule_gap($preset['barStyle']);
+    $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
+    $bodyGap = $body !== '' ? rs(22) : 0;
 
     // Defensively cap at exactly 3 regardless of what the AI/user
     // supplied — the prompt already asks for exactly 3, but nothing
     // downstream should trust an LLM (or a manual edit) to actually
     // honor that; this is what keeps the fit-size ceiling below honest.
     $points = array_slice($slide['points'] ?? [], 0, 3);
-    $cardSize = render_fit_font_size($points, $y, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
+    // Font-size/wrap decisions stay anchored to where content WOULD sit
+    // if drawn top-anchored, regardless of $textPosition, so typography
+    // choices don't change with placement — only the final start Y does.
+    $simulatedPointsStartY = $topY + $headlineHeight + $ruleGap + $bodyHeight + $bodyGap;
+    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
+    $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
+
+    $totalContentHeight = $headlineHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
+    $bottomBound = ($canvasH - rs(280)) - rs(50);
+    $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
+
+    foreach ($hLines as $line) {
+        render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
+        $y += $lh;
+    }
+    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
+    $y = $bodyIsBoxed
+        ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
+        : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
+    if ($body !== '') {
+        $y += rs(22);
+    }
     foreach ($points as $i => $point) {
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
@@ -1657,7 +1757,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
-function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE): void
+function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1665,30 +1765,45 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
-    $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
 
     if (render_is_title_only($slide)) {
-        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
         render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
 
-    $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [rs(52), rs(46), rs(40), rs(36), rs(32)], 2, $p, $preset);
-
-    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
-
     $body = $slide['body'] ?? '';
-    $y = $preset['barStyle'] === 'bold'
+    $bodyIsBoxed = $preset['barStyle'] === 'bold';
+
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(52), rs(46), rs(40), rs(36), rs(32)], 2, $preset);
+    $headlineHeight = count($hLines) * $lh;
+    $ruleGap = render_headline_rule_gap($preset['barStyle']);
+    $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
+    $bodyGap = $body !== '' ? rs(22) : 0;
+
+    // CTA is spec'd as a single "Exact CTA line" — cap defensively to 1
+    // for the same reason Content/Single cap points to 3.
+    $points = array_slice($slide['points'] ?? [], 0, 1);
+    $simulatedBannerStartY = $topY + $headlineHeight + $ruleGap + $bodyHeight + $bodyGap;
+    $bannerSize = render_fit_font_size($points, $simulatedBannerStartY, rs(802), [rs(27), rs(24), rs(21), rs(19)], fn ($item, $size) => render_cta_banner_height($item, $size, $preset['ctaStyle']));
+    $bannerHeight = array_sum(array_map(fn ($item) => render_cta_banner_height($item, $bannerSize, $preset['ctaStyle']), $points));
+
+    $totalContentHeight = $headlineHeight + $ruleGap + $bodyHeight + $bodyGap + $bannerHeight;
+    $bottomBound = ($canvasH - rs(360)) - rs(50);
+    $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
+
+    foreach ($hLines as $line) {
+        render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
+        $y += $lh;
+    }
+    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
+    $y = $bodyIsBoxed
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
         : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
     if ($body !== '') {
         $y += rs(22);
     }
-
-    // CTA is spec'd as a single "Exact CTA line" — cap defensively to 1
-    // for the same reason Content/Single cap points to 3.
-    $points = array_slice($slide['points'] ?? [], 0, 1);
-    $bannerSize = render_fit_font_size($points, $y, rs(802), [rs(27), rs(24), rs(21), rs(19)], fn ($item, $size) => render_cta_banner_height($item, $size, $preset['ctaStyle']));
     foreach ($points as $point) {
         $y = render_cta_banner($im, $point, $y, $p, $bannerSize, $preset['ctaStyle']);
     }
@@ -1696,7 +1811,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
-function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE): void
+function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1704,30 +1819,45 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     $slide = $data['slides'][0];
 
-    $y = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
 
     if (render_is_title_only($slide)) {
-        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $y, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
         render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
 
-    $y = render_draw_headline($im, $slide['headline'] ?? '', $cx, $cw, $y, [rs(68), rs(60), rs(52), rs(46), rs(40)], 3, $p, $preset);
-
-    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
-
+    $body = $slide['body'] ?? '';
     // Boxed in classic (Single shares Hook's spec row) and bold (always
     // boxed); freestanding only in minimal.
-    $body = $slide['body'] ?? '';
-    $y = $preset['barStyle'] === 'minimal'
-        ? render_body_freestanding($im, $body, $y, $p, $cx, $cw)
-        : render_body_boxed($im, $body, $y, $p, $cx, $cw);
+    $bodyIsBoxed = $preset['barStyle'] !== 'minimal';
+
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(68), rs(60), rs(52), rs(46), rs(40)], 3, $preset);
+    $headlineHeight = count($hLines) * $lh;
+    $ruleGap = render_headline_rule_gap($preset['barStyle']);
+    $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
+    $bodyGap = $body !== '' ? rs(22) : 0;
+
+    $points = array_slice($slide['points'] ?? [], 0, 3);
+    $simulatedPointsStartY = $topY + $headlineHeight + $ruleGap + $bodyHeight + $bodyGap;
+    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
+    $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
+
+    $totalContentHeight = $headlineHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
+    $bottomBound = ($canvasH - rs(280)) - rs(50);
+    $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
+
+    foreach ($hLines as $line) {
+        render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
+        $y += $lh;
+    }
+    $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
+    $y = $bodyIsBoxed
+        ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
+        : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
     if ($body !== '') {
         $y += rs(22);
     }
-
-    $points = array_slice($slide['points'] ?? [], 0, 3);
-    $cardSize = render_fit_font_size($points, $y, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     foreach ($points as $i => $point) {
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
@@ -1777,6 +1907,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $logoPath = $userId ? resolve_brand_logo($userId, $workspaceId) : null;
     $size = array_key_exists($data['size'] ?? '', RENDER_SIZES) ? $data['size'] : 'square';
     [$canvasW, $canvasH] = RENDER_SIZES[$size];
+    $textPosition = in_array($data['text_position'] ?? '', ['center', 'bottom'], true) ? $data['text_position'] : 'top';
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
@@ -1789,7 +1920,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $im = imagecreatetruecolor($canvasW, $canvasH);
         render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH);
         $p = render_allocate_palette_colors($im, $paletteColors);
-        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
         $filename = 'slide_01.png';
         $path = $outDir . '/' . $filename;
         imagepng($im, $path);
@@ -1805,11 +1936,11 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $p = render_allocate_palette_colors($im, $paletteColors);
 
         if ($n === 1) {
-            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
         } elseif ($n === $total) {
-            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
         } else {
-            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
         }
 
         $filename = sprintf('slide_%02d.png', $n);
