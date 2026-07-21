@@ -365,7 +365,7 @@
             img.src = slide.url;
             img.style.width = '220px';
             img.style.height = '220px';
-            img.style.objectFit = 'cover';
+            img.style.objectFit = 'contain';
             img.style.borderRadius = '6px';
             img.style.border = '1px solid var(--border-color, #ccc)';
             previewResult.appendChild(img);

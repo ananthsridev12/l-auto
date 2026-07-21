@@ -158,7 +158,7 @@ require __DIR__ . '/../includes/layout_top.php';
           <?php if ($p['slides']): ?>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
               <?php foreach ($p['slides'] as $slide): ?>
-                <img src="<?= h($slide['url']) ?>" style="width:70px; height:70px; object-fit:cover; border-radius:6px;">
+                <img src="<?= h($slide['url']) ?>" style="width:70px; height:70px; object-fit:contain; border-radius:6px;">
               <?php endforeach; ?>
             </div>
           <?php else: ?>

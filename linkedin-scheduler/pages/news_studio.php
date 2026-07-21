@@ -194,7 +194,7 @@ require __DIR__ . '/../includes/layout_top.php';
       <div class="account-row">
         <div class="account-info">
           <?php if ($d['first_slide']): ?>
-            <img src="<?= h(slide_public_url($d['first_slide'])) ?>" style="width:56px; height:56px; object-fit:cover; border-radius:6px;" alt="">
+            <img src="<?= h(slide_public_url($d['first_slide'])) ?>" style="width:56px; height:56px; object-fit:contain; border-radius:6px;" alt="">
           <?php endif; ?>
           <div>
             <div><strong><?= h($d['title']) ?></strong> <span class="badge badge-format"><?= h($d['format']) ?></span></div>
