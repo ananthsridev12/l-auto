@@ -243,6 +243,7 @@
         legend.textContent = 'Slide ' + (si + 1);
         fieldset.appendChild(legend);
         fieldset.appendChild(labeledInput('Headline', 'headline-input', slide.headline || ''));
+        fieldset.appendChild(labeledInput('Subheading (optional)', 'subheading-input', slide.subheading || ''));
         fieldset.appendChild(labeledTextarea('Body', 'body-input', slide.body || ''));
         fieldset.appendChild(labeledTextarea('Points (one per line)', 'points-input', (slide.points || []).join('\n')));
         slidesWrap.appendChild(fieldset);
@@ -336,6 +337,7 @@
         var si = parseInt(fs.dataset.slideIndex, 10);
         var slide = c.slides[si];
         slide.headline = fs.querySelector('.headline-input').value;
+        slide.subheading = fs.querySelector('.subheading-input').value;
         slide.body = fs.querySelector('.body-input').value;
         slide.points = fs.querySelector('.points-input').value.split('\n').map(function (p) { return p.trim(); }).filter(function (p) { return p !== ''; });
       });

@@ -1586,6 +1586,35 @@ function render_resolve_start_y(string $position, float $totalContentHeight, flo
     return $topBound;
 }
 
+// Optional secondary line directly under the headline — same visual slot
+// as render_slide_hook()'s series_label eyebrow, but per-slide and usable
+// on any slide role, not creative-level/Hook-only. Blank by default, so a
+// slide with no subheading measures/draws as 0 extra height — no visual
+// change for any existing content.
+function render_subheading_height(string $subheading, float $cw): float
+{
+    if ($subheading === '') {
+        return 0;
+    }
+    $fs = rs(24);
+    $lines = render_wrap_clamped($subheading, $fs, false, $cw, 2, 'body');
+    return count($lines) * render_lh($fs) + rs(6);
+}
+
+function render_draw_subheading($im, string $subheading, float $x, float $y, float $cw, array $p): float
+{
+    if ($subheading === '') {
+        return $y;
+    }
+    $fs = rs(24);
+    $lines = render_wrap_clamped($subheading, $fs, false, $cw, 2, 'body');
+    foreach ($lines as $line) {
+        render_text($im, $x, $y, $line, $fs, false, $p['body'], 'body');
+        $y += render_lh($fs);
+    }
+    return $y + rs(6);
+}
+
 // ── Design template gallery ──────────────────────────────────────────
 // $layout selects one of these presets — see the "Design Template"
 // pickers in Content Studio / New Post / Calendar and
@@ -1679,10 +1708,12 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
 
     [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(78), rs(68), rs(58), rs(50), rs(44)], 2, $preset);
     $headlineHeight = count($hLines) * $lh;
+    $subheading = trim($slide['subheading'] ?? '');
+    $subheadingHeight = render_subheading_height($subheading, $cw);
     $ruleGap = render_headline_rule_gap($preset['barStyle']);
     $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
 
-    $totalContentHeight = $headlineHeight + $ruleGap + $bodyHeight;
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight;
     $bottomBound = ($canvasH - rs(280)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
@@ -1690,6 +1721,7 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
         render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
         $y += $lh;
     }
+    $y = render_draw_subheading($im, $subheading, $cx, $y, $cw, $p);
     $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
     $y = $bodyIsBoxed
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
@@ -1719,23 +1751,26 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
 
     [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(54), rs(48), rs(42), rs(38), rs(34)], 2, $preset);
     $headlineHeight = count($hLines) * $lh;
+    $subheading = trim($slide['subheading'] ?? '');
+    $subheadingHeight = render_subheading_height($subheading, $cw);
     $ruleGap = render_headline_rule_gap($preset['barStyle']);
     $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
     $bodyGap = $body !== '' ? rs(22) : 0;
 
-    // Defensively cap at exactly 3 regardless of what the AI/user
-    // supplied — the prompt already asks for exactly 3, but nothing
-    // downstream should trust an LLM (or a manual edit) to actually
-    // honor that; this is what keeps the fit-size ceiling below honest.
-    $points = array_slice($slide['points'] ?? [], 0, 3);
+    // A sanity ceiling, not a spec match — the prompt asks the AI for
+    // exactly 3, but a manual edit or CSV Creative Content is free to add
+    // more, and render_fit_font_size() below already shrinks to fit
+    // however many there are, the same way it's always handled body
+    // length. This only guards against a truly pathological input.
+    $points = array_slice($slide['points'] ?? [], 0, 6);
     // Font-size/wrap decisions stay anchored to where content WOULD sit
     // if drawn top-anchored, regardless of $textPosition, so typography
     // choices don't change with placement — only the final start Y does.
-    $simulatedPointsStartY = $topY + $headlineHeight + $ruleGap + $bodyHeight + $bodyGap;
+    $simulatedPointsStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
     $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
 
-    $totalContentHeight = $headlineHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
     $bottomBound = ($canvasH - rs(280)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
@@ -1743,6 +1778,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
         render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
         $y += $lh;
     }
+    $y = render_draw_subheading($im, $subheading, $cx, $y, $cw, $p);
     $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
     $y = $bodyIsBoxed
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
@@ -1778,18 +1814,21 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
 
     [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(52), rs(46), rs(40), rs(36), rs(32)], 2, $preset);
     $headlineHeight = count($hLines) * $lh;
+    $subheading = trim($slide['subheading'] ?? '');
+    $subheadingHeight = render_subheading_height($subheading, $cw);
     $ruleGap = render_headline_rule_gap($preset['barStyle']);
     $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
     $bodyGap = $body !== '' ? rs(22) : 0;
 
-    // CTA is spec'd as a single "Exact CTA line" — cap defensively to 1
-    // for the same reason Content/Single cap points to 3.
-    $points = array_slice($slide['points'] ?? [], 0, 1);
-    $simulatedBannerStartY = $topY + $headlineHeight + $ruleGap + $bodyHeight + $bodyGap;
+    // Sanity ceiling, not a spec match (see render_slide_content()'s
+    // comment) — the prompt targets a single CTA line, but a manual edit
+    // adding a couple more still renders instead of being dropped.
+    $points = array_slice($slide['points'] ?? [], 0, 3);
+    $simulatedBannerStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
     $bannerSize = render_fit_font_size($points, $simulatedBannerStartY, rs(802), [rs(27), rs(24), rs(21), rs(19)], fn ($item, $size) => render_cta_banner_height($item, $size, $preset['ctaStyle']));
     $bannerHeight = array_sum(array_map(fn ($item) => render_cta_banner_height($item, $bannerSize, $preset['ctaStyle']), $points));
 
-    $totalContentHeight = $headlineHeight + $ruleGap + $bodyHeight + $bodyGap + $bannerHeight;
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $bannerHeight;
     $bottomBound = ($canvasH - rs(360)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
@@ -1797,6 +1836,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
         render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
         $y += $lh;
     }
+    $y = render_draw_subheading($im, $subheading, $cx, $y, $cw, $p);
     $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
     $y = $bodyIsBoxed
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
@@ -1834,16 +1874,20 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
 
     [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(68), rs(60), rs(52), rs(46), rs(40)], 3, $preset);
     $headlineHeight = count($hLines) * $lh;
+    $subheading = trim($slide['subheading'] ?? '');
+    $subheadingHeight = render_subheading_height($subheading, $cw);
     $ruleGap = render_headline_rule_gap($preset['barStyle']);
     $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
     $bodyGap = $body !== '' ? rs(22) : 0;
 
-    $points = array_slice($slide['points'] ?? [], 0, 3);
-    $simulatedPointsStartY = $topY + $headlineHeight + $ruleGap + $bodyHeight + $bodyGap;
+    // Sanity ceiling, not a spec match — see render_slide_content()'s
+    // comment on the same pattern.
+    $points = array_slice($slide['points'] ?? [], 0, 6);
+    $simulatedPointsStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
     $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
 
-    $totalContentHeight = $headlineHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
     $bottomBound = ($canvasH - rs(280)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
@@ -1851,6 +1895,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
         render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
         $y += $lh;
     }
+    $y = render_draw_subheading($im, $subheading, $cx, $y, $cw, $p);
     $y = render_headline_rule($im, $y, $p, $preset['barStyle']);
     $y = $bodyIsBoxed
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)

@@ -88,6 +88,7 @@ require __DIR__ . '/../includes/layout_top.php';
                   <fieldset class="slide-fieldset" data-slide-index="<?= (int) $si ?>">
                     <legend>Slide <?= (int) $si + 1 ?></legend>
                     <label class="field-row">Headline <input type="text" class="headline-input" value="<?= h($slide['headline'] ?? '') ?>"></label>
+                    <label class="field-row">Subheading (optional) <input type="text" class="subheading-input" value="<?= h($slide['subheading'] ?? '') ?>"></label>
                     <label class="field-row">Body <textarea class="body-input" rows="2"><?= h($slide['body'] ?? '') ?></textarea></label>
                     <label class="field-row">Points (one per line) <textarea class="points-input" rows="2"><?= h(implode("\n", $slide['points'] ?? [])) ?></textarea></label>
                   </fieldset>

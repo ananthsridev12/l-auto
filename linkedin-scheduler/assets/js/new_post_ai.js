@@ -27,7 +27,7 @@
   var mode = null;
 
   function emptySlide() {
-    return { headline: '', body: '', points: ['', '', ''] };
+    return { headline: '', subheading: '', body: '', points: ['', '', ''] };
   }
 
   // Manual mode's starting point when the toggle is switched on (or the
@@ -237,6 +237,7 @@
       legend.textContent = 'Slide ' + (si + 1);
       fieldset.appendChild(legend);
       fieldset.appendChild(labeledInput('Headline', 'ai-headline-input', slide.headline || ''));
+      fieldset.appendChild(labeledInput('Subheading (optional)', 'ai-subheading-input', slide.subheading || ''));
       fieldset.appendChild(labeledTextarea('Body', 'ai-body-input', slide.body || ''));
       fieldset.appendChild(labeledTextarea('Points (one per line)', 'ai-points-input', (slide.points || []).join('\n')));
       if (mode === 'manual' && currentCreative.slides.length > 1) {
@@ -286,6 +287,7 @@
       var slide = currentCreative.slides[si];
       if (!slide) return;
       slide.headline = fs.querySelector('.ai-headline-input').value;
+      slide.subheading = fs.querySelector('.ai-subheading-input').value;
       slide.body = fs.querySelector('.ai-body-input').value;
       slide.points = fs.querySelector('.ai-points-input').value.split('\n').map(function (p) { return p.trim(); }).filter(function (p) { return p !== ''; });
     });

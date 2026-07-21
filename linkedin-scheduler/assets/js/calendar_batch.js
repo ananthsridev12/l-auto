@@ -106,6 +106,7 @@
           slides.push({
             slide_number: parseInt(fs.dataset.slideIndex, 10) + 1,
             headline: fs.querySelector('.headline-input').value,
+            subheading: fs.querySelector('.subheading-input').value,
             body: fs.querySelector('.body-input').value,
             points: fs.querySelector('.points-input').value.split('\n').map(function (p) { return p.trim(); }).filter(function (p) { return p !== ''; }),
           });
