@@ -1883,11 +1883,20 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     // Sanity ceiling, not a spec match — see render_slide_content()'s
     // comment on the same pattern.
     $points = array_slice($slide['points'] ?? [], 0, 6);
+    // Optional CTA banner — same treatment as render_slide_cta()'s, but
+    // available on a Single Image post too (checkbox-driven only; the AI
+    // never writes this itself, same as how the Carousel CTA checkbox
+    // only ever overrides, never auto-generates).
+    $ctaLine = trim($slide['cta'] ?? '');
+    $ctaLines = $ctaLine !== '' ? [$ctaLine] : [];
     $simulatedPointsStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
     $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
+    $simulatedBannerStartY = $simulatedPointsStartY + $pointsHeight;
+    $bannerSize = render_fit_font_size($ctaLines, $simulatedBannerStartY, rs(894), [rs(27), rs(24), rs(21), rs(19)], fn ($item, $size) => render_cta_banner_height($item, $size, $preset['ctaStyle']));
+    $bannerHeight = array_sum(array_map(fn ($item) => render_cta_banner_height($item, $bannerSize, $preset['ctaStyle']), $ctaLines));
 
-    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight + $bannerHeight;
     $bottomBound = ($canvasH - rs(280)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
@@ -1905,6 +1914,9 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     }
     foreach ($points as $i => $point) {
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
+    }
+    foreach ($ctaLines as $line) {
+        $y = render_cta_banner($im, $line, $y, $p, $bannerSize, $preset['ctaStyle']);
     }
 
     render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);

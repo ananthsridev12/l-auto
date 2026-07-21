@@ -128,16 +128,21 @@
         var textPositionSelect = card.querySelector('.text-position-select');
         var textPosition = textPositionSelect && textPositionSelect.value !== 'top' ? textPositionSelect.value : null;
 
-        // "Include a CTA" is the source of truth when checked: on a
-        // Carousel it forces the last (CTA) slide's line to this exact
-        // text; otherwise it's appended to the caption unless already
-        // present there (e.g. the AI already wrote a matching closing line).
+        // "Include a CTA" is the source of truth when checked, drawn as an
+        // actual banner in the image wherever the renderer supports one:
+        // on a Carousel it forces the last (CTA) slide's line to this
+        // exact text; on a Single Image it sets that one slide's `cta`
+        // field, which render_slide_single() draws as its own banner. A
+        // post with no slides (Text Post) has no image, so the only
+        // option is appending the line to the caption.
         var ctaCheckbox = card.querySelector('.cta-enabled-toggle');
         var ctaTextInput = card.querySelector('.cta-text-input');
         var ctaValue = ctaCheckbox && ctaCheckbox.checked && ctaTextInput ? ctaTextInput.value.trim() : '';
         if (ctaValue) {
           if (slides.length > 1) {
             slides[slides.length - 1].points = [ctaValue];
+          } else if (slides.length === 1) {
+            slides[0].cta = ctaValue;
           } else if (captionInput.value.indexOf(ctaValue) === -1) {
             captionInput.value = captionInput.value.replace(/\s+$/, '') + (captionInput.value.trim() ? '\n\n' : '') + ctaValue;
           }

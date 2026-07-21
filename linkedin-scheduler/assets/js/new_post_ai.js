@@ -348,18 +348,24 @@
   }
 
   // If "Include a CTA" is checked, makes the checkbox/textbox the source
-  // of truth for the post's CTA: on a Carousel, forces the last slide's
-  // (the CTA slide's) line to this exact text; otherwise appends it to
-  // the caption as its own line, unless it's already there (e.g. the AI
-  // already wrote a matching closing line). No-op when unchecked/blank.
+  // of truth for the post's CTA, drawn as an actual banner in the image
+  // wherever the renderer supports one: on a Carousel, forces the last
+  // slide's (the CTA slide's) line to this exact text; on a Single
+  // Image, sets that one slide's `cta` field, which render_slide_single()
+  // draws as its own banner. A Text Post has no image at all, so its
+  // only option is appending the line to the caption. No-op when
+  // unchecked/blank.
   function applyCta() {
     var ctaValue = ctaEnabled && ctaEnabled.checked && ctaText ? ctaText.value.trim() : '';
     if (!ctaValue) return;
-    if (currentCreative.slides && currentCreative.slides.length > 1) {
-      var lastIndex = currentCreative.slides.length - 1;
-      currentCreative.slides[lastIndex].points = [ctaValue];
+    var slides = currentCreative.slides || [];
+    if (slides.length > 1) {
+      var lastIndex = slides.length - 1;
+      slides[lastIndex].points = [ctaValue];
       var lastPointsInput = reviewEl.querySelector('.slide-fieldset[data-slide-index="' + lastIndex + '"] .ai-points-input');
       if (lastPointsInput) lastPointsInput.value = ctaValue;
+    } else if (slides.length === 1) {
+      slides[0].cta = ctaValue;
     } else {
       var caption = currentCreative.caption || '';
       if (caption.indexOf(ctaValue) === -1) {
