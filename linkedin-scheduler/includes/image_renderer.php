@@ -1405,7 +1405,14 @@ function render_fit_footer_name_size(string $name, float $maxPx, int $preferredS
 // is the manual Settings size override (see includes/helpers.php
 // get_footer_name_size()) — null for either keeps today's auto-derived
 // palette color / auto size, so existing users see no change.
-function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE): void
+// $cta is Single Image's defined, fixed spot for a CTA — right-aligned
+// on the same row as $name (which stays left-aligned), rather than the
+// separate banner block a Carousel's CTA slide uses. Blank by default,
+// so every existing call site (no $cta arg) draws byte-for-byte the
+// same as before this parameter existed. Name gets first claim on its
+// preferred size; the CTA fits into whatever's left on the right so the
+// two never collide.
+function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE, string $cta = ''): void
 {
     [$cx, $rx] = render_content_edges();
     // Floor was a fixed rs(800) offset from the top of a 1350-tall square
@@ -1416,6 +1423,7 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
     // taller image. Ceiling was already RENDER_SIZE-relative.
     $fy = max($canvasH - rs(280), min($contentY + rs(50), $canvasH - RENDER_PAD - rs(56)));
     $nameColor = $nameColorRgb ? imagecolorallocate($im, $nameColorRgb[0], $nameColorRgb[1], $nameColorRgb[2]) : null;
+    $ctaDisplay = $cta !== '' ? ('→ ' . $cta) : '';
 
     // 26 (was 22) — the footer signature is the smallest bold text in the
     // whole composition, so GD's anti-aliasing artifacts on small bold
@@ -1427,17 +1435,39 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
     $preferred = $nameSizeOverride ?? rs(26);
     if ($layout === 'bold') {
         $padX = rs(16); $padY = rs(10);
-        $nameSize = render_fit_footer_name_size($name, ($rx - $cx) - $padX * 2, $preferred, $fontRole);
+        $availW = ($rx - $cx) - $padX * 2;
+        $ctaSize = 0; $ctaW = 0;
+        if ($ctaDisplay !== '') {
+            $ctaSize = render_fit_footer_name_size($ctaDisplay, $availW * 0.45, rs(22), $fontRole);
+            $ctaW = render_text_width($ctaDisplay, $ctaSize, true, $fontRole);
+            $availW -= $ctaW + rs(24);
+        }
+        $nameSize = render_fit_footer_name_size($name, $availW, $preferred, $fontRole);
         $w = render_text_width($name, $nameSize, true, $fontRole);
         render_rrect($im, $cx, $fy, $cx + $w + $padX * 2, $fy + $nameSize + $padY * 2, $p['accent'], rs(8));
         render_text($im, $cx + $padX, $fy + $padY, $name, $nameSize, true, $nameColor ?? $p['accent_text'], $fontRole);
+        if ($ctaDisplay !== '') {
+            $ctaY = $fy + $padY + ($nameSize - $ctaSize) / 2;
+            render_text($im, $rx - $ctaW, $ctaY, $ctaDisplay, $ctaSize, true, $p['cta_bg'], $fontRole);
+        }
         return;
     }
     if ($layout !== 'minimal') {
         imagefilledrectangle($im, (int) $cx, (int) $fy, (int) $rx, (int) $fy + rs(2), $p['divider']);
     }
-    $nameSize = render_fit_footer_name_size($name, $rx - $cx, $preferred, $fontRole);
+    $availW = $rx - $cx;
+    $ctaSize = 0; $ctaW = 0;
+    if ($ctaDisplay !== '') {
+        $ctaSize = render_fit_footer_name_size($ctaDisplay, $availW * 0.45, rs(24), $fontRole);
+        $ctaW = render_text_width($ctaDisplay, $ctaSize, true, $fontRole);
+        $availW -= $ctaW + rs(24);
+    }
+    $nameSize = render_fit_footer_name_size($name, $availW, $preferred, $fontRole);
     render_text($im, $cx, $fy + rs(12), $name, $nameSize, true, $nameColor ?? $p['name'], $fontRole);
+    if ($ctaDisplay !== '') {
+        $ctaY = $fy + rs(12) + ($nameSize - $ctaSize) / 2;
+        render_text($im, $rx - $ctaW, $ctaY, $ctaDisplay, $ctaSize, true, $p['cta_bg'], $fontRole);
+    }
 }
 
 function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE): void
@@ -1878,15 +1908,14 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
     // Checkbox-driven only — the AI never writes this itself, same as how
     // the Carousel CTA checkbox only ever overrides, never auto-generates.
-    // Drawn as the same banner treatment (render_cta_banner()) a
-    // Carousel's CTA slide uses, in the same content-flow position
-    // (after points, before the footer), so both formats look and
-    // behave the same way.
+    // Lives in the footer's defined right-hand slot (render_footer_simple()),
+    // not as a content-block banner, so it never depends on body/points
+    // being present and never competes with them for vertical space.
     $cta = trim($slide['cta'] ?? '');
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
         return;
     }
 
@@ -1906,15 +1935,11 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     // Sanity ceiling, not a spec match — see render_slide_content()'s
     // comment on the same pattern.
     $points = array_slice($slide['points'] ?? [], 0, 6);
-    $ctaLines = $cta !== '' ? [$cta] : [];
     $simulatedPointsStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
     $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
-    $simulatedBannerStartY = $simulatedPointsStartY + $pointsHeight;
-    $bannerSize = render_fit_font_size($ctaLines, $simulatedBannerStartY, rs(894), [rs(27), rs(24), rs(21), rs(19)], fn ($item, $size) => render_cta_banner_height($item, $size, $preset['ctaStyle']));
-    $bannerHeight = array_sum(array_map(fn ($item) => render_cta_banner_height($item, $bannerSize, $preset['ctaStyle']), $ctaLines));
 
-    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight + $bannerHeight;
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
     $bottomBound = ($canvasH - rs(280)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
@@ -1933,11 +1958,8 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     foreach ($points as $i => $point) {
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
-    foreach ($ctaLines as $line) {
-        $y = render_cta_banner($im, $line, $y, $p, $bannerSize, $preset['ctaStyle']);
-    }
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
 }
 
 // ── Main entry point ─────────────────────────────────────────────────
