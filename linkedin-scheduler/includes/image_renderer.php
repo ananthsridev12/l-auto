@@ -1470,7 +1470,12 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
     }
 }
 
-function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE): void
+// $cta is this footer's defined, fixed spot for a CTA — right-aligned
+// against the name (top line of the photo block, or the bare name when
+// there's no photo), same pattern as render_footer_simple()'s $cta.
+// Blank by default, so every existing call site draws byte-for-byte the
+// same as before this parameter existed.
+function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE, string $cta = ''): void
 {
     [$cx, $rx] = render_content_edges();
     // Same bottom-relative floor conversion as render_footer_simple() —
@@ -1490,6 +1495,7 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
     // size override keeps that same ratio rather than flattening it, so
     // the CTA slide's signature stays proportionally bigger either way.
     $preferred = $nameSizeOverride ? (int) round($nameSizeOverride * (rs(32) / rs(26))) : rs(32);
+    $ctaDisplay = $cta !== '' ? ('→ ' . $cta) : '';
 
     $photoSize = rs(108);
     $circle = $photoPath ? render_circular_photo($photoPath, $photoSize) : null;
@@ -1503,15 +1509,37 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
         // vertically centered against. Name width is fit-checked against
         // the space right of the photo — see render_fit_footer_name_size().
         $nx = $cx + $photoSize + rs(18);
-        $nameSize = render_fit_footer_name_size($name, $rx - $nx, $preferred, $fontRole);
+        $availW = $rx - $nx;
+        $ctaSize = 0; $ctaW = 0;
+        if ($ctaDisplay !== '') {
+            $ctaSize = render_fit_footer_name_size($ctaDisplay, $availW * 0.4, rs(24), $fontRole);
+            $ctaW = render_text_width($ctaDisplay, $ctaSize, true, $fontRole);
+            $availW -= $ctaW + rs(24);
+        }
+        $nameSize = render_fit_footer_name_size($name, $availW, $preferred, $fontRole);
         $nfh = render_lh($nameSize);
         $blockH = $nfh + render_lh(rs(22));
         $ny = $py + ($photoSize - $blockH) / 2;
         render_text($im, $nx, $ny, $name, $nameSize, true, $nameColor ?? $p['headline'], $fontRole);
         render_text($im, $nx, $ny + $nfh, 'Follow for more insights', rs(22), false, $p['body']);
+        if ($ctaDisplay !== '') {
+            $ctaY = $ny + ($nameSize - $ctaSize) / 2;
+            render_text($im, $rx - $ctaW, $ctaY, $ctaDisplay, $ctaSize, true, $p['cta_bg'], $fontRole);
+        }
     } else {
-        $nameSize = render_fit_footer_name_size($name, $rx - $cx, $preferred, $fontRole);
+        $availW = $rx - $cx;
+        $ctaSize = 0; $ctaW = 0;
+        if ($ctaDisplay !== '') {
+            $ctaSize = render_fit_footer_name_size($ctaDisplay, $availW * 0.4, rs(24), $fontRole);
+            $ctaW = render_text_width($ctaDisplay, $ctaSize, true, $fontRole);
+            $availW -= $ctaW + rs(24);
+        }
+        $nameSize = render_fit_footer_name_size($name, $availW, $preferred, $fontRole);
         render_text($im, $cx, $py + rs(10), $name, $nameSize, true, $nameColor ?? $p['headline'], $fontRole);
+        if ($ctaDisplay !== '') {
+            $ctaY = $py + rs(10) + ($nameSize - $ctaSize) / 2;
+            render_text($im, $rx - $ctaW, $ctaY, $ctaDisplay, $ctaSize, true, $p['cta_bg'], $fontRole);
+        }
     }
 }
 
@@ -1839,10 +1867,6 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
-// $photoPath is accepted (render_creative_to_slides() still threads it
-// through from resolve_footer_image()) but no longer used here — the CTA
-// slide's footer now matches Single Image's: plain name-left/CTA-right
-// row via render_footer_simple(), not the circular-photo treatment.
 function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
 {
     $preset = render_resolve_design_preset($layout);
@@ -1853,14 +1877,15 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
 
     $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
     // The CTA checkbox's bake-in writes the exact line into this slide's
-    // first point — drawn in the footer's defined right-hand slot, same
-    // as Single Image (render_footer_simple()'s $cta param), not as a
-    // content-block banner.
+    // first point — drawn in the photo footer's defined right-hand slot
+    // (render_footer_with_photo()'s $cta param), same idea as Single
+    // Image's plain footer, not as a content-block banner. The photo +
+    // "Follow for more insights" signature is untouched either way.
     $cta = trim($slide['points'][0] ?? '');
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+        render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
         return;
     }
 
@@ -1875,7 +1900,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
 
     $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight;
-    $bottomBound = ($canvasH - rs(280)) - rs(50);
+    $bottomBound = ($canvasH - rs(360)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
     foreach ($hLines as $line) {
@@ -1888,7 +1913,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
         : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
 }
 
 function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
