@@ -1839,6 +1839,10 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
+// $photoPath is accepted (render_creative_to_slides() still threads it
+// through from resolve_footer_image()) but no longer used here — the CTA
+// slide's footer now matches Single Image's: plain name-left/CTA-right
+// row via render_footer_simple(), not the circular-photo treatment.
 function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
 {
     $preset = render_resolve_design_preset($layout);
@@ -1848,10 +1852,15 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    // The CTA checkbox's bake-in writes the exact line into this slide's
+    // first point — drawn in the footer's defined right-hand slot, same
+    // as Single Image (render_footer_simple()'s $cta param), not as a
+    // content-block banner.
+    $cta = trim($slide['points'][0] ?? '');
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
-        render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
         return;
     }
 
@@ -1864,18 +1873,9 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     $subheadingHeight = render_subheading_height($subheading, $cw);
     $ruleGap = render_headline_rule_gap($preset['barStyle']);
     $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
-    $bodyGap = $body !== '' ? rs(22) : 0;
 
-    // Sanity ceiling, not a spec match (see render_slide_content()'s
-    // comment) — the prompt targets a single CTA line, but a manual edit
-    // adding a couple more still renders instead of being dropped.
-    $points = array_slice($slide['points'] ?? [], 0, 3);
-    $simulatedBannerStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
-    $bannerSize = render_fit_font_size($points, $simulatedBannerStartY, rs(802), [rs(27), rs(24), rs(21), rs(19)], fn ($item, $size) => render_cta_banner_height($item, $size, $preset['ctaStyle']));
-    $bannerHeight = array_sum(array_map(fn ($item) => render_cta_banner_height($item, $bannerSize, $preset['ctaStyle']), $points));
-
-    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $bannerHeight;
-    $bottomBound = ($canvasH - rs(360)) - rs(50);
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight;
+    $bottomBound = ($canvasH - rs(280)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
     foreach ($hLines as $line) {
@@ -1887,14 +1887,8 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     $y = $bodyIsBoxed
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
         : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
-    if ($body !== '') {
-        $y += rs(22);
-    }
-    foreach ($points as $point) {
-        $y = render_cta_banner($im, $point, $y, $p, $bannerSize, $preset['ctaStyle']);
-    }
 
-    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
 }
 
 function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
