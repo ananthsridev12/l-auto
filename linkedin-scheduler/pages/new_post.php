@@ -71,8 +71,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title      = trim($_POST['title'] ?? '');
     $accountId  = $_POST['linkedin_account_id'] !== '' ? (int) $_POST['linkedin_account_id'] : null;
     $campaignId = trim($_POST['campaign_id'] ?? '');
+    // A duplicate campaign_id used to fail the INSERT below and redirect
+    // back to a blank form, losing everything the user typed/uploaded —
+    // check up front instead and fall back to an auto-suffixed id, same
+    // as the blank-id case, so the save always goes through. The user is
+    // told about the swap afterward rather than losing their work over it.
+    $campaignIdRenamed = false;
+    $originalCampaignId = $campaignId;
     if ($campaignId === '') {
         $campaignId = 'MANUAL-' . date('Ymd-His') . '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
+    } else {
+        $dupStmt = db()->prepare('SELECT 1 FROM posts WHERE user_id = ? AND campaign_id = ?');
+        $dupStmt->execute([$userId, $campaignId]);
+        if ($dupStmt->fetchColumn()) {
+            $campaignId .= '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
+            $campaignIdRenamed = true;
+        }
     }
 
     $action    = $_POST['action'] ?? 'save';
@@ -98,10 +112,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
     } catch (PDOException $e) {
         if ((string) $e->getCode() === '23000') {
-            flash('error', "Campaign ID \"{$campaignId}\" is already in use — choose another.");
-            redirect('pages/new_post.php');
+            // The pre-check above already handles the common case — this
+            // only catches a genuine race (two saves with the same typed
+            // id landing at once). Retry once with a fresh suffix rather
+            // than redirecting away and losing everything the user typed.
+            $campaignId .= '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
+            $campaignIdRenamed = true;
+            $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
+        } else {
+            throw $e;
         }
-        throw $e;
     }
     $postId = (int) db()->lastInsertId();
 
@@ -181,11 +201,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         save_content_memory($workspaceId, $postId, trim($title . ' ' . $caption), $title ?: mb_substr($caption, 0, 200), resolve_ai_config($userId));
     }
 
+    // Prepended to whichever flash message actually ends up showing below
+    // (success or error, depending on how the save/post/schedule went),
+    // rather than its own flash() call — the 'error'/'success' keys can
+    // only hold one message each, and this can co-occur with either.
+    $renameNotice = $campaignIdRenamed
+        ? "Campaign ID \"{$originalCampaignId}\" was already in use — saved as \"{$campaignId}\" instead. "
+        : '';
+
     if ($action === 'post_now') {
         $result = publish_post_now($postId, $userId);
-        flash($result['success'] ? 'success' : 'error', $result['success'] ? 'Posted to LinkedIn.' : $result['error']);
+        flash($result['success'] ? 'success' : 'error', $renameNotice . ($result['success'] ? 'Posted to LinkedIn.' : $result['error']));
     } else {
-        flash('success', $action === 'schedule' ? 'Post scheduled.' : 'Draft saved.');
+        flash('success', $renameNotice . ($action === 'schedule' ? 'Post scheduled.' : 'Draft saved.'));
     }
 
     redirect('pages/post.php?id=' . $postId);
