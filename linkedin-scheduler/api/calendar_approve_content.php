@@ -48,6 +48,7 @@ foreach ($postsData as $p) {
         'background' => $p['background'] ?? null,
         'size'       => $p['size'] ?? null,
         'text_position' => $p['text_position'] ?? null,
+        'font_scale' => $p['font_scale'] ?? null,
     ];
     // Preserve format/hashtags/series_label from the existing creative_json
     // rather than losing them — merge on top of what's already stored.

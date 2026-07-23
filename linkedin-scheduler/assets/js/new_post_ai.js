@@ -343,6 +343,18 @@
     } else {
       delete currentCreative.size;
     }
+    var fontScale = {};
+    var fontScaleChanged = false;
+    document.querySelectorAll('.font-scale-slider').forEach(function (slider) {
+      var val = parseInt(slider.value, 10) || 100;
+      fontScale[slider.dataset.role] = val;
+      if (val !== 100) fontScaleChanged = true;
+    });
+    if (fontScaleChanged) {
+      currentCreative.font_scale = fontScale;
+    } else {
+      delete currentCreative.font_scale;
+    }
     applyCta();
     return currentCreative;
   }

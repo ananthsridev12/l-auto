@@ -699,6 +699,10 @@ body.centered-page {
 .skip-card { padding: var(--space-3) var(--space-4); }
 .field-row { display: block; font-size: 12px; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; margin: 10px 0; }
 .field-row input[type="text"], .field-row textarea { display: block; margin-top: 4px; font-weight: 400; text-transform: none; letter-spacing: normal; box-sizing: border-box; }
+.font-scale-group { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 12px; }
+.font-scale-group .field-row { display: flex; align-items: center; gap: 8px; margin: 0; }
+.font-scale-group .field-row input[type="range"] { flex: 1; }
+.font-scale-group .field-row span { font-weight: 400; text-transform: none; letter-spacing: normal; min-width: 40px; text-align: right; }
 .slides-wrap { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
 .slide-fieldset { border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 10px 14px 4px; }
 .slide-fieldset legend { font-size: 12px; font-weight: 600; color: var(--gray-500); padding: 0 6px; }

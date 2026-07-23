@@ -254,6 +254,12 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <option value="bottom"<?= ($creative['text_position'] ?? '') === 'bottom' ? ' selected' : '' ?>>Bottom</option>
     </select>
   </label>
+  <label class="field-row">Text Size <span class="muted">(optional — 100% is default)</span></label>
+  <div class="font-scale-group">
+    <?php foreach (['headline' => 'Headline', 'subheading' => 'Subheading', 'body' => 'Body', 'points' => 'Points'] as $fsRole => $fsLabel): $fsVal = (int) ($creative['font_scale'][$fsRole] ?? 100); ?>
+      <label class="field-row"><?= h($fsLabel) ?> <input type="range" class="reedit-font-scale-slider" data-role="<?= h($fsRole) ?>" min="50" max="200" value="<?= $fsVal ?>" oninput="this.nextElementSibling.textContent = this.value + '%'"><span><?= $fsVal ?>%</span></label>
+    <?php endforeach; ?>
+  </div>
   <button type="button" id="reeditRenderBtn" class="btn-secondary" style="margin-top:12px;">Re-render Image</button>
   <p id="reeditStatus" class="muted"></p>
 </section>

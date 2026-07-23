@@ -47,6 +47,16 @@
     if (textPosition && textPosition !== 'top') {
       creative.text_position = textPosition;
     }
+    var fontScale = {};
+    var fontScaleChanged = false;
+    document.querySelectorAll('.reedit-font-scale-slider').forEach(function (slider) {
+      var val = parseInt(slider.value, 10) || 100;
+      fontScale[slider.dataset.role] = val;
+      if (val !== 100) fontScaleChanged = true;
+    });
+    if (fontScaleChanged) {
+      creative.font_scale = fontScale;
+    }
 
     var fd = new FormData();
     fd.append('csrf', window.POST_REEDIT.csrf);

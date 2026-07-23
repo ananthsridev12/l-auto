@@ -351,6 +351,13 @@ require __DIR__ . '/../includes/layout_top.php';
             <option value="bottom">Bottom</option>
           </select>
         </label>
+        <label>Text Size <span class="muted">(optional — 100% is default)</span></label>
+        <div class="font-scale-group">
+          <label class="field-row">Headline <input type="range" class="font-scale-slider" data-role="headline" min="50" max="200" value="100" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>100%</span></label>
+          <label class="field-row">Subheading <input type="range" class="font-scale-slider" data-role="subheading" min="50" max="200" value="100" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>100%</span></label>
+          <label class="field-row">Body <input type="range" class="font-scale-slider" data-role="body" min="50" max="200" value="100" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>100%</span></label>
+          <label class="field-row">Points <input type="range" class="font-scale-slider" data-role="points" min="50" max="200" value="100" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>100%</span></label>
+        </div>
         <div id="aiSlidesReview"></div>
         <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
 

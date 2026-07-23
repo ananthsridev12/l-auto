@@ -315,6 +315,31 @@ function render_font_override_role(string $role, ?array $paths = null, bool $set
     return $overrides[$role] ?? null;
 }
 
+// Per-render font-size scale, one factor per text role (headline,
+// subheading, body, points — the 4 sizes the "Text Size" sliders
+// control), set once per render_creative_to_slides() call from the
+// creative's optional font_scale object. 1.0 (100%, the sliders'
+// default) is a no-op — every call site already reads through rss()
+// below rather than a bare rs(), so omitting font_scale entirely
+// renders byte-identical to before this existed.
+function render_font_scale_role(string $role, ?float $scale = null, bool $set = false): float
+{
+    static $scales = ['headline' => 1.0, 'subheading' => 1.0, 'body' => 1.0, 'points' => 1.0];
+    if ($set) {
+        $scales[$role] = $scale ?? 1.0;
+    }
+    return $scales[$role] ?? 1.0;
+}
+
+// rs() scaled a second time by that role's active font-size factor —
+// use this instead of rs() for any headline/subheading/body/points font
+// size (not for layout spacing/padding, which stays a fixed proportion
+// of the design regardless of text size).
+function rss(string $role, float $px): int
+{
+    return (int) round(rs($px) * render_font_scale_role($role));
+}
+
 function render_font_path(bool $bold, string $role = 'body'): string
 {
     // Bundled, not overridable — a serif-styled design template should
@@ -1553,7 +1578,7 @@ function render_body_boxed($im, string $body, float $y, array $p, float $cx, flo
     if ($body === '') {
         return $y;
     }
-    $fs = rs(27);
+    $fs = rss('body', 27);
     $blh = render_lh($fs);
     $lines = render_wrap_clamped($body, $fs, false, $cw - rs(24), 5);
     $ph = count($lines) * $blh + rs(28);
@@ -1574,7 +1599,7 @@ function render_body_freestanding($im, string $body, float $y, array $p, float $
     if ($body === '') {
         return $y;
     }
-    $bs = render_fit_headline_size($body, $cw, [rs(26), rs(23), rs(20)], 3, false, 'body');
+    $bs = render_fit_headline_size($body, $cw, [rss('body', 26), rss('body', 23), rss('body', 20)], 3, false, 'body');
     $blh = render_lh($bs);
     foreach (render_wrap_clamped($body, $bs, false, $cw, 3, 'body') as $line) {
         render_text($im, $cx, $y, $line, $bs, false, $p['body'], 'body');
@@ -1592,7 +1617,7 @@ function render_body_boxed_height(string $body, float $cw): float
     if ($body === '') {
         return 0;
     }
-    $fs = rs(27);
+    $fs = rss('body', 27);
     $lines = render_wrap_clamped($body, $fs, false, $cw - rs(24), 5);
     return count($lines) * render_lh($fs) + rs(28);
 }
@@ -1603,7 +1628,7 @@ function render_body_freestanding_height(string $body, float $cw): float
     if ($body === '') {
         return 0;
     }
-    $bs = render_fit_headline_size($body, $cw, [rs(26), rs(23), rs(20)], 3, false, 'body');
+    $bs = render_fit_headline_size($body, $cw, [rss('body', 26), rss('body', 23), rss('body', 20)], 3, false, 'body');
     $lines = render_wrap_clamped($body, $bs, false, $cw, 3, 'body');
     return count($lines) * render_lh($bs);
 }
@@ -1654,7 +1679,7 @@ function render_subheading_height(string $subheading, float $cw): float
     if ($subheading === '') {
         return 0;
     }
-    $fs = rs(24);
+    $fs = rss('subheading', 24);
     $lines = render_wrap_clamped($subheading, $fs, false, $cw, 2, 'body');
     return count($lines) * render_lh($fs) + rs(6);
 }
@@ -1664,7 +1689,7 @@ function render_draw_subheading($im, string $subheading, float $x, float $y, flo
     if ($subheading === '') {
         return $y;
     }
-    $fs = rs(24);
+    $fs = rss('subheading', 24);
     $lines = render_wrap_clamped($subheading, $fs, false, $cw, 2, 'body');
     foreach ($lines as $line) {
         render_text($im, $x, $y, $line, $fs, false, $p['body'], 'body');
@@ -1749,7 +1774,7 @@ function render_stat_content($im, array $slide, float $cx, float $topY, float $c
     $headline = trim($slide['headline'] ?? '');
     $body = trim($slide['body'] ?? '');
 
-    $statCandidates = [rs(210), rs(180), rs(150), rs(120), rs(96)];
+    $statCandidates = [rss('headline', 210), rss('headline', 180), rss('headline', 150), rss('headline', 120), rss('headline', 96)];
     [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($headline, $cw, $statCandidates, 2, $preset);
     $headlineHeight = count($hLines) * $lh;
 
@@ -1805,7 +1830,7 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     }
 
     if (render_is_title_only($slide)) {
-        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rss('headline', 110), rss('headline', 96), rss('headline', 84), rss('headline', 72), rss('headline', 60)], 3, $p, $preset);
         render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
@@ -1813,7 +1838,7 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     $body = $slide['body'] ?? '';
     $bodyIsBoxed = $preset['barStyle'] !== 'minimal';
 
-    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(78), rs(68), rs(58), rs(50), rs(44)], 2, $preset);
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rss('headline', 78), rss('headline', 68), rss('headline', 58), rss('headline', 50), rss('headline', 44)], 2, $preset);
     $headlineHeight = count($hLines) * $lh;
     $subheading = trim($slide['subheading'] ?? '');
     $subheadingHeight = render_subheading_height($subheading, $cw);
@@ -1827,7 +1852,7 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     // slide, first slide included — only the last (CTA) slide is special.
     $points = array_slice($slide['points'] ?? [], 0, 6);
     $simulatedPointsStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
-    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
+    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rss('points', 26), rss('points', 23), rss('points', 20), rss('points', 18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
 
     $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
@@ -1870,7 +1895,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     }
 
     if (render_is_title_only($slide)) {
-        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rss('headline', 110), rss('headline', 96), rss('headline', 84), rss('headline', 72), rss('headline', 60)], 3, $p, $preset);
         render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
         return;
     }
@@ -1878,7 +1903,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     $body = $slide['body'] ?? '';
     $bodyIsBoxed = $preset['barStyle'] === 'bold';
 
-    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(54), rs(48), rs(42), rs(38), rs(34)], 2, $preset);
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rss('headline', 54), rss('headline', 48), rss('headline', 42), rss('headline', 38), rss('headline', 34)], 2, $preset);
     $headlineHeight = count($hLines) * $lh;
     $subheading = trim($slide['subheading'] ?? '');
     $subheadingHeight = render_subheading_height($subheading, $cw);
@@ -1896,7 +1921,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     // if drawn top-anchored, regardless of $textPosition, so typography
     // choices don't change with placement — only the final start Y does.
     $simulatedPointsStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
-    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
+    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rss('points', 26), rss('points', 23), rss('points', 20), rss('points', 18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
 
     $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
@@ -1945,7 +1970,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     }
 
     if (render_is_title_only($slide)) {
-        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rss('headline', 110), rss('headline', 96), rss('headline', 84), rss('headline', 72), rss('headline', 60)], 3, $p, $preset);
         render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
         return;
     }
@@ -1953,7 +1978,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     $body = $slide['body'] ?? '';
     $bodyIsBoxed = $preset['barStyle'] === 'bold';
 
-    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(52), rs(46), rs(40), rs(36), rs(32)], 2, $preset);
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rss('headline', 52), rss('headline', 46), rss('headline', 40), rss('headline', 36), rss('headline', 32)], 2, $preset);
     $headlineHeight = count($hLines) * $lh;
     $subheading = trim($slide['subheading'] ?? '');
     $subheadingHeight = render_subheading_height($subheading, $cw);
@@ -2000,7 +2025,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     }
 
     if (render_is_title_only($slide)) {
-        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
+        render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rss('headline', 110), rss('headline', 96), rss('headline', 84), rss('headline', 72), rss('headline', 60)], 3, $p, $preset);
         render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
         return;
     }
@@ -2010,7 +2035,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     // boxed); freestanding only in minimal.
     $bodyIsBoxed = $preset['barStyle'] !== 'minimal';
 
-    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rs(68), rs(60), rs(52), rs(46), rs(40)], 3, $preset);
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($slide['headline'] ?? '', $cw, [rss('headline', 68), rss('headline', 60), rss('headline', 52), rss('headline', 46), rss('headline', 40)], 3, $preset);
     $headlineHeight = count($hLines) * $lh;
     $subheading = trim($slide['subheading'] ?? '');
     $subheadingHeight = render_subheading_height($subheading, $cw);
@@ -2022,7 +2047,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     // comment on the same pattern.
     $points = array_slice($slide['points'] ?? [], 0, 6);
     $simulatedPointsStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
-    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rs(26), rs(23), rs(20), rs(18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
+    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894), [rss('points', 26), rss('points', 23), rss('points', 20), rss('points', 18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
     $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
 
     $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
@@ -2076,6 +2101,19 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $footerFontRole = 'footer';
     }
     $footerNameSizeOverride = $userId ? get_footer_name_size($userId) : null;
+
+    // "Text Size" sliders (Headline/Subheading/Body/Points) — an optional
+    // per-role percentage (50-200, 100 = default) in the creative JSON,
+    // layered on top of rs()'s existing design-scale via rss(). Missing/
+    // invalid values fall back to 1.0 (no-op), so a creative with no
+    // font_scale key renders byte-identical to before this existed.
+    $fontScaleInput = is_array($data['font_scale'] ?? null) ? $data['font_scale'] : [];
+    foreach (['headline', 'subheading', 'body', 'points'] as $role) {
+        $pct = $fontScaleInput[$role] ?? 100;
+        $pct = is_numeric($pct) ? (float) $pct : 100;
+        $pct = max(50, min(200, $pct));
+        render_font_scale_role($role, $pct / 100, true);
+    }
 
     $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
     // Signature color is a per-palette override (see pages/settings.php

@@ -127,6 +127,13 @@
         var size = sizeSelect && sizeSelect.value !== 'square' ? sizeSelect.value : null;
         var textPositionSelect = card.querySelector('.text-position-select');
         var textPosition = textPositionSelect && textPositionSelect.value !== 'top' ? textPositionSelect.value : null;
+        var fontScale = {};
+        var fontScaleChanged = false;
+        card.querySelectorAll('.font-scale-slider').forEach(function (slider) {
+          var val = parseInt(slider.value, 10) || 100;
+          fontScale[slider.dataset.role] = val;
+          if (val !== 100) fontScaleChanged = true;
+        });
 
         // "Include a CTA" is the source of truth when checked, drawn as an
         // actual banner in the image wherever the renderer supports one:
@@ -148,7 +155,7 @@
           }
         }
 
-        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition });
+        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition, font_scale: fontScaleChanged ? fontScale : null });
       });
       if (!postsData.length) {
         contentStatus.textContent = 'Select at least one post to approve.';

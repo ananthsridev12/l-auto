@@ -233,6 +233,33 @@
       textPositionWrap.appendChild(textPositionSelect);
       card.appendChild(textPositionWrap);
 
+      var fontScaleLabel = document.createElement('label');
+      fontScaleLabel.textContent = 'Text Size (optional — 100% is default)';
+      card.appendChild(fontScaleLabel);
+      var fontScaleGroup = document.createElement('div');
+      fontScaleGroup.className = 'font-scale-group';
+      [['headline', 'Headline'], ['subheading', 'Subheading'], ['body', 'Body'], ['points', 'Points']].forEach(function (pair) {
+        var row = document.createElement('label');
+        row.className = 'field-row';
+        row.textContent = pair[1] + ' ';
+        var slider = document.createElement('input');
+        slider.type = 'range';
+        slider.className = 'font-scale-slider';
+        slider.dataset.role = pair[0];
+        slider.min = '50';
+        slider.max = '200';
+        slider.value = String((c.font_scale && c.font_scale[pair[0]]) || 100);
+        var readout = document.createElement('span');
+        readout.textContent = slider.value + '%';
+        slider.addEventListener('input', function () {
+          readout.textContent = slider.value + '%';
+        });
+        row.appendChild(slider);
+        row.appendChild(readout);
+        fontScaleGroup.appendChild(row);
+      });
+      card.appendChild(fontScaleGroup);
+
       var slidesWrap = document.createElement('div');
       slidesWrap.className = 'slides-wrap';
       (c.slides || []).forEach(function (slide, si) {
@@ -332,6 +359,18 @@
         c.text_position = textPosition;
       } else {
         delete c.text_position;
+      }
+      var fontScale = {};
+      var fontScaleChanged = false;
+      card.querySelectorAll('.font-scale-slider').forEach(function (slider) {
+        var val = parseInt(slider.value, 10) || 100;
+        fontScale[slider.dataset.role] = val;
+        if (val !== 100) fontScaleChanged = true;
+      });
+      if (fontScaleChanged) {
+        c.font_scale = fontScale;
+      } else {
+        delete c.font_scale;
       }
       card.querySelectorAll('.slide-fieldset').forEach(function (fs) {
         var si = parseInt(fs.dataset.slideIndex, 10);
