@@ -1710,6 +1710,12 @@ function render_design_templates(): array
         'outline_frame'      => ['name' => 'Outline Frame', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => 'triangles', 'listOverride' => null, 'ctaOverride' => 'outline'],
         'halftone_editorial' => ['name' => 'Halftone Editorial', 'legacyBase' => 'minimal', 'font' => 'serif', 'emphasis' => true, 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
         'dotted_bold'        => ['name' => 'Dotted Bold', 'legacyBase' => 'bold', 'font' => 'sans', 'emphasis' => true, 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
+
+        // 'stat' => true is the one flag every render_slide_*() checks for
+        // before its usual headline/body/points flow — see
+        // render_stat_content(). Everything else (chrome, footer, CTA) is
+        // untouched, same as any other template.
+        'big_stat' => ['name' => 'Big Stat', 'legacyBase' => 'minimal', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null, 'stat' => true],
     ];
 }
 
@@ -1728,6 +1734,39 @@ function render_resolve_design_preset(string $id): array
     $preset['listStyle'] = $preset['listOverride'] ?? $preset['legacyBase'];
     $preset['ctaStyle'] = $preset['ctaOverride'] ?? $preset['legacyBase'];
     return $preset;
+}
+
+// "Big Stat" template content — a single oversized number/short phrase
+// (the slide's own headline field, reused rather than adding a new one)
+// dominating the frame, left-aligned, with an optional supporting body
+// paragraph below. Modeled on the "stat card" pattern common in
+// data-driven carousels/single-images (e.g. "70% of X do Y"). No rule,
+// no box, no points in this mode — chrome (logo, counter, bar,
+// decoration, footer including CTA) is drawn by the caller exactly like
+// any other template; this only replaces the headline/body content block.
+function render_stat_content($im, array $slide, float $cx, float $topY, float $cw, array $p, array $preset, string $textPosition, float $bottomBound): void
+{
+    $headline = trim($slide['headline'] ?? '');
+    $body = trim($slide['body'] ?? '');
+
+    $statCandidates = [rs(210), rs(180), rs(150), rs(120), rs(96)];
+    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($headline, $cw, $statCandidates, 2, $preset);
+    $headlineHeight = count($hLines) * $lh;
+
+    $bodyGap = $body !== '' ? rs(32) : 0;
+    $bodyHeight = $body !== '' ? render_body_freestanding_height($body, $cw) : 0;
+
+    $totalContentHeight = $headlineHeight + $bodyGap + $bodyHeight;
+    $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
+
+    foreach ($hLines as $line) {
+        render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
+        $y += $lh;
+    }
+    if ($body !== '') {
+        $y += $bodyGap;
+        render_body_freestanding($im, $body, $y, $p, $cx, $cw);
+    }
 }
 
 // ── Slide renderers ──────────────────────────────────────────────────
@@ -1753,6 +1792,16 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     if ($seriesLabel !== '') {
         render_text($im, $cx, $topY, strtoupper($seriesLabel), rs(16), false, $p['counter']);
         $topY += render_lh(rs(16)) + rs(8);
+    }
+
+    if ($preset['stat'] ?? false) {
+        // $contentY=0 pins the footer at its floor regardless of how tall
+        // the stat content is (which can be as little as one short line)
+        // — this template's signature always sits at the bottom, matching
+        // the reference "stat card" pattern rather than trailing content.
+        render_stat_content($im, $slide, $cx, $topY, $cw, $p, $preset, $textPosition, ($canvasH - rs(280)) - rs(50));
+        render_footer_simple($im, 0, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+        return;
     }
 
     if (render_is_title_only($slide)) {
@@ -1813,6 +1862,12 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+
+    if ($preset['stat'] ?? false) {
+        render_stat_content($im, $slide, $cx, $topY, $cw, $p, $preset, $textPosition, ($canvasH - rs(280)) - rs(50));
+        render_footer_simple($im, 0, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
+        return;
+    }
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
@@ -1883,6 +1938,12 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     // "Follow for more insights" signature is untouched either way.
     $cta = trim($slide['points'][0] ?? '');
 
+    if ($preset['stat'] ?? false) {
+        render_stat_content($im, $slide, $cx, $topY, $cw, $p, $preset, $textPosition, ($canvasH - rs(360)) - rs(50));
+        render_footer_with_photo($im, 0, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+        return;
+    }
+
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
         render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
@@ -1931,6 +1992,12 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     // not as a content-block banner, so it never depends on body/points
     // being present and never competes with them for vertical space.
     $cta = trim($slide['cta'] ?? '');
+
+    if ($preset['stat'] ?? false) {
+        render_stat_content($im, $slide, $cx, $topY, $cw, $p, $preset, $textPosition, ($canvasH - rs(280)) - rs(50));
+        render_footer_simple($im, 0, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+        return;
+    }
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rs(110), rs(96), rs(84), rs(72), rs(60)], 3, $p, $preset);
