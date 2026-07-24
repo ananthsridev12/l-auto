@@ -142,8 +142,24 @@
       ctaTextInput.placeholder = 'e.g. Book a call with our team';
       ctaTextInput.style.display = 'none';
       card.appendChild(ctaTextInput);
+      var ctaStyleLabel = document.createElement('label');
+      ctaStyleLabel.textContent = 'CTA Style ';
+      ctaStyleLabel.style.display = 'none';
+      ctaStyleLabel.style.marginTop = '6px';
+      var ctaStyleSelect = document.createElement('select');
+      ctaStyleSelect.className = 'cta-style-select';
+      [['text', 'Text (default)'], ['button', 'Button'], ['outline', 'Outline Button']].forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt[0];
+        o.textContent = opt[1];
+        if (opt[0] === (c.cta_style || 'text')) o.selected = true;
+        ctaStyleSelect.appendChild(o);
+      });
+      ctaStyleLabel.appendChild(ctaStyleSelect);
+      card.appendChild(ctaStyleLabel);
       ctaCheckbox.addEventListener('change', function () {
         ctaTextInput.style.display = ctaCheckbox.checked ? 'block' : 'none';
+        ctaStyleLabel.style.display = ctaCheckbox.checked ? 'block' : 'none';
       });
 
       var templateWrap = document.createElement('label');
@@ -401,6 +417,12 @@
           c.caption = c.caption ? c.caption.replace(/\s+$/, '') + '\n\n' + ctaValue : ctaValue;
           card.querySelector('.caption-input').value = c.caption;
         }
+      }
+      var ctaStyleSelect = card.querySelector('.cta-style-select');
+      if (ctaValue && ctaStyleSelect && ctaStyleSelect.value !== 'text') {
+        c.cta_style = ctaStyleSelect.value;
+      } else {
+        delete c.cta_style;
       }
     });
   }

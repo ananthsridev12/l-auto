@@ -21,6 +21,9 @@ const UNDO   = {};  // Unicode → plain ASCII (for clearing)
   lowers.split('').forEach((c, i) => { const u = String.fromCodePoint(0x1D622 + i); ITALIC[c] = u; UNDO[u] = c; });
 })();
 
+const BOLD_CHARS   = new Set(Object.values(BOLD));
+const ITALIC_CHARS = new Set(Object.values(ITALIC));
+
 // Underline / strikethrough use Unicode combining marks appended after
 // each character (U+0332 combining low line, U+0336 combining long
 // stroke overlay) — same trick as bold/italic in spirit: no real rich
@@ -43,6 +46,30 @@ function _transformChars(fn) {
   ta.dispatchEvent(new Event('input'));
 }
 
+// Same as _transformChars but hands the whole selection to fn at once,
+// so a toggle (bold → plain, plain → bold) can be decided from the
+// selection as a whole rather than character-by-character.
+function _transformSelection(fn) {
+  const ta = document.getElementById('caption');
+  if (!ta) return;
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  if (s === e) { _toast('Select text first, then click a formatting button'); return; }
+  const out = fn(ta.value.substring(s, e));
+  ta.value = ta.value.slice(0, s) + out + ta.value.slice(e);
+  ta.selectionStart = s;
+  ta.selectionEnd   = s + out.length;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+
+// True when every letter/digit in str is already transformed under `map`
+// (comparing each character's plain-ASCII source via UNDO) — i.e. clicking
+// the same button again should remove the effect rather than re-apply it.
+function _isFullyMapped(str, chars) {
+  const letters = [...str].filter(c => /[a-zA-Z0-9]/.test(UNDO[c] || c));
+  return letters.length > 0 && letters.every(c => chars.has(c));
+}
+
 function _transformLines(fn) {
   const ta = document.getElementById('caption');
   if (!ta) return;
@@ -59,10 +86,28 @@ function _transformLines(fn) {
   ta.dispatchEvent(new Event('input'));
 }
 
-function applyBold()          { _transformChars(c => BOLD[c] || c); }
-function applyItalic()        { _transformChars(c => ITALIC[c] || c); }
-function applyUnderline()     { _transformChars(c => c === '\n' ? c : c + UNDERLINE_MARK); }
-function applyStrikethrough() { _transformChars(c => c === '\n' ? c : c + STRIKETHROUGH_MARK); }
+// Each of these toggles: if the whole selection is already formatted,
+// clicking again removes the effect; otherwise it applies it.
+function applyBold() {
+  _transformSelection(str => _isFullyMapped(str, BOLD_CHARS)
+    ? [...str].map(c => UNDO[c] || c).join('')
+    : [...str].map(c => BOLD[c] || c).join(''));
+}
+function applyItalic() {
+  _transformSelection(str => _isFullyMapped(str, ITALIC_CHARS)
+    ? [...str].map(c => UNDO[c] || c).join('')
+    : [...str].map(c => ITALIC[c] || c).join(''));
+}
+function applyUnderline() {
+  _transformSelection(str => str.includes(UNDERLINE_MARK)
+    ? str.split(UNDERLINE_MARK).join('')
+    : [...str].map(c => c === '\n' ? c : c + UNDERLINE_MARK).join(''));
+}
+function applyStrikethrough() {
+  _transformSelection(str => str.includes(STRIKETHROUGH_MARK)
+    ? str.split(STRIKETHROUGH_MARK).join('')
+    : [...str].map(c => c === '\n' ? c : c + STRIKETHROUGH_MARK).join(''));
+}
 
 function applyBulletList()   { _transformLines(line => `• ${line}`); }
 function applyNumberedList() { _transformLines((line, n) => `${n}. ${line}`); }
@@ -186,6 +231,21 @@ function insertMention(name) {
   const picker = document.getElementById('mentionPicker');
   if (picker) picker.style.display = 'none';
 }
+
+// Keyboard shortcuts (Ctrl/Cmd+B / I / U) — plain <textarea>s don't get
+// native rich-text shortcut handling, so this wires the same toggles the
+// toolbar buttons use.
+(function () {
+  const ta = document.getElementById('caption');
+  if (!ta) return;
+  ta.addEventListener('keydown', (ev) => {
+    if (!(ev.ctrlKey || ev.metaKey) || ev.shiftKey || ev.altKey) return;
+    const key = ev.key.toLowerCase();
+    if (key === 'b') { ev.preventDefault(); applyBold(); }
+    else if (key === 'i') { ev.preventDefault(); applyItalic(); }
+    else if (key === 'u') { ev.preventDefault(); applyUnderline(); }
+  });
+})();
 
 document.addEventListener('click', (ev) => {
   ['emojiPicker', 'mentionPicker'].forEach(id => {

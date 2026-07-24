@@ -9,6 +9,8 @@
     var card = e.target.closest('.review-card');
     var input = card && card.querySelector('.cta-text-input');
     if (input) input.style.display = e.target.checked ? 'block' : 'none';
+    var styleLabel = card && card.querySelector('.cta-style-label');
+    if (styleLabel) styleLabel.style.display = e.target.checked ? 'block' : 'none';
   });
 
   function post(url, fields) {
@@ -145,6 +147,8 @@
         var ctaCheckbox = card.querySelector('.cta-enabled-toggle');
         var ctaTextInput = card.querySelector('.cta-text-input');
         var ctaValue = ctaCheckbox && ctaCheckbox.checked && ctaTextInput ? ctaTextInput.value.trim() : '';
+        var ctaStyleSelect = card.querySelector('.cta-style-select');
+        var ctaStyle = ctaValue && ctaStyleSelect && ctaStyleSelect.value !== 'text' ? ctaStyleSelect.value : null;
         if (ctaValue) {
           if (slides.length > 1) {
             slides[slides.length - 1].points = [ctaValue];
@@ -155,7 +159,7 @@
           }
         }
 
-        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition, font_scale: fontScaleChanged ? fontScale : null });
+        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition, font_scale: fontScaleChanged ? fontScale : null, cta_style: ctaStyle });
       });
       if (!postsData.length) {
         contentStatus.textContent = 'Select at least one post to approve.';

@@ -273,6 +273,13 @@ require __DIR__ . '/../includes/layout_top.php';
           Include a CTA
         </label>
         <input type="text" id="ctaText" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; display:none;">
+        <label id="ctaStyleLabel" style="width:100%; margin-top:6px; display:none;">CTA Style
+          <select id="ctaStyleSelect">
+            <option value="text">Text (default)</option>
+            <option value="button">Button</option>
+            <option value="outline">Outline Button</option>
+          </select>
+        </label>
       </div>
 
       <div id="aiGenerateFields" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
@@ -361,9 +368,11 @@ require __DIR__ . '/../includes/layout_top.php';
         <div id="aiSlidesReview"></div>
         <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
 
-        <button type="button" id="previewImageBtn" class="btn-secondary" style="margin-top:12px;">Generate Image Preview</button>
-        <p id="previewStatus" class="muted"></p>
-        <div id="imagePreviewResult" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
+        <div class="sticky-action-bar">
+          <button type="button" id="previewImageBtn" class="btn-secondary">Generate Image Preview</button>
+          <p id="previewStatus" class="muted"></p>
+          <div id="imagePreviewResult" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
+        </div>
       </div>
     </div>
 

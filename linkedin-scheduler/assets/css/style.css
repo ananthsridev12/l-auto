@@ -699,6 +699,20 @@ body.centered-page {
 .skip-card { padding: var(--space-3) var(--space-4); }
 .field-row { display: block; font-size: 12px; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; margin: 10px 0; }
 .field-row input[type="text"], .field-row textarea { display: block; margin-top: 4px; font-weight: 400; text-transform: none; letter-spacing: normal; box-sizing: border-box; }
+/* Keeps the Generate/Re-render button (and its live result) reachable at
+   the bottom of the viewport while scrolling through the settings above
+   it, instead of requiring a full scroll down to reach it. */
+.sticky-action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin-top: var(--space-3);
+  padding: 10px 0 4px;
+  border-top: 1px solid var(--gray-200);
+}
+.slides-panel .sticky-action-bar { background: var(--gray-100); }
+.card .sticky-action-bar { background: #fff; }
+
 .font-scale-group { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 12px; }
 .font-scale-group .field-row { display: flex; align-items: center; gap: 8px; margin: 0; }
 .font-scale-group .field-row input[type="range"] { flex: 1; }

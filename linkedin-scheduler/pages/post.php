@@ -260,8 +260,10 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <label class="field-row"><?= h($fsLabel) ?> <input type="range" class="reedit-font-scale-slider" data-role="<?= h($fsRole) ?>" min="50" max="200" value="<?= $fsVal ?>" oninput="this.nextElementSibling.textContent = this.value + '%'"><span><?= $fsVal ?>%</span></label>
     <?php endforeach; ?>
   </div>
-  <button type="button" id="reeditRenderBtn" class="btn-secondary" style="margin-top:12px;">Re-render Image</button>
-  <p id="reeditStatus" class="muted"></p>
+  <div class="sticky-action-bar">
+    <button type="button" id="reeditRenderBtn" class="btn-secondary">Re-render Image</button>
+    <p id="reeditStatus" class="muted"></p>
+  </div>
 </section>
 <?php endif; ?>
 

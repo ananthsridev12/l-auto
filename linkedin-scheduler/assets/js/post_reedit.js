@@ -79,6 +79,7 @@
         var img = document.getElementById('slideImg');
         if (img && urls.length) {
           img.src = urls[0];
+          img.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
         var counter = document.getElementById('slideCounter');
         if (counter) {

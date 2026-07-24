@@ -81,7 +81,14 @@ require __DIR__ . '/../includes/layout_top.php';
             <label class="field-row">Title <input type="text" class="title-input" value="<?= h($p['title'] ?? '') ?>"></label>
             <label class="field-row">Caption <textarea class="caption-input" rows="4"><?= h($p['caption'] ?? '') ?></textarea></label>
             <label class="checkbox-row"><input type="checkbox" class="cta-enabled-toggle"> Include a CTA</label>
-            <input type="text" class="cta-text-input" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; margin-bottom:12px; display:none;">
+            <input type="text" class="cta-text-input" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; display:none;">
+            <label class="field-row cta-style-label" style="display:none; margin-bottom:12px;">CTA Style
+              <select class="cta-style-select">
+                <option value="text">Text (default)</option>
+                <option value="button">Button</option>
+                <option value="outline">Outline Button</option>
+              </select>
+            </label>
             <?php if (!empty($p['creative']['slides'])): ?>
               <div class="slides-wrap">
                 <?php foreach ($p['creative']['slides'] as $si => $slide): ?>

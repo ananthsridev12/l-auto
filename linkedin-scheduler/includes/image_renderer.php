@@ -723,10 +723,15 @@ function render_circular_photo(string $photoPath, int $sz)
 // background. Returns the Y position content should resume at — $y
 // unchanged if no logo (zero layout shift for users who haven't uploaded
 // one), or $y advanced past the logo + a gap if one was drawn.
-function render_draw_logo($im, ?string $logoPath, float $cx, float $y): float
+// $minGap reserves extra clearance below $y when there's no logo to do it
+// naturally — used by the carousel slide functions (which draw a "01 /
+// 02" counter in that same top-right corner, only ~16px of design-scale
+// gap away without it) so content can't crowd the counter. Single Image
+// draws no counter, so it passes 0 and keeps its original tighter start.
+function render_draw_logo($im, ?string $logoPath, float $cx, float $y, float $minGap = 0): float
 {
     if ($logoPath === null || !is_file($logoPath)) {
-        return $y;
+        return $y + $minGap;
     }
     $info = @getimagesize($logoPath);
     if (!$info) {
@@ -1169,7 +1174,7 @@ function render_draw_headline_centered($im, string $headline, float $cx, float $
 // individual carousel slide (Hook/Content/CTA).
 function render_is_title_only(array $slide): bool
 {
-    return trim($slide['body'] ?? '') === '' && empty($slide['points']) && trim($slide['cta'] ?? '') === '';
+    return trim($slide['body'] ?? '') === '' && empty($slide['points']) && trim($slide['cta'] ?? '') === '' && trim($slide['subheading'] ?? '') === '';
 }
 
 // ── Corner decorations ───────────────────────────────────────────────
@@ -1416,6 +1421,57 @@ function render_fit_footer_name_size(string $name, float $maxPx, int $preferredS
     return $floor;
 }
 
+// The footer CTA slot supports a few visual styles, chosen per-creative
+// via $data['cta_style'] (see render_creative_to_slides()) — 'text'
+// (default) is the original small "→ CTA" plain text, unchanged;
+// 'button' is a filled pill (same fill treatment render_cta_banner()'s
+// 'pill' layout uses); 'outline' is a bordered box (render_cta_banner()'s
+// 'outline' layout, un-rounded to match that precedent). $label is what
+// actually gets measured/drawn — 'text' keeps the arrow prefix, the pill
+// styles drop it since the button shape itself is the affordance.
+function render_footer_cta_label(string $cta, string $style): string
+{
+    return $style === 'button' || $style === 'outline' ? $cta : ('→ ' . $cta);
+}
+
+// Total width the CTA element will occupy at $fontSize — text styles are
+// just the label's text width (unchanged from before styles existed);
+// pill styles add their own padding around the label.
+function render_footer_cta_width(string $label, string $style, int $fontSize, string $fontRole): float
+{
+    $w = render_text_width($label, $fontSize, true, $fontRole);
+    return $style === 'button' || $style === 'outline' ? $w + rs(16) * 2 : $w;
+}
+
+// Vertical-centering proxy for the CTA element — 'text' returns
+// $fontSize, matching the pre-existing centering formula exactly
+// (byte-identical for the default style); pill styles return their
+// actual taller box height so they center correctly against the name.
+function render_footer_cta_height(string $style, int $fontSize): float
+{
+    return $style === 'button' || $style === 'outline' ? render_lh($fontSize) + rs(8) * 2 : $fontSize;
+}
+
+// Draws the CTA at top-left ($x, $y) — callers right-align by passing
+// $x = $rx - (the same width render_footer_cta_width() returned).
+function render_footer_cta_draw($im, float $x, float $y, string $label, string $style, int $fontSize, array $p, string $fontRole): void
+{
+    if ($style === 'button' || $style === 'outline') {
+        $padX = rs(16); $padY = rs(8);
+        $w = render_text_width($label, $fontSize, true, $fontRole) + $padX * 2;
+        $h = render_lh($fontSize) + $padY * 2;
+        if ($style === 'button') {
+            render_rrect($im, $x, $y, $x + $w, $y + $h, $p['cta_bg'], (int) ($h / 2));
+            render_text($im, $x + $padX, $y + $padY, $label, $fontSize, true, $p['cta_text'], $fontRole);
+        } else {
+            render_rect_outline($im, $x, $y, $x + $w, $y + $h, $p['cta_bg'], rs(2));
+            render_text($im, $x + $padX, $y + $padY, $label, $fontSize, true, $p['cta_bg'], $fontRole);
+        }
+        return;
+    }
+    render_text($im, $x, $y, $label, $fontSize, true, $p['cta_bg'], $fontRole);
+}
+
 // clamp(800, y+50, 944) per the design spec — content-length budgets
 // (exactly 3 points, word-count limits, render_fit_headline_size() /
 // render_fit_font_size() auto-shrink) are what keep content from ever
@@ -1437,7 +1493,7 @@ function render_fit_footer_name_size(string $name, float $maxPx, int $preferredS
 // same as before this parameter existed. Name gets first claim on its
 // preferred size; the CTA fits into whatever's left on the right so the
 // two never collide.
-function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE, string $cta = ''): void
+function render_footer_simple($im, float $contentY, array $p, string $name, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE, string $cta = '', string $ctaStyle = 'text'): void
 {
     [$cx, $rx] = render_content_edges();
     // Floor was a fixed rs(800) offset from the top of a 1350-tall square
@@ -1448,7 +1504,12 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
     // taller image. Ceiling was already RENDER_SIZE-relative.
     $fy = max($canvasH - rs(280), min($contentY + rs(50), $canvasH - RENDER_PAD - rs(56)));
     $nameColor = $nameColorRgb ? imagecolorallocate($im, $nameColorRgb[0], $nameColorRgb[1], $nameColorRgb[2]) : null;
-    $ctaDisplay = $cta !== '' ? ('→ ' . $cta) : '';
+    $ctaLabel = $cta !== '' ? render_footer_cta_label($cta, $ctaStyle) : '';
+    // Pill styles (button/outline) add their own padding around the
+    // label — reserve that extra width up front so the fit-size search
+    // below (which only knows about the label's raw text width) doesn't
+    // let the padded box run past the available space.
+    $ctaPad = ($ctaStyle === 'button' || $ctaStyle === 'outline') ? rs(32) : 0;
 
     // 26 (was 22) — the footer signature is the smallest bold text in the
     // whole composition, so GD's anti-aliasing artifacts on small bold
@@ -1462,18 +1523,18 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
         $padX = rs(16); $padY = rs(10);
         $availW = ($rx - $cx) - $padX * 2;
         $ctaSize = 0; $ctaW = 0;
-        if ($ctaDisplay !== '') {
-            $ctaSize = render_fit_footer_name_size($ctaDisplay, $availW * 0.45, rs(22), $fontRole);
-            $ctaW = render_text_width($ctaDisplay, $ctaSize, true, $fontRole);
+        if ($ctaLabel !== '') {
+            $ctaSize = render_fit_footer_name_size($ctaLabel, $availW * 0.45 - $ctaPad, rs(22), $fontRole);
+            $ctaW = render_footer_cta_width($ctaLabel, $ctaStyle, $ctaSize, $fontRole);
             $availW -= $ctaW + rs(24);
         }
         $nameSize = render_fit_footer_name_size($name, $availW, $preferred, $fontRole);
         $w = render_text_width($name, $nameSize, true, $fontRole);
         render_rrect($im, $cx, $fy, $cx + $w + $padX * 2, $fy + $nameSize + $padY * 2, $p['accent'], rs(8));
         render_text($im, $cx + $padX, $fy + $padY, $name, $nameSize, true, $nameColor ?? $p['accent_text'], $fontRole);
-        if ($ctaDisplay !== '') {
-            $ctaY = $fy + $padY + ($nameSize - $ctaSize) / 2;
-            render_text($im, $rx - $ctaW, $ctaY, $ctaDisplay, $ctaSize, true, $p['cta_bg'], $fontRole);
+        if ($ctaLabel !== '') {
+            $ctaY = $fy + $padY + ($nameSize - render_footer_cta_height($ctaStyle, $ctaSize)) / 2;
+            render_footer_cta_draw($im, $rx - $ctaW, $ctaY, $ctaLabel, $ctaStyle, $ctaSize, $p, $fontRole);
         }
         return;
     }
@@ -1482,16 +1543,16 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
     }
     $availW = $rx - $cx;
     $ctaSize = 0; $ctaW = 0;
-    if ($ctaDisplay !== '') {
-        $ctaSize = render_fit_footer_name_size($ctaDisplay, $availW * 0.45, rs(24), $fontRole);
-        $ctaW = render_text_width($ctaDisplay, $ctaSize, true, $fontRole);
+    if ($ctaLabel !== '') {
+        $ctaSize = render_fit_footer_name_size($ctaLabel, $availW * 0.45 - $ctaPad, rs(24), $fontRole);
+        $ctaW = render_footer_cta_width($ctaLabel, $ctaStyle, $ctaSize, $fontRole);
         $availW -= $ctaW + rs(24);
     }
     $nameSize = render_fit_footer_name_size($name, $availW, $preferred, $fontRole);
     render_text($im, $cx, $fy + rs(12), $name, $nameSize, true, $nameColor ?? $p['name'], $fontRole);
-    if ($ctaDisplay !== '') {
-        $ctaY = $fy + rs(12) + ($nameSize - $ctaSize) / 2;
-        render_text($im, $rx - $ctaW, $ctaY, $ctaDisplay, $ctaSize, true, $p['cta_bg'], $fontRole);
+    if ($ctaLabel !== '') {
+        $ctaY = $fy + rs(12) + ($nameSize - render_footer_cta_height($ctaStyle, $ctaSize)) / 2;
+        render_footer_cta_draw($im, $rx - $ctaW, $ctaY, $ctaLabel, $ctaStyle, $ctaSize, $p, $fontRole);
     }
 }
 
@@ -1500,7 +1561,7 @@ function render_footer_simple($im, float $contentY, array $p, string $name, stri
 // there's no photo), same pattern as render_footer_simple()'s $cta.
 // Blank by default, so every existing call site draws byte-for-byte the
 // same as before this parameter existed.
-function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE, string $cta = ''): void
+function render_footer_with_photo($im, float $contentY, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $fontRole = 'body', ?array $nameColorRgb = null, ?int $nameSizeOverride = null, int $canvasH = RENDER_SIZE, string $cta = '', string $ctaStyle = 'text'): void
 {
     [$cx, $rx] = render_content_edges();
     // Same bottom-relative floor conversion as render_footer_simple() —
@@ -1520,7 +1581,8 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
     // size override keeps that same ratio rather than flattening it, so
     // the CTA slide's signature stays proportionally bigger either way.
     $preferred = $nameSizeOverride ? (int) round($nameSizeOverride * (rs(32) / rs(26))) : rs(32);
-    $ctaDisplay = $cta !== '' ? ('→ ' . $cta) : '';
+    $ctaLabel = $cta !== '' ? render_footer_cta_label($cta, $ctaStyle) : '';
+    $ctaPad = ($ctaStyle === 'button' || $ctaStyle === 'outline') ? rs(32) : 0;
 
     $photoSize = rs(108);
     $circle = $photoPath ? render_circular_photo($photoPath, $photoSize) : null;
@@ -1536,9 +1598,9 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
         $nx = $cx + $photoSize + rs(18);
         $availW = $rx - $nx;
         $ctaSize = 0; $ctaW = 0;
-        if ($ctaDisplay !== '') {
-            $ctaSize = render_fit_footer_name_size($ctaDisplay, $availW * 0.4, rs(24), $fontRole);
-            $ctaW = render_text_width($ctaDisplay, $ctaSize, true, $fontRole);
+        if ($ctaLabel !== '') {
+            $ctaSize = render_fit_footer_name_size($ctaLabel, $availW * 0.4 - $ctaPad, rs(24), $fontRole);
+            $ctaW = render_footer_cta_width($ctaLabel, $ctaStyle, $ctaSize, $fontRole);
             $availW -= $ctaW + rs(24);
         }
         $nameSize = render_fit_footer_name_size($name, $availW, $preferred, $fontRole);
@@ -1547,23 +1609,23 @@ function render_footer_with_photo($im, float $contentY, array $p, string $name, 
         $ny = $py + ($photoSize - $blockH) / 2;
         render_text($im, $nx, $ny, $name, $nameSize, true, $nameColor ?? $p['headline'], $fontRole);
         render_text($im, $nx, $ny + $nfh, 'Follow for more insights', rs(22), false, $p['body']);
-        if ($ctaDisplay !== '') {
-            $ctaY = $ny + ($nameSize - $ctaSize) / 2;
-            render_text($im, $rx - $ctaW, $ctaY, $ctaDisplay, $ctaSize, true, $p['cta_bg'], $fontRole);
+        if ($ctaLabel !== '') {
+            $ctaY = $ny + ($nameSize - render_footer_cta_height($ctaStyle, $ctaSize)) / 2;
+            render_footer_cta_draw($im, $rx - $ctaW, $ctaY, $ctaLabel, $ctaStyle, $ctaSize, $p, $fontRole);
         }
     } else {
         $availW = $rx - $cx;
         $ctaSize = 0; $ctaW = 0;
-        if ($ctaDisplay !== '') {
-            $ctaSize = render_fit_footer_name_size($ctaDisplay, $availW * 0.4, rs(24), $fontRole);
-            $ctaW = render_text_width($ctaDisplay, $ctaSize, true, $fontRole);
+        if ($ctaLabel !== '') {
+            $ctaSize = render_fit_footer_name_size($ctaLabel, $availW * 0.4 - $ctaPad, rs(24), $fontRole);
+            $ctaW = render_footer_cta_width($ctaLabel, $ctaStyle, $ctaSize, $fontRole);
             $availW -= $ctaW + rs(24);
         }
         $nameSize = render_fit_footer_name_size($name, $availW, $preferred, $fontRole);
         render_text($im, $cx, $py + rs(10), $name, $nameSize, true, $nameColor ?? $p['headline'], $fontRole);
-        if ($ctaDisplay !== '') {
-            $ctaY = $py + rs(10) + ($nameSize - $ctaSize) / 2;
-            render_text($im, $rx - $ctaW, $ctaY, $ctaDisplay, $ctaSize, true, $p['cta_bg'], $fontRole);
+        if ($ctaLabel !== '') {
+            $ctaY = $py + rs(10) + ($nameSize - render_footer_cta_height($ctaStyle, $ctaSize)) / 2;
+            render_footer_cta_draw($im, $rx - $ctaW, $ctaY, $ctaLabel, $ctaStyle, $ctaSize, $p, $fontRole);
         }
     }
 }
@@ -1813,7 +1875,7 @@ function render_slide_hook($im, array $slide, int $total, array $p, string $name
     render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, 1, $total, $p);
 
-    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12), rs(40));
     if ($seriesLabel !== '') {
         render_text($im, $cx, $topY, strtoupper($seriesLabel), rs(16), false, $p['counter']);
         $topY += render_lh(rs(16)) + rs(8);
@@ -1886,7 +1948,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
-    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12), rs(40));
 
     if ($preset['stat'] ?? false) {
         render_stat_content($im, $slide, $cx, $topY, $cw, $p, $preset, $textPosition, ($canvasH - rs(280)) - rs(50));
@@ -1947,7 +2009,7 @@ function render_slide_content($im, array $slide, int $total, array $p, string $n
     render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH);
 }
 
-function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
+function render_slide_cta($im, array $slide, int $total, array $p, string $name, ?string $photoPath, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top', string $ctaStyle = 'text'): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -1955,7 +2017,7 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     render_draw_bar($im, $p, $preset['barStyle'], $canvasH);
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
-    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12), rs(40));
     // The CTA checkbox's bake-in writes the exact line into this slide's
     // first point — drawn in the photo footer's defined right-hand slot
     // (render_footer_with_photo()'s $cta param), same idea as Single
@@ -1965,13 +2027,13 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
 
     if ($preset['stat'] ?? false) {
         render_stat_content($im, $slide, $cx, $topY, $cw, $p, $preset, $textPosition, ($canvasH - rs(360)) - rs(50));
-        render_footer_with_photo($im, 0, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+        render_footer_with_photo($im, 0, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta, $ctaStyle);
         return;
     }
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rss('headline', 110), rss('headline', 96), rss('headline', 84), rss('headline', 72), rss('headline', 60)], 3, $p, $preset);
-        render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+        render_footer_with_photo($im, rs(650), $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta, $ctaStyle);
         return;
     }
 
@@ -1999,10 +2061,10 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
         : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
 
-    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+    render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta, $ctaStyle);
 }
 
-function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top'): void
+function render_slide_single($im, array $data, array $p, string $name, string $layout = 'classic', string $footerFontRole = 'body', ?string $logoPath = null, ?array $footerNameColorRgb = null, ?int $footerNameSizeOverride = null, int $canvasH = RENDER_SIZE, string $textPosition = 'top', string $ctaStyle = 'text'): void
 {
     $preset = render_resolve_design_preset($layout);
     [$cx, , $cw] = render_content_edges();
@@ -2020,13 +2082,13 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
 
     if ($preset['stat'] ?? false) {
         render_stat_content($im, $slide, $cx, $topY, $cw, $p, $preset, $textPosition, ($canvasH - rs(280)) - rs(50));
-        render_footer_simple($im, 0, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+        render_footer_simple($im, 0, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta, $ctaStyle);
         return;
     }
 
     if (render_is_title_only($slide)) {
         render_draw_headline_centered($im, $slide['headline'] ?? '', $cx, $cw, $topY, rs(650), [rss('headline', 110), rss('headline', 96), rss('headline', 84), rss('headline', 72), rss('headline', 60)], 3, $p, $preset);
-        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+        render_footer_simple($im, rs(650), $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta, $ctaStyle);
         return;
     }
 
@@ -2070,7 +2132,7 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
         $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
     }
 
-    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta);
+    render_footer_simple($im, $y, $p, $name, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta, $ctaStyle);
 }
 
 // ── Main entry point ─────────────────────────────────────────────────
@@ -2129,6 +2191,12 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $size = array_key_exists($data['size'] ?? '', RENDER_SIZES) ? $data['size'] : 'square';
     [$canvasW, $canvasH] = RENDER_SIZES[$size];
     $textPosition = in_array($data['text_position'] ?? '', ['center', 'bottom'], true) ? $data['text_position'] : 'top';
+    // "CTA Style" — how the footer's CTA slot (Carousel's last slide,
+    // Single Image's own footer) renders the CTA line: 'text' (default,
+    // small "→ CTA") or a small button, filled ('button') or outlined
+    // ('outline'). Purely a draw-treatment choice — has no effect on
+    // whether a CTA shows at all, which is still just "is $cta blank?"
+    $ctaStyle = in_array($data['cta_style'] ?? '', ['button', 'outline'], true) ? $data['cta_style'] : 'text';
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
@@ -2141,7 +2209,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $im = imagecreatetruecolor($canvasW, $canvasH);
         render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH);
         $p = render_allocate_palette_colors($im, $paletteColors);
-        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
+        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition, $ctaStyle);
         $filename = 'slide_01.png';
         $path = $outDir . '/' . $filename;
         imagepng($im, $path);
@@ -2159,7 +2227,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         if ($n === 1) {
             render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
         } elseif ($n === $total) {
-            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
+            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition, $ctaStyle);
         } else {
             render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
         }
