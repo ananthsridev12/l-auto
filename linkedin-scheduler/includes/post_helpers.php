@@ -144,6 +144,26 @@ function delete_sender(int $workspaceId, int $id): void
     db()->prepare('DELETE FROM senders WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
 }
 
+// KB expansion Phase 3 (docs/KNOWLEDGE_BASE.md) — Verticals.
+function fetch_verticals(int $workspaceId): array
+{
+    $stmt = db()->prepare('SELECT * FROM verticals WHERE workspace_id = ? ORDER BY name');
+    $stmt->execute([$workspaceId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_vertical(int $workspaceId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM verticals WHERE workspace_id = ? AND id = ?');
+    $stmt->execute([$workspaceId, $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function delete_vertical(int $workspaceId, int $id): void
+{
+    db()->prepare('DELETE FROM verticals WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
+}
+
 // $workspaceId scopes results to a workspace; rows with NULL
 // workspace_id (created before the workspace migration ran) stay
 // visible everywhere so nothing disappears mid-rollout.

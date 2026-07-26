@@ -394,6 +394,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    // KB expansion Phase 3 (docs/KNOWLEDGE_BASE.md) — Verticals.
+    if (($_POST['form'] ?? '') === 'vertical_add') {
+        $name = trim($_POST['vertical_name'] ?? '');
+        if ($name === '') {
+            flash('error', 'Enter a vertical name.');
+            redirect('pages/settings.php');
+        }
+        $priority = in_array($_POST['vertical_priority'] ?? '', ['core', 'growth', 'emerging'], true) ? $_POST['vertical_priority'] : 'core';
+        db()->prepare(
+            'INSERT INTO verticals (workspace_id, name, focus, industries, priority, differentiators, head_name, positioning)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $workspaceId, $name,
+            trim($_POST['vertical_focus'] ?? '') ?: null,
+            trim($_POST['vertical_industries'] ?? '') ?: null,
+            $priority,
+            trim($_POST['vertical_differentiators'] ?? '') ?: null,
+            trim($_POST['vertical_head_name'] ?? '') ?: null,
+            trim($_POST['vertical_positioning'] ?? '') ?: null,
+        ]);
+        flash('success', "Vertical \"{$name}\" saved.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'vertical_delete') {
+        delete_vertical($workspaceId, (int) ($_POST['vertical_id'] ?? 0));
+        flash('success', 'Vertical removed.');
+        redirect('pages/settings.php');
+    }
+
     if (($_POST['form'] ?? '') === 'pillar_add') {
         $name = trim($_POST['pillar_name'] ?? '');
         $desc = trim($_POST['pillar_description'] ?? '');
@@ -835,6 +865,7 @@ $redditCreds = get_reddit_credentials($userId);
 $workspaces = fetch_workspaces($userId);
 $personas = fetch_personas($userId, $workspaceId);
 $senders = fetch_senders($workspaceId);
+$verticals = fetch_verticals($workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
 $defaultLayoutSingle = $workspace['default_layout_single'] ?? null;
 $defaultLayoutCarousel = $workspace['default_layout_carousel'] ?? null;
@@ -1637,6 +1668,62 @@ require __DIR__ . '/../includes/layout_top.php';
       </label>
     </details>
     <button type="submit" class="btn-secondary">Add Sender</button>
+  </form>
+</section>
+
+<section class="card" data-tab="content">
+  <h2>Verticals — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Business units, practice areas, or focus areas <?= $workspace['type'] === 'personal' ? "you're known for" : 'this company operates in' ?>. Services (below) and ideal customer profiles can optionally attach to one, so content stays on-topic for that area's audience.</p>
+  <?php if ($verticals): ?>
+    <?php foreach ($verticals as $v): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($v['name']) ?> <span class="badge"><?= h($v['priority']) ?></span></span>
+          <span class="muted"><?= h(mb_strimwidth($v['focus'] ?? '', 0, 100, '…')) ?></span>
+        </div>
+        <form method="post" onsubmit="return confirm('Remove this vertical?');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="vertical_delete">
+          <input type="hidden" name="vertical_id" value="<?= (int) $v['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No verticals added yet.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="vertical_add">
+    <label>Name
+      <input type="text" name="vertical_name" placeholder="e.g. ERP Practice" required>
+    </label>
+    <label>Focus <span class="muted">(what this area specialises in)</span>
+      <textarea name="vertical_focus" rows="2"></textarea>
+    </label>
+    <label>Priority
+      <select name="vertical_priority">
+        <option value="core" selected>Core</option>
+        <option value="growth">Growth</option>
+        <option value="emerging">Emerging</option>
+      </select>
+    </label>
+    <details class="kb-details">
+      <summary>More details <span class="muted">(optional)</span></summary>
+      <label>Industries <span class="muted">(comma-separated)</span>
+        <input type="text" name="vertical_industries" placeholder="e.g. Manufacturing, Retail">
+      </label>
+      <label>Differentiators
+        <textarea name="vertical_differentiators" rows="2"></textarea>
+      </label>
+      <label>Lead / head of this area
+        <input type="text" name="vertical_head_name">
+      </label>
+      <label>Positioning statement
+        <textarea name="vertical_positioning" rows="2" placeholder="e.g. We implement ERP faster with fewer change requests"></textarea>
+      </label>
+    </details>
+    <button type="submit" class="btn-secondary">Add Vertical</button>
   </form>
 </section>
 

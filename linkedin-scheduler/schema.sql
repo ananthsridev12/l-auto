@@ -629,3 +629,22 @@ ALTER TABLE personas ADD COLUMN communication_style TEXT NULL;
 ALTER TABLE personas ADD COLUMN preferred_content VARCHAR(500) NULL;
 ALTER TABLE personas ADD COLUMN watering_holes VARCHAR(500) NULL;
 ALTER TABLE personas ADD COLUMN content_hook TEXT NULL;
+
+-- ── Knowledge Base expansion, Phase 3 — Verticals ──
+-- See docs/KNOWLEDGE_BASE.md. A vertical is a business unit / practice
+-- area / focus area; Services (Phase 4), ICPs (Phase 5) and Proof
+-- Points (Phase 7) can optionally hang off one. Scoped by workspace_id
+-- alone, same convention as senders/knowledge_documents.
+CREATE TABLE IF NOT EXISTS `verticals` (
+  `id`              INT AUTO_INCREMENT PRIMARY KEY,
+  `workspace_id`    INT NOT NULL,
+  `name`            VARCHAR(255) NOT NULL,
+  `focus`           TEXT NULL,
+  `industries`      TEXT NULL,
+  `priority`        ENUM('core','growth','emerging') NOT NULL DEFAULT 'core',
+  `differentiators` TEXT NULL,
+  `head_name`       VARCHAR(255) NULL,
+  `positioning`     TEXT NULL,
+  `created_at`      DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
