@@ -20,6 +20,7 @@ $aiConfig = resolve_ai_config($userId);
 $personas = fetch_personas($userId, $workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
 $brandPalettes = fetch_brand_palettes($userId);
+$services = fetch_services($workspaceId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
@@ -318,6 +319,17 @@ require __DIR__ . '/../includes/layout_top.php';
           </select>
         </label>
         <input type="text" id="aiType" placeholder="e.g. Case Study, Checklist" style="width:100%; margin-top:6px; display:none;">
+
+        <?php if ($services): ?>
+        <label>Service being pitched <span class="muted">(optional)</span>
+          <select id="aiServiceSelect">
+            <option value="">— None —</option>
+            <?php foreach ($services as $svc): ?>
+              <option value="<?= (int) $svc['id'] ?>"><?= h($svc['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <?php endif; ?>
 
         <button type="button" id="aiGenerateBtn" class="btn-secondary" style="margin-top:8px;">Generate</button>
         <p id="aiGenerateStatus" class="muted"></p>

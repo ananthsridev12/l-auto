@@ -37,6 +37,7 @@ if (!in_array($format, ['Text Post', 'Single Image', 'Carousel'], true)) {
 $personaId = (int) ($_POST['persona_id'] ?? 0);
 $pillarId  = (int) ($_POST['pillar_id'] ?? 0);
 $ctaId     = (int) ($_POST['cta_id'] ?? 0);
+$serviceId = (int) ($_POST['service_id'] ?? 0);
 
 $persona = $personaId ? fetch_persona($userId, $personaId) : null;
 $pillar  = $pillarId ? fetch_content_pillar($userId, $pillarId) : null;
@@ -64,9 +65,13 @@ $brief = $workspace ? null : resolve_brief_for_pillar($userId, $pillar);
 $relatedMemory = $workspace
     ? content_memory_related_for_topic((int) $workspace['id'], $row['Topic / Title'] ?: $row['Post Caption'], $aiConfig)
     : [];
+// KB expansion Phase 9 (docs/KNOWLEDGE_BASE.md) — Service is
+// workspace-scoped (not user-scoped like persona/pillar/cta above), so
+// it's resolved via fetch_service($workspace['id'], ...).
+$service = ($serviceId && $workspace) ? fetch_service((int) $workspace['id'], $serviceId) : null;
 
 try {
-    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace, $relatedMemory);
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace, $relatedMemory, $service);
 } catch (Throwable $e) {
     json_response(['success' => false, 'error' => $e->getMessage()], 502);
 }

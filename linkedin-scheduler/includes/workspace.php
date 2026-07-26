@@ -159,6 +159,65 @@ function sender_context_text(?array $sender): string
     return implode("\n", $lines);
 }
 
+// KB expansion Phase 9 (docs/KNOWLEDGE_BASE.md) — the service being
+// pitched, when the caller (New Post's AI panel, Calendar Batch) has
+// one selected/matched. Consumed by build_context_block() in
+// includes/ai_generate.php, positioned right after Company/Tone per
+// the design doc's prompt order.
+function service_context_text(?array $service): string
+{
+    if (!$service) {
+        return '';
+    }
+    $name = trim((string) ($service['name'] ?? ''));
+    if ($name === '') {
+        return '';
+    }
+    $lines = ["Service being pitched: {$name}"];
+    foreach ([
+        'One-liner'          => $service['one_liner'] ?? null,
+        'Problem it solves'  => $service['problem_statement'] ?? null,
+        'Outcomes'           => $service['outcomes'] ?? null,
+        'Differentiators'    => $service['differentiators'] ?? null,
+        'Description'        => $service['description'] ?? null,
+    ] as $key => $value) {
+        $value = trim((string) $value);
+        if ($value !== '') {
+            $lines[] = "{$key}: {$value}";
+        }
+    }
+    return implode("\n", $lines);
+}
+
+// KB expansion Phase 9 — a matching Proof Point (Block 8), auto-
+// attached (see fetch_matching_proof_point() in post_helpers.php) when
+// a Service is present, rather than needing its own selector.
+function proof_point_context_text(?array $proof): string
+{
+    if (!$proof) {
+        return '';
+    }
+    $client = trim((string) ($proof['client_name'] ?? ''));
+    if ($client === '') {
+        return '';
+    }
+    $lines = ["Proof point — client: {$client}"];
+    foreach ([
+        'Industry'    => $proof['client_industry'] ?? null,
+        'Challenge'   => $proof['challenge'] ?? null,
+        'Solution'    => $proof['solution'] ?? null,
+        'Outcomes'    => $proof['outcomes'] ?? null,
+        'Metrics'     => $proof['metrics'] ?? null,
+        'Quote'       => $proof['quote'] ?? null,
+    ] as $key => $value) {
+        $value = trim((string) $value);
+        if ($value !== '') {
+            $lines[] = "{$key}: {$value}";
+        }
+    }
+    return implode("\n", $lines);
+}
+
 // Reference-document knowledge for the prompt (Phase B fills
 // knowledge_documents; safe no-op while the table is empty). Uses each
 // doc's compact AI summary when present, else raw extracted text,

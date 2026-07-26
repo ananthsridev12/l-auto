@@ -19,8 +19,21 @@ additive — existing behavior is never changed, only extended.
 | 6 | Link Personas ↔ Verticals/Services | **Done** | `migrations/0007_kb_personas_vertical_service_links.sql` |
 | 7 | Proof Points (new table) | **Done** | `migrations/0008_kb_proof_points.sql` |
 | 8 | Documents polish (optional) | Not started | — |
-| 9 | Wire Service/ICP/Proof into AI generation | Not started | — |
+| 9 | Wire Service/ICP/Proof into AI generation | **Done** | — (code only, no schema change) |
 | 10 | Signal matching + KB completeness (optional stretch) | Not started | — |
+
+Phase 9 detail: `build_context_block()`/`build_generation_prompt()`/
+`generate_creative_via_ai()` gained a trailing `?array $service = null`
+param (backward-compatible — every existing call site still works
+unchanged). New Post's AI panel gets a "Service being pitched" picker
+(sends `service_id`, resolved via `fetch_service()`); Calendar Batch has
+no per-post picker, so it matches a service by keyword overlap between
+the pillar/topic and `services.signal_keywords`
+(`match_service_by_keywords()`). Either way, a matching public Proof
+Point is auto-attached (`fetch_matching_proof_point()`) rather than
+needing its own selector — ICP is intentionally not wired into the
+prompt directly in this pass. Content Studio's CSV path and News/blog
+generation are unchanged (no service context there yet).
 
 ## Scoping model
 

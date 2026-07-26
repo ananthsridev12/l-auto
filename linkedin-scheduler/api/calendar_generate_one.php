@@ -68,9 +68,13 @@ $workspace = !empty($post['workspace_id']) ? fetch_workspace($userId, (int) $pos
 $wsId = $workspace ? (int) $workspace['id'] : null;
 $brief = $workspace ? null : resolve_brief_for_pillar($userId, $pillar);
 $relatedMemory = $wsId ? content_memory_related_for_topic($wsId, $row['Topic / Title'], $aiConfig) : [];
+// KB expansion Phase 9 (docs/KNOWLEDGE_BASE.md) — no per-post Service
+// picker here (this runs unattended per batch slot), so a service is
+// matched by keyword overlap with the pillar/topic name instead.
+$service = $wsId ? match_service_by_keywords($wsId, $row['Topic / Title']) : null;
 
 try {
-    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace, $relatedMemory);
+    $creative = generate_creative_via_ai($row, $aiConfig, $brief, $persona, $pillar, $workspace, $relatedMemory, $service);
     // Same auto-assignment Content Studio's CSV upload uses — see
     // includes/post_helpers.php resolve_default_layout().
     $creative['layout'] = resolve_default_layout($userId, $creative['format'], $pillar['name'] ?? null, $wsId);

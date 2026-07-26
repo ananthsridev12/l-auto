@@ -40,7 +40,7 @@ function gemini_configured(?string $apiKey): bool
 // posts most similar to the new topic — empty when Memory & Context
 // isn't active (Claude-only accounts have no embeddings endpoint) or
 // there's simply no history yet.
-function build_context_block(?string $brandBrief, ?array $persona, ?array $pillar, ?array $workspace = null, array $relatedMemory = []): string
+function build_context_block(?string $brandBrief, ?array $persona, ?array $pillar, ?array $workspace = null, array $relatedMemory = [], ?array $service = null): string
 {
     $parts = [];
     if ($workspace) {
@@ -62,6 +62,14 @@ function build_context_block(?string $brandBrief, ?array $persona, ?array $pilla
         }
     } elseif ($brandBrief) {
         $parts[] = "Brand context: {$brandBrief}";
+    }
+    // KB expansion Phase 9 (docs/KNOWLEDGE_BASE.md) — the service being
+    // pitched (Block 3), positioned right after Company/Tone per the
+    // design doc's prompt order. Omitted entirely when no service is
+    // selected, same graceful-degradation pattern as everything else here.
+    $serviceText = service_context_text($service);
+    if ($serviceText !== '') {
+        $parts[] = $serviceText;
     }
     if ($persona && !empty($persona['description'])) {
         $parts[] = "Target persona \"{$persona['name']}\": {$persona['description']}";
@@ -92,6 +100,15 @@ function build_context_block(?string $brandBrief, ?array $persona, ?array $pilla
     }
     if ($pillar && !empty($pillar['description'])) {
         $parts[] = "Content pillar \"{$pillar['name']}\": {$pillar['description']}";
+    }
+    // KB expansion Phase 9 — a matching Proof Point (Block 8), auto-
+    // attached rather than needing its own selector.
+    if ($service && $workspace) {
+        $proof = fetch_matching_proof_point((int) $workspace['id'], (int) $service['id'], $service['vertical_id'] ?? null);
+        $proofText = proof_point_context_text($proof);
+        if ($proofText !== '') {
+            $parts[] = $proofText;
+        }
     }
     if ($relatedMemory) {
         $lines = array_map(
@@ -178,9 +195,9 @@ CAPTION RULES:
 RULES;
 }
 
-function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null, array $relatedMemory = []): string
+function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null, array $relatedMemory = [], ?array $service = null): string
 {
-    $context = build_context_block($brandBrief, $persona, $pillar, $workspace, $relatedMemory);
+    $context = build_context_block($brandBrief, $persona, $pillar, $workspace, $relatedMemory, $service);
 
     // News-reaction posts (includes/news_fetch.php news_generate_draft())
     // pass the headline/source/date in the row's "News" field. Only the
@@ -458,7 +475,7 @@ function ai_call_openai(string $prompt, string $apiKey, string $model): string
 // $persona/$pillar are full records (['name','description']) from
 // includes/post_helpers.php fetch_persona()/fetch_content_pillar(), not
 // just IDs — pass null for either when the caller has nothing selected.
-function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null, array $relatedMemory = []): array
+function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null, array $relatedMemory = [], ?array $service = null): array
 {
     $provider = $aiConfig['provider'] ?? 'gemini';
     $label = AI_PROVIDER_LABELS[$provider] ?? ucfirst($provider);
@@ -469,7 +486,7 @@ function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBri
 
     $rawFormat = trim($row['Final_Format'] ?? '');
     $format = in_array($rawFormat, ['Single Image', 'Text Post'], true) ? $rawFormat : 'Carousel';
-    $prompt = build_generation_prompt($row, $format, $brandBrief, $persona, $pillar, $workspace, $relatedMemory);
+    $prompt = build_generation_prompt($row, $format, $brandBrief, $persona, $pillar, $workspace, $relatedMemory, $service);
 
     $text = match ($provider) {
         'claude' => ai_call_claude($prompt, $aiConfig['api_key'], $aiConfig['model']),

@@ -184,6 +184,35 @@ function delete_service(int $workspaceId, int $id): void
     db()->prepare('DELETE FROM services WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
 }
 
+// KB expansion Phase 9 (docs/KNOWLEDGE_BASE.md) — Calendar Batch has no
+// per-post Service picker (it auto-generates unattended), so it matches
+// a service by simple keyword overlap between the topic/pillar name and
+// services.signal_keywords instead. A much simpler first cut than full
+// scoring (see Phase 10 in docs/KNOWLEDGE_BASE.md); returns null (no
+// service context added) when nothing overlaps.
+function match_service_by_keywords(int $workspaceId, string $topic): ?array
+{
+    $topicWords = preg_split('/[^a-z0-9]+/', strtolower(trim($topic)), -1, PREG_SPLIT_NO_EMPTY);
+    if (!$topicWords) {
+        return null;
+    }
+    $best = null;
+    $bestScore = 0;
+    foreach (fetch_services($workspaceId) as $service) {
+        $keywords = strtolower(trim((string) ($service['signal_keywords'] ?? '')));
+        if ($keywords === '') {
+            continue;
+        }
+        $serviceWords = preg_split('/[^a-z0-9]+/', $keywords, -1, PREG_SPLIT_NO_EMPTY);
+        $score = count(array_intersect($topicWords, $serviceWords));
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $best = $service;
+        }
+    }
+    return $best;
+}
+
 // KB expansion Phase 5 (docs/KNOWLEDGE_BASE.md) — ICPs.
 function fetch_icps(int $workspaceId): array
 {
@@ -222,6 +251,23 @@ function fetch_proof_point(int $workspaceId, int $id): ?array
 function delete_proof_point(int $workspaceId, int $id): void
 {
     db()->prepare('DELETE FROM proof_points WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
+}
+
+// KB expansion Phase 9 (docs/KNOWLEDGE_BASE.md) — auto-attach one
+// public proof point for a selected Service, instead of a separate
+// picker. Falls back to the service's vertical when no service-specific
+// proof point exists.
+function fetch_matching_proof_point(int $workspaceId, int $serviceId, ?int $verticalId = null): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM proof_points WHERE workspace_id = ? AND service_id = ? AND is_public = 1 ORDER BY created_at DESC LIMIT 1');
+    $stmt->execute([$workspaceId, $serviceId]);
+    $proof = $stmt->fetch();
+    if ($proof || !$verticalId) {
+        return $proof ?: null;
+    }
+    $stmt = db()->prepare('SELECT * FROM proof_points WHERE workspace_id = ? AND vertical_id = ? AND is_public = 1 ORDER BY created_at DESC LIMIT 1');
+    $stmt->execute([$workspaceId, $verticalId]);
+    return $stmt->fetch() ?: null;
 }
 
 // $workspaceId scopes results to a workspace; rows with NULL

@@ -190,6 +190,8 @@
       fd.append('length', lengthSelect ? lengthSelect.value : 'medium');
       appendKbField(fd, 'aiPersonaSelect', 'aiPersona', 'persona_id', 'persona');
       appendKbField(fd, 'aiPillarSelect', 'aiType', 'pillar_id', 'type');
+      var serviceSelect = document.getElementById('aiServiceSelect');
+      fd.append('service_id', serviceSelect ? serviceSelect.value : '');
       fd.append('cta_id', '');
       fd.append('cta', ctaEnabled && ctaEnabled.checked && ctaText ? ctaText.value.trim() : '');
       fd.append('caption', caption);
