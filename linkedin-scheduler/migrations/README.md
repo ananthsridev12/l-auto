@@ -40,3 +40,4 @@ mysql -u <user> -p <database> < migrations/0001_kb_workspace_identity_tone.sql
 | `0005_kb_services.sql` | 4 | New `services` table (offerings + signal-matching fields) |
 | `0006_kb_icps.sql` | 5 | New `icps` table (company-level ideal customer profiles) |
 | `0007_kb_personas_vertical_service_links.sql` | 6 | Optional `vertical_id`/`service_id` FKs on `personas` |
+| `0008_kb_proof_points.sql` | 7 | New `proof_points` table (client outcomes / case studies) |

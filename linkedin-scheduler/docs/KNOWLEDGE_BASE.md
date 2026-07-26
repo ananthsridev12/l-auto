@@ -17,7 +17,7 @@ additive — existing behavior is never changed, only extended.
 | 4 | Services (new table) | **Done** | `migrations/0005_kb_services.sql` |
 | 5 | ICPs (new table) | **Done** | `migrations/0006_kb_icps.sql` |
 | 6 | Link Personas ↔ Verticals/Services | **Done** | `migrations/0007_kb_personas_vertical_service_links.sql` |
-| 7 | Proof Points (new table) | Not started | — |
+| 7 | Proof Points (new table) | **Done** | `migrations/0008_kb_proof_points.sql` |
 | 8 | Documents polish (optional) | Not started | — |
 | 9 | Wire Service/ICP/Proof into AI generation | Not started | — |
 | 10 | Signal matching + KB completeness (optional stretch) | Not started | — |

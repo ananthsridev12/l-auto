@@ -204,6 +204,26 @@ function delete_icp(int $workspaceId, int $id): void
     db()->prepare('DELETE FROM icps WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
 }
 
+// KB expansion Phase 7 (docs/KNOWLEDGE_BASE.md) — Proof Points.
+function fetch_proof_points(int $workspaceId): array
+{
+    $stmt = db()->prepare('SELECT * FROM proof_points WHERE workspace_id = ? ORDER BY client_name');
+    $stmt->execute([$workspaceId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_proof_point(int $workspaceId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM proof_points WHERE workspace_id = ? AND id = ?');
+    $stmt->execute([$workspaceId, $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function delete_proof_point(int $workspaceId, int $id): void
+{
+    db()->prepare('DELETE FROM proof_points WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
+}
+
 // $workspaceId scopes results to a workspace; rows with NULL
 // workspace_id (created before the workspace migration ran) stay
 // visible everywhere so nothing disappears mid-rollout.

@@ -521,6 +521,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    // KB expansion Phase 7 (docs/KNOWLEDGE_BASE.md) — Proof Points.
+    if (($_POST['form'] ?? '') === 'proof_point_add') {
+        $clientName = trim($_POST['proof_client_name'] ?? '');
+        if ($clientName === '') {
+            flash('error', 'Enter a client name.');
+            redirect('pages/settings.php');
+        }
+        $verticalId = (int) ($_POST['proof_vertical_id'] ?? 0) ?: null;
+        if ($verticalId !== null && !fetch_vertical($workspaceId, $verticalId)) {
+            $verticalId = null;
+        }
+        $serviceId = (int) ($_POST['proof_service_id'] ?? 0) ?: null;
+        if ($serviceId !== null && !fetch_service($workspaceId, $serviceId)) {
+            $serviceId = null;
+        }
+        db()->prepare(
+            'INSERT INTO proof_points (workspace_id, vertical_id, service_id, client_name, client_industry,
+             client_size, challenge, solution, outcomes, metrics, quote, quote_attribution, is_public)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $workspaceId, $verticalId, $serviceId, $clientName,
+            trim($_POST['proof_client_industry'] ?? '') ?: null,
+            trim($_POST['proof_client_size'] ?? '') ?: null,
+            trim($_POST['proof_challenge'] ?? '') ?: null,
+            trim($_POST['proof_solution'] ?? '') ?: null,
+            trim($_POST['proof_outcomes'] ?? '') ?: null,
+            trim($_POST['proof_metrics'] ?? '') ?: null,
+            trim($_POST['proof_quote'] ?? '') ?: null,
+            trim($_POST['proof_quote_attribution'] ?? '') ?: null,
+            isset($_POST['proof_is_public']) ? 1 : 0,
+        ]);
+        flash('success', "Proof point for \"{$clientName}\" saved.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'proof_point_delete') {
+        delete_proof_point($workspaceId, (int) ($_POST['proof_point_id'] ?? 0));
+        flash('success', 'Proof point removed.');
+        redirect('pages/settings.php');
+    }
+
     if (($_POST['form'] ?? '') === 'pillar_add') {
         $name = trim($_POST['pillar_name'] ?? '');
         $desc = trim($_POST['pillar_description'] ?? '');
@@ -965,6 +1006,7 @@ $senders = fetch_senders($workspaceId);
 $verticals = fetch_verticals($workspaceId);
 $services = fetch_services($workspaceId);
 $icps = fetch_icps($workspaceId);
+$proofPoints = fetch_proof_points($workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
 $defaultLayoutSingle = $workspace['default_layout_single'] ?? null;
 $defaultLayoutCarousel = $workspace['default_layout_carousel'] ?? null;
@@ -1995,6 +2037,87 @@ require __DIR__ . '/../includes/layout_top.php';
       </label>
     </details>
     <button type="submit" class="btn-secondary">Add ICP</button>
+  </form>
+</section>
+
+<section class="card" data-tab="content">
+  <h2>Proof Points — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Real <?= $workspace['type'] === 'personal' ? 'wins/results' : 'client outcomes' ?> the AI can cite as social proof.</p>
+  <?php if ($proofPoints): ?>
+    <?php foreach ($proofPoints as $pp): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($pp['client_name']) ?></span>
+          <span class="muted"><?= h(mb_strimwidth($pp['metrics'] ?? $pp['outcomes'] ?? '', 0, 100, '…')) ?></span>
+        </div>
+        <form method="post" onsubmit="return confirm('Remove this proof point?');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="proof_point_delete">
+          <input type="hidden" name="proof_point_id" value="<?= (int) $pp['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No proof points added yet.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="proof_point_add">
+    <label>Client name
+      <input type="text" name="proof_client_name" placeholder="e.g. Acme Manufacturing" required>
+    </label>
+    <label>Metrics <span class="muted">(the headline number)</span>
+      <input type="text" name="proof_metrics" placeholder="e.g. Reduced close time by 40%, saved $2M">
+    </label>
+    <?php if ($verticals || $services): ?>
+      <?php if ($verticals): ?>
+        <label>Vertical <span class="muted">(optional)</span>
+          <select name="proof_vertical_id">
+            <option value="">— None —</option>
+            <?php foreach ($verticals as $v): ?>
+              <option value="<?= (int) $v['id'] ?>"><?= h($v['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      <?php endif; ?>
+      <?php if ($services): ?>
+        <label>Service <span class="muted">(optional)</span>
+          <select name="proof_service_id">
+            <option value="">— None —</option>
+            <?php foreach ($services as $sv): ?>
+              <option value="<?= (int) $sv['id'] ?>"><?= h($sv['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      <?php endif; ?>
+    <?php endif; ?>
+    <details class="kb-details">
+      <summary>More details <span class="muted">(optional)</span></summary>
+      <label>Client industry
+        <input type="text" name="proof_client_industry">
+      </label>
+      <label>Client size
+        <input type="text" name="proof_client_size" placeholder="e.g. 500-5000 employees">
+      </label>
+      <label>Challenge
+        <textarea name="proof_challenge" rows="2"></textarea>
+      </label>
+      <label>Solution
+        <textarea name="proof_solution" rows="2"></textarea>
+      </label>
+      <label>Outcomes
+        <textarea name="proof_outcomes" rows="2"></textarea>
+      </label>
+      <label>Quote
+        <textarea name="proof_quote" rows="2"></textarea>
+      </label>
+      <label>Quote attribution
+        <input type="text" name="proof_quote_attribution" placeholder="e.g. Jane Doe, VP Operations">
+      </label>
+      <label class="checkbox-row"><input type="checkbox" name="proof_is_public" checked> OK to share publicly</label>
+    </details>
+    <button type="submit" class="btn-secondary">Add Proof Point</button>
   </form>
 </section>
 
