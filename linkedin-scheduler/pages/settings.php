@@ -424,6 +424,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    // KB expansion Phase 4 (docs/KNOWLEDGE_BASE.md) — Services.
+    if (($_POST['form'] ?? '') === 'service_add') {
+        $name = trim($_POST['service_name'] ?? '');
+        if ($name === '') {
+            flash('error', 'Enter a service name.');
+            redirect('pages/settings.php');
+        }
+        $verticalId = (int) ($_POST['service_vertical_id'] ?? 0) ?: null;
+        if ($verticalId !== null && !fetch_vertical($workspaceId, $verticalId)) {
+            $verticalId = null;
+        }
+        db()->prepare(
+            'INSERT INTO services (workspace_id, vertical_id, name, one_liner, industries, icp_size, buyer_titles,
+             engagement_model, signal_keywords, signal_types, tech_triggers, competing_tools, description,
+             problem_statement, outcomes, differentiators, proof_points)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $workspaceId, $verticalId, $name,
+            trim($_POST['service_one_liner'] ?? '') ?: null,
+            trim($_POST['service_industries'] ?? '') ?: null,
+            trim($_POST['service_icp_size'] ?? '') ?: null,
+            trim($_POST['service_buyer_titles'] ?? '') ?: null,
+            trim($_POST['service_engagement_model'] ?? '') ?: null,
+            trim($_POST['service_signal_keywords'] ?? '') ?: null,
+            trim($_POST['service_signal_types'] ?? '') ?: null,
+            trim($_POST['service_tech_triggers'] ?? '') ?: null,
+            trim($_POST['service_competing_tools'] ?? '') ?: null,
+            trim($_POST['service_description'] ?? '') ?: null,
+            trim($_POST['service_problem_statement'] ?? '') ?: null,
+            trim($_POST['service_outcomes'] ?? '') ?: null,
+            trim($_POST['service_differentiators'] ?? '') ?: null,
+            trim($_POST['service_proof_points'] ?? '') ?: null,
+        ]);
+        flash('success', "Service \"{$name}\" saved.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'service_delete') {
+        delete_service($workspaceId, (int) ($_POST['service_id'] ?? 0));
+        flash('success', 'Service removed.');
+        redirect('pages/settings.php');
+    }
+
     if (($_POST['form'] ?? '') === 'pillar_add') {
         $name = trim($_POST['pillar_name'] ?? '');
         $desc = trim($_POST['pillar_description'] ?? '');
@@ -866,6 +909,7 @@ $workspaces = fetch_workspaces($userId);
 $personas = fetch_personas($userId, $workspaceId);
 $senders = fetch_senders($workspaceId);
 $verticals = fetch_verticals($workspaceId);
+$services = fetch_services($workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
 $defaultLayoutSingle = $workspace['default_layout_single'] ?? null;
 $defaultLayoutCarousel = $workspace['default_layout_carousel'] ?? null;
@@ -1724,6 +1768,92 @@ require __DIR__ . '/../includes/layout_top.php';
       </label>
     </details>
     <button type="submit" class="btn-secondary">Add Vertical</button>
+  </form>
+</section>
+
+<section class="card" data-tab="content">
+  <h2>Services — <?= h($workspace['name']) ?></h2>
+  <p class="muted"><?= $workspace['type'] === 'personal' ? 'What you offer' : 'What this company sells' ?>, with enough detail that the AI can pitch the right one to the right audience instead of writing generically.</p>
+  <?php if ($services): ?>
+    <?php foreach ($services as $sv): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($sv['name']) ?></span>
+          <span class="muted"><?= h(mb_strimwidth($sv['one_liner'] ?? '', 0, 100, '…')) ?></span>
+        </div>
+        <form method="post" onsubmit="return confirm('Remove this service?');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="service_delete">
+          <input type="hidden" name="service_id" value="<?= (int) $sv['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No services added yet.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="service_add">
+    <label>Name
+      <input type="text" name="service_name" placeholder="e.g. SAP S/4 Migration" required>
+    </label>
+    <label>One-liner pitch
+      <input type="text" name="service_one_liner" placeholder="e.g. We move companies from SAP ECC to S/4HANA in 9 months">
+    </label>
+    <?php if ($verticals): ?>
+      <label>Vertical <span class="muted">(optional)</span>
+        <select name="service_vertical_id">
+          <option value="">— None —</option>
+          <?php foreach ($verticals as $v): ?>
+            <option value="<?= (int) $v['id'] ?>"><?= h($v['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+    <?php endif; ?>
+    <details class="kb-details">
+      <summary>More details <span class="muted">(optional — sharpens who this gets pitched to)</span></summary>
+      <label>Industries <span class="muted">(comma-separated)</span>
+        <input type="text" name="service_industries" placeholder="e.g. Manufacturing, Logistics">
+      </label>
+      <label>ICP size
+        <input type="text" name="service_icp_size" placeholder="e.g. 500-5000 employees">
+      </label>
+      <label>Buyer titles <span class="muted">(comma-separated)</span>
+        <input type="text" name="service_buyer_titles" placeholder="e.g. CIO, VP IT, SAP Program Manager">
+      </label>
+      <label>Engagement model
+        <input type="text" name="service_engagement_model" placeholder="e.g. Fixed fee, Retainer, T&amp;M">
+      </label>
+      <label>Signal keywords <span class="muted">(comma-separated — used to detect a relevant trending topic)</span>
+        <input type="text" name="service_signal_keywords" placeholder="e.g. sap ecc, legacy erp, s4hana, ecc upgrade">
+      </label>
+      <label>Signal types <span class="muted">(comma-separated)</span>
+        <input type="text" name="service_signal_types" placeholder="e.g. ERP, Digital Transformation">
+      </label>
+      <label>Tech triggers <span class="muted">(comma-separated)</span>
+        <input type="text" name="service_tech_triggers" placeholder="e.g. SAP ECC, R3, ECC 6.0">
+      </label>
+      <label>Competing tools
+        <textarea name="service_competing_tools" rows="2"></textarea>
+      </label>
+      <label>Description
+        <textarea name="service_description" rows="2"></textarea>
+      </label>
+      <label>Problem statement
+        <textarea name="service_problem_statement" rows="2" placeholder="e.g. Companies on SAP ECC face end of maintenance in 2027 with no clear path forward"></textarea>
+      </label>
+      <label>Outcomes
+        <textarea name="service_outcomes" rows="2" placeholder="e.g. Live on S/4HANA in 9 months. 30% lower TCO."></textarea>
+      </label>
+      <label>Differentiators
+        <textarea name="service_differentiators" rows="2"></textarea>
+      </label>
+      <label>Proof points <span class="muted">(quick summary — full case studies live in Proof Points below, once added)</span>
+        <textarea name="service_proof_points" rows="2"></textarea>
+      </label>
+    </details>
+    <button type="submit" class="btn-secondary">Add Service</button>
   </form>
 </section>
 

@@ -37,3 +37,4 @@ mysql -u <user> -p <database> < migrations/0001_kb_workspace_identity_tone.sql
 | `0002_kb_senders.sql` | 1 | New `senders` table, wired into AI prompt context |
 | `0003_kb_personas_enrichment.sql` | 2 | Richer Persona fields (title, seniority, pain points, decision role, etc.), wired into AI prompt |
 | `0004_kb_verticals.sql` | 3 | New `verticals` table (business units / focus areas) |
+| `0005_kb_services.sql` | 4 | New `services` table (offerings + signal-matching fields) |

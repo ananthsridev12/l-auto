@@ -14,7 +14,7 @@ additive — existing behavior is never changed, only extended.
 | 1 | Senders (new table, wired into AI prompt) | **Done** | `migrations/0002_kb_senders.sql` |
 | 2 | Personas (enrich existing table) | **Done** | `migrations/0003_kb_personas_enrichment.sql` |
 | 3 | Verticals (new table) | **Done** | `migrations/0004_kb_verticals.sql` |
-| 4 | Services (new table) | Not started | — |
+| 4 | Services (new table) | **Done** | `migrations/0005_kb_services.sql` |
 | 5 | ICPs (new table) | Not started | — |
 | 6 | Link Personas ↔ Verticals/Services | Not started | — |
 | 7 | Proof Points (new table) | Not started | — |
