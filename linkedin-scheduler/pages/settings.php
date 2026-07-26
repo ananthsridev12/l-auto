@@ -309,17 +309,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // enrichment fields alongside the original name+description.
         $seniority = in_array($_POST['persona_seniority'] ?? '', ['C-Suite', 'VP', 'Director', 'Manager', 'Individual Contributor'], true) ? $_POST['persona_seniority'] : null;
         $decisionRole = in_array($_POST['persona_decision_role'] ?? '', ['Economic Buyer', 'Champion', 'Technical Buyer', 'End User', 'Influencer', 'Blocker'], true) ? $_POST['persona_decision_role'] : null;
+        // KB expansion Phase 6 — optional vertical/service links.
+        $personaVerticalId = (int) ($_POST['persona_vertical_id'] ?? 0) ?: null;
+        if ($personaVerticalId !== null && !fetch_vertical($workspaceId, $personaVerticalId)) {
+            $personaVerticalId = null;
+        }
+        $personaServiceId = (int) ($_POST['persona_service_id'] ?? 0) ?: null;
+        if ($personaServiceId !== null && !fetch_service($workspaceId, $personaServiceId)) {
+            $personaServiceId = null;
+        }
         $stmt = db()->prepare(
             'INSERT INTO personas (user_id, workspace_id, name, description, title, department, seniority,
              reporting_to, goals, pain_points, objections, kpis, decision_role, communication_style,
-             preferred_content, watering_holes, content_hook)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             preferred_content, watering_holes, content_hook, vertical_id, service_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE description = VALUES(description), workspace_id = VALUES(workspace_id),
              title = VALUES(title), department = VALUES(department), seniority = VALUES(seniority),
              reporting_to = VALUES(reporting_to), goals = VALUES(goals), pain_points = VALUES(pain_points),
              objections = VALUES(objections), kpis = VALUES(kpis), decision_role = VALUES(decision_role),
              communication_style = VALUES(communication_style), preferred_content = VALUES(preferred_content),
-             watering_holes = VALUES(watering_holes), content_hook = VALUES(content_hook)'
+             watering_holes = VALUES(watering_holes), content_hook = VALUES(content_hook),
+             vertical_id = VALUES(vertical_id), service_id = VALUES(service_id)'
         );
         $stmt->execute([
             $userId, $workspaceId, $name, $desc,
@@ -336,6 +346,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             trim($_POST['persona_preferred_content'] ?? '') ?: null,
             trim($_POST['persona_watering_holes'] ?? '') ?: null,
             trim($_POST['persona_content_hook'] ?? '') ?: null,
+            $personaVerticalId,
+            $personaServiceId,
         ]);
         flash('success', "Persona \"{$name}\" saved.");
         redirect('pages/settings.php');
@@ -2082,6 +2094,26 @@ require __DIR__ . '/../includes/layout_top.php';
       <label>Good hook angle for this persona
         <textarea name="persona_content_hook" rows="2"></textarea>
       </label>
+      <?php if ($verticals): ?>
+        <label>Vertical <span class="muted">(optional)</span>
+          <select name="persona_vertical_id">
+            <option value="">— None —</option>
+            <?php foreach ($verticals as $v): ?>
+              <option value="<?= (int) $v['id'] ?>"><?= h($v['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      <?php endif; ?>
+      <?php if ($services): ?>
+        <label>Service <span class="muted">(optional)</span>
+          <select name="persona_service_id">
+            <option value="">— None —</option>
+            <?php foreach ($services as $sv): ?>
+              <option value="<?= (int) $sv['id'] ?>"><?= h($sv['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      <?php endif; ?>
     </details>
     <button type="submit" class="btn-secondary">Add Persona</button>
   </form>
