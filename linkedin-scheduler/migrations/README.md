@@ -1,0 +1,36 @@
+# Migrations
+
+Numbered, one-file-per-change SQL migrations for incremental schema
+updates on an *existing* deployed database (e.g. postpilot.easi7.in).
+
+This app doesn't use a migration framework — `schema.sql` is the single
+source of truth for a fresh install (it's applied top-to-bottom via
+`CREATE TABLE IF NOT EXISTS` / `ALTER TABLE` and already contains every
+change described here). This folder exists so each individually
+reviewable change also has a **standalone, numbered, applicable-once
+file** for updating a database that's already running in production,
+without re-running the entire `schema.sql`.
+
+## Convention
+
+- Filename: `NNNN_short_description.sql`, zero-padded, sequential,
+  never reused or renumbered once committed.
+- Every statement is `ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT
+  EXISTS` where the MySQL/MariaDB version supports it, so re-running a
+  migration that already applied is a safe no-op.
+- The same SQL is also appended to `schema.sql` (for fresh installs) in
+  the same commit — the two are always kept in sync.
+- One migration file per plan phase (see `docs/KNOWLEDGE_BASE.md`), not
+  one per individual `ALTER` statement — a phase is the reviewable unit.
+
+## Applying a migration on the live server
+
+```
+mysql -u <user> -p <database> < migrations/0001_kb_workspace_identity_tone.sql
+```
+
+## Log
+
+| File | Phase | Summary |
+|---|---|---|
+| `0001_kb_workspace_identity_tone.sql` | 0 | Richer Company Identity + Tone & Voice fields on `workspaces` |

@@ -573,6 +573,15 @@ body.centered-page {
 .stacked-form { text-align: left; display: flex; flex-direction: column; gap: var(--space-4); }
 .stacked-form label { display: block; font-size: 13px; font-weight: 600; color: var(--gray-700); margin-bottom: 6px; }
 
+/* Progressive-disclosure wrapper for optional KB fields (Settings —
+   Knowledge Hub profile) — collapsed by default so the primary form
+   stays short; native <details>, no JS needed. */
+.kb-details { border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
+.kb-details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--gray-700); }
+.kb-details[open] summary { margin-bottom: var(--space-3); }
+.kb-details label { margin-top: var(--space-3); }
+.kb-details label:first-of-type { margin-top: var(--space-3); }
+
 /* Color picker: a real swatch (not the generic 100%-width input rule,
    which stretched the native input[type=color] into an illegible gray
    bar) paired with a hex text field so the current value is always

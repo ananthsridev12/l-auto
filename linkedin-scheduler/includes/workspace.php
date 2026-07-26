@@ -82,14 +82,41 @@ function workspace_context_text(?array $ws): string
     $lines = [];
     $isPersonal = ($ws['type'] ?? '') === 'personal';
     $label = $isPersonal ? 'About the author' : 'About the company';
+    // KB expansion Phase 0 (see docs/KNOWLEDGE_BASE.md) — Company
+    // Identity + Tone fields interspersed among the original 7 below.
+    // Every one is optional; a workspace with only the original fields
+    // filled in produces byte-identical output to before this change.
     foreach ([
-        $label            => $ws['about'] ?? null,
-        'Industry'        => $ws['industry'] ?? null,
-        'Target audience' => $ws['target_audience'] ?? null,
-        'Tone of voice'   => $ws['tone_of_voice'] ?? null,
-        'Content goals'   => $ws['goals'] ?? null,
+        $label                 => $ws['about'] ?? null,
+        'Tagline'              => $ws['tagline'] ?? null,
+        'Founded'              => $ws['founded_year'] ?? null,
+        'Size'                 => $ws['company_size'] ?? null,
+        'Headquarters'         => $ws['hq_location'] ?? null,
+        'Industry'             => $ws['industry'] ?? null,
+        'Target audience'      => $ws['target_audience'] ?? null,
+        'Mission'              => $ws['mission'] ?? null,
+        'Vision'               => $ws['vision'] ?? null,
+        'Story'                => $ws['story'] ?? null,
+        'Credibility statement' => $ws['credibility_statement'] ?? null,
+        'Notable clients'      => $ws['notable_clients'] ?? null,
+        'Awards'               => $ws['awards'] ?? null,
+        'Tone of voice'        => $ws['tone_of_voice'] ?? null,
+        'Tone descriptors'     => $ws['tone_descriptors'] ?? null,
+        'Avoid this tone'      => $ws['anti_tone'] ?? null,
+        'Words to favor'       => $ws['words_always'] ?? null,
+        'Words to never use (follow strictly)' => $ws['words_never'] ?? null,
+        'Post opening style'   => $ws['post_opening_style'] ?? null,
+        'Hook style'           => $ws['hook_style'] ?? null,
+        'Hashtag strategy'     => $ws['hashtag_strategy'] ?? null,
+        'Posting frequency'    => $ws['post_frequency'] ?? null,
+        'LinkedIn CTA style'   => $ws['cta_linkedin'] ?? null,
+        'Paragraph style'      => $ws['paragraph_style'] ?? null,
+        'Example to mirror'    => $ws['good_example'] ?? null,
+        'Example to avoid writing like' => $ws['bad_example'] ?? null,
+        'Content goals'        => $ws['goals'] ?? null,
         'Content rules (follow strictly)' => $ws['content_rules'] ?? null,
-        'Website'         => $ws['website'] ?? null,
+        'Custom instructions (follow strictly)' => $ws['custom_instructions'] ?? null,
+        'Website'              => $ws['website'] ?? null,
     ] as $key => $value) {
         $value = trim((string) $value);
         if ($value !== '') {

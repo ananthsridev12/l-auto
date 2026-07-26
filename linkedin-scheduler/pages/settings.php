@@ -85,9 +85,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('error', 'That account is a different type than this workspace (' . $workspace['type'] . ') — not attached. Pick a matching account, or connect one first.');
             }
         }
+        // KB expansion Phase 0 (docs/KNOWLEDGE_BASE.md) — Company
+        // Identity + Tone fields, all optional, saved alongside the
+        // original profile fields in the same UPDATE.
         db()->prepare(
             'UPDATE workspaces SET name = ?, linkedin_account_id = ?, about = ?, industry = ?, target_audience = ?,
-             tone_of_voice = ?, goals = ?, content_rules = ?, website = ? WHERE id = ? AND user_id = ?'
+             tone_of_voice = ?, goals = ?, content_rules = ?, website = ?,
+             tagline = ?, founded_year = ?, company_size = ?, hq_location = ?, mission = ?, vision = ?, story = ?,
+             credibility_statement = ?, notable_clients = ?, awards = ?,
+             tone_descriptors = ?, anti_tone = ?, words_always = ?, words_never = ?, post_opening_style = ?,
+             hook_style = ?, hashtag_strategy = ?, post_frequency = ?, cta_linkedin = ?, paragraph_style = ?,
+             good_example = ?, bad_example = ?, custom_instructions = ?
+             WHERE id = ? AND user_id = ?'
         )->execute([
             $name, $accountId,
             trim($_POST['ws_about'] ?? '') ?: null,
@@ -97,6 +106,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             trim($_POST['ws_goals'] ?? '') ?: null,
             trim($_POST['ws_content_rules'] ?? '') ?: null,
             trim($_POST['ws_website'] ?? '') ?: null,
+            trim($_POST['ws_tagline'] ?? '') ?: null,
+            trim($_POST['ws_founded_year'] ?? '') ?: null,
+            trim($_POST['ws_company_size'] ?? '') ?: null,
+            trim($_POST['ws_hq_location'] ?? '') ?: null,
+            trim($_POST['ws_mission'] ?? '') ?: null,
+            trim($_POST['ws_vision'] ?? '') ?: null,
+            trim($_POST['ws_story'] ?? '') ?: null,
+            trim($_POST['ws_credibility_statement'] ?? '') ?: null,
+            trim($_POST['ws_notable_clients'] ?? '') ?: null,
+            trim($_POST['ws_awards'] ?? '') ?: null,
+            trim($_POST['ws_tone_descriptors'] ?? '') ?: null,
+            trim($_POST['ws_anti_tone'] ?? '') ?: null,
+            trim($_POST['ws_words_always'] ?? '') ?: null,
+            trim($_POST['ws_words_never'] ?? '') ?: null,
+            trim($_POST['ws_post_opening_style'] ?? '') ?: null,
+            trim($_POST['ws_hook_style'] ?? '') ?: null,
+            trim($_POST['ws_hashtag_strategy'] ?? '') ?: null,
+            trim($_POST['ws_post_frequency'] ?? '') ?: null,
+            trim($_POST['ws_cta_linkedin'] ?? '') ?: null,
+            in_array($_POST['ws_paragraph_style'] ?? '', ['one-liners', 'full-paragraphs', 'bullet-heavy'], true) ? $_POST['ws_paragraph_style'] : null,
+            trim($_POST['ws_good_example'] ?? '') ?: null,
+            trim($_POST['ws_bad_example'] ?? '') ?: null,
+            trim($_POST['ws_custom_instructions'] ?? '') ?: null,
             $workspaceId, $userId,
         ]);
         flash('success', 'Workspace profile saved.');
@@ -943,6 +975,89 @@ require __DIR__ . '/../includes/layout_top.php';
     <label>Website
       <input type="text" name="ws_website" value="<?= h($workspace['website'] ?? '') ?>" placeholder="https://example.com">
     </label>
+
+    <details class="kb-details">
+      <summary><?= $workspace['type'] === 'personal' ? 'More about you' : 'More about the company' ?> <span class="muted">(optional — richer identity context)</span></summary>
+      <label>Tagline
+        <input type="text" name="ws_tagline" value="<?= h($workspace['tagline'] ?? '') ?>" placeholder="e.g. Predictive maintenance, made simple">
+      </label>
+      <label>Founded
+        <input type="text" name="ws_founded_year" value="<?= h($workspace['founded_year'] ?? '') ?>" placeholder="e.g. 2018">
+      </label>
+      <label><?= $workspace['type'] === 'personal' ? 'Years of experience' : 'Company size' ?>
+        <input type="text" name="ws_company_size" value="<?= h($workspace['company_size'] ?? '') ?>" placeholder="e.g. 200-500 employees">
+      </label>
+      <label>Headquarters / based in
+        <input type="text" name="ws_hq_location" value="<?= h($workspace['hq_location'] ?? '') ?>" placeholder="e.g. Austin, TX">
+      </label>
+      <label>Mission
+        <textarea name="ws_mission" rows="2"><?= h($workspace['mission'] ?? '') ?></textarea>
+      </label>
+      <label>Vision
+        <textarea name="ws_vision" rows="2"><?= h($workspace['vision'] ?? '') ?></textarea>
+      </label>
+      <label>Story
+        <textarea name="ws_story" rows="3" placeholder="The longer origin story — used sparingly, mostly for longer-form content."><?= h($workspace['story'] ?? '') ?></textarea>
+      </label>
+      <label>Credibility statement <span class="muted">(2-3 sentences the AI can use nearly as-is)</span>
+        <textarea name="ws_credibility_statement" rows="2" placeholder="e.g. We've helped 40+ manufacturers cut unplanned downtime by an average of 30%, backed by a decade of field data."><?= h($workspace['credibility_statement'] ?? '') ?></textarea>
+      </label>
+      <label>Notable clients
+        <textarea name="ws_notable_clients" rows="2"><?= h($workspace['notable_clients'] ?? '') ?></textarea>
+      </label>
+      <label>Awards / recognition
+        <textarea name="ws_awards" rows="2"><?= h($workspace['awards'] ?? '') ?></textarea>
+      </label>
+    </details>
+
+    <details class="kb-details">
+      <summary>More on tone &amp; voice <span class="muted">(optional — the fastest way to stop generic AI writing)</span></summary>
+      <label>Tone descriptors
+        <input type="text" name="ws_tone_descriptors" value="<?= h($workspace['tone_descriptors'] ?? '') ?>" placeholder="e.g. Direct, authoritative, no jargon">
+      </label>
+      <label>Avoid this tone
+        <input type="text" name="ws_anti_tone" value="<?= h($workspace['anti_tone'] ?? '') ?>" placeholder="e.g. Never salesy, never vague">
+      </label>
+      <label>Words to favor
+        <textarea name="ws_words_always" rows="2" placeholder="e.g. outcomes, measurable, practical"><?= h($workspace['words_always'] ?? '') ?></textarea>
+      </label>
+      <label>Words to never use <span class="muted">(followed strictly by the AI)</span>
+        <textarea name="ws_words_never" rows="2" placeholder="e.g. synergy, leverage, disrupt, game-changer"><?= h($workspace['words_never'] ?? '') ?></textarea>
+      </label>
+      <label>Post opening style
+        <textarea name="ws_post_opening_style" rows="2" placeholder="e.g. Lead with a relevant observation or number, not a pitch"><?= h($workspace['post_opening_style'] ?? '') ?></textarea>
+      </label>
+      <label>Hook style
+        <textarea name="ws_hook_style" rows="2" placeholder="e.g. Start with a contrarian statement or a surprising number"><?= h($workspace['hook_style'] ?? '') ?></textarea>
+      </label>
+      <label>Hashtag strategy
+        <input type="text" name="ws_hashtag_strategy" value="<?= h($workspace['hashtag_strategy'] ?? '') ?>" placeholder="e.g. 3 max, always include one niche tag">
+      </label>
+      <label>Posting frequency
+        <input type="text" name="ws_post_frequency" value="<?= h($workspace['post_frequency'] ?? '') ?>" placeholder="e.g. 3x per week, Mon/Wed/Fri">
+      </label>
+      <label>LinkedIn CTA style
+        <textarea name="ws_cta_linkedin" rows="2" placeholder="e.g. End with a question to drive comments"><?= h($workspace['cta_linkedin'] ?? '') ?></textarea>
+      </label>
+      <label>Paragraph style
+        <select name="ws_paragraph_style">
+          <option value="">— Unset —</option>
+          <option value="one-liners"<?= ($workspace['paragraph_style'] ?? '') === 'one-liners' ? ' selected' : '' ?>>One-liners</option>
+          <option value="full-paragraphs"<?= ($workspace['paragraph_style'] ?? '') === 'full-paragraphs' ? ' selected' : '' ?>>Full paragraphs</option>
+          <option value="bullet-heavy"<?= ($workspace['paragraph_style'] ?? '') === 'bullet-heavy' ? ' selected' : '' ?>>Bullet-heavy</option>
+        </select>
+      </label>
+      <label>A real example to mirror <span class="muted">(paste an actual post)</span>
+        <textarea name="ws_good_example" rows="4"><?= h($workspace['good_example'] ?? '') ?></textarea>
+      </label>
+      <label>An example to avoid writing like
+        <textarea name="ws_bad_example" rows="4"><?= h($workspace['bad_example'] ?? '') ?></textarea>
+      </label>
+      <label>Custom instructions <span class="muted">(anything else, appended to every AI prompt for this workspace)</span>
+        <textarea name="ws_custom_instructions" rows="3"><?= h($workspace['custom_instructions'] ?? '') ?></textarea>
+      </label>
+    </details>
+
     <button type="submit" class="btn-primary">Save Profile</button>
   </form>
 </section>
