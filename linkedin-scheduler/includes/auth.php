@@ -37,7 +37,13 @@ function app_path(string $relative): string
 {
     // Resolves a path relative to the app root regardless of which
     // subfolder (auth/, pages/, api/) the current script lives in.
-    return rtrim(APP_URL, '/') . '/' . ltrim($relative, '/');
+    // Strips a trailing ".php" from the path portion only (leaves any
+    // "?query=string" after it untouched) so every generated link/
+    // redirect uses the clean, extensionless URL the root .htaccess
+    // rewrites back to the real file — e.g. "pages/post.php?id=5"
+    // becomes ".../pages/post?id=5".
+    $relative = preg_replace('/\.php(?=$|\?)/', '', ltrim($relative, '/'), 1);
+    return rtrim(APP_URL, '/') . '/' . $relative;
 }
 
 function login_user(array $user): void

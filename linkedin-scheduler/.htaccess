@@ -7,3 +7,23 @@
 </FilesMatch>
 
 Options -Indexes
+
+# Clean URLs: the app always links to itself without ".php" (see
+# includes/auth.php app_path()) — these two rules make that work.
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# 1. Canonicalize: anyone who requests/bookmarks a literal "*.php" URL
+#    gets redirected (visibly, in the address bar) to the extensionless
+#    form, so there's only ever one canonical URL per page.
+RewriteCond %{THE_REQUEST} \s/+(.+)\.php[\s?] [NC]
+RewriteRule ^ /%1 [R=301,L]
+
+# 2. Internally serve the real ".php" file for an extensionless request,
+#    without changing what's shown in the browser. Real files/directories
+#    (assets/, uploads/, etc.) are left alone by the !-f/!-d checks.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}\.php -f
+RewriteRule ^(.*)$ $1.php [L,QSA]
+</IfModule>
