@@ -305,11 +305,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'Enter a persona name.');
             redirect('pages/settings.php');
         }
+        // KB expansion Phase 2 (docs/KNOWLEDGE_BASE.md) — optional
+        // enrichment fields alongside the original name+description.
+        $seniority = in_array($_POST['persona_seniority'] ?? '', ['C-Suite', 'VP', 'Director', 'Manager', 'Individual Contributor'], true) ? $_POST['persona_seniority'] : null;
+        $decisionRole = in_array($_POST['persona_decision_role'] ?? '', ['Economic Buyer', 'Champion', 'Technical Buyer', 'End User', 'Influencer', 'Blocker'], true) ? $_POST['persona_decision_role'] : null;
         $stmt = db()->prepare(
-            'INSERT INTO personas (user_id, workspace_id, name, description) VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description), workspace_id = VALUES(workspace_id)'
+            'INSERT INTO personas (user_id, workspace_id, name, description, title, department, seniority,
+             reporting_to, goals, pain_points, objections, kpis, decision_role, communication_style,
+             preferred_content, watering_holes, content_hook)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), workspace_id = VALUES(workspace_id),
+             title = VALUES(title), department = VALUES(department), seniority = VALUES(seniority),
+             reporting_to = VALUES(reporting_to), goals = VALUES(goals), pain_points = VALUES(pain_points),
+             objections = VALUES(objections), kpis = VALUES(kpis), decision_role = VALUES(decision_role),
+             communication_style = VALUES(communication_style), preferred_content = VALUES(preferred_content),
+             watering_holes = VALUES(watering_holes), content_hook = VALUES(content_hook)'
         );
-        $stmt->execute([$userId, $workspaceId, $name, $desc]);
+        $stmt->execute([
+            $userId, $workspaceId, $name, $desc,
+            trim($_POST['persona_title'] ?? '') ?: null,
+            trim($_POST['persona_department'] ?? '') ?: null,
+            $seniority,
+            trim($_POST['persona_reporting_to'] ?? '') ?: null,
+            trim($_POST['persona_goals'] ?? '') ?: null,
+            trim($_POST['persona_pain_points'] ?? '') ?: null,
+            trim($_POST['persona_objections'] ?? '') ?: null,
+            trim($_POST['persona_kpis'] ?? '') ?: null,
+            $decisionRole,
+            trim($_POST['persona_communication_style'] ?? '') ?: null,
+            trim($_POST['persona_preferred_content'] ?? '') ?: null,
+            trim($_POST['persona_watering_holes'] ?? '') ?: null,
+            trim($_POST['persona_content_hook'] ?? '') ?: null,
+        ]);
         flash('success', "Persona \"{$name}\" saved.");
         redirect('pages/settings.php');
     }
@@ -1653,6 +1680,63 @@ require __DIR__ . '/../includes/layout_top.php';
     <label>Description <span class="muted">(optional — pain points, goals, what they care about)</span>
       <textarea name="persona_description" rows="2"></textarea>
     </label>
+    <details class="kb-details">
+      <summary>Advanced <span class="muted">(optional — sharpens targeting and hooks)</span></summary>
+      <label>Title
+        <input type="text" name="persona_title" placeholder="e.g. VP of Operations">
+      </label>
+      <label>Department
+        <input type="text" name="persona_department">
+      </label>
+      <label>Seniority
+        <select name="persona_seniority">
+          <option value="">— Unset —</option>
+          <option value="C-Suite">C-Suite</option>
+          <option value="VP">VP</option>
+          <option value="Director">Director</option>
+          <option value="Manager">Manager</option>
+          <option value="Individual Contributor">Individual Contributor</option>
+        </select>
+      </label>
+      <label>Reports to
+        <input type="text" name="persona_reporting_to">
+      </label>
+      <label>Goals
+        <textarea name="persona_goals" rows="2"></textarea>
+      </label>
+      <label>Pain points
+        <textarea name="persona_pain_points" rows="2"></textarea>
+      </label>
+      <label>Objections <span class="muted">(reasons they'd push back or hesitate)</span>
+        <textarea name="persona_objections" rows="2"></textarea>
+      </label>
+      <label>KPIs they're measured on
+        <input type="text" name="persona_kpis">
+      </label>
+      <label>Decision role
+        <select name="persona_decision_role">
+          <option value="">— Unset —</option>
+          <option value="Economic Buyer">Economic Buyer</option>
+          <option value="Champion">Champion</option>
+          <option value="Technical Buyer">Technical Buyer</option>
+          <option value="End User">End User</option>
+          <option value="Influencer">Influencer</option>
+          <option value="Blocker">Blocker</option>
+        </select>
+      </label>
+      <label>Communication style
+        <textarea name="persona_communication_style" rows="2"></textarea>
+      </label>
+      <label>Responds best to <span class="muted">(content format/angle)</span>
+        <input type="text" name="persona_preferred_content" placeholder="e.g. Short, data-backed posts with a clear number in the hook">
+      </label>
+      <label>Where they hang out <span class="muted">(communities, hashtags)</span>
+        <input type="text" name="persona_watering_holes">
+      </label>
+      <label>Good hook angle for this persona
+        <textarea name="persona_content_hook" rows="2"></textarea>
+      </label>
+    </details>
     <button type="submit" class="btn-secondary">Add Persona</button>
   </form>
 </section>

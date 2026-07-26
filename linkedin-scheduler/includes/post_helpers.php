@@ -82,13 +82,17 @@ function fetch_mention_picker_list(int $userId): array
 // from New Post's AI panel or applied automatically (see
 // includes/ai_generate.php build_generation_prompt()).
 
+// SELECT * (was an explicit id/name/description list) so KB expansion
+// Phase 2's enrichment columns (docs/KNOWLEDGE_BASE.md) come along for
+// free — every existing caller only reads name/description, so this
+// is forward-compatible, not a behavior change for them.
 function fetch_personas(int $userId, ?int $workspaceId = null): array
 {
     if ($workspaceId === null) {
-        $stmt = db()->prepare('SELECT id, name, description FROM personas WHERE user_id = ? ORDER BY name');
+        $stmt = db()->prepare('SELECT * FROM personas WHERE user_id = ? ORDER BY name');
         $stmt->execute([$userId]);
     } else {
-        $stmt = db()->prepare('SELECT id, name, description FROM personas WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY name');
+        $stmt = db()->prepare('SELECT * FROM personas WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY name');
         $stmt->execute([$userId, $workspaceId]);
     }
     return $stmt->fetchAll();
@@ -96,7 +100,7 @@ function fetch_personas(int $userId, ?int $workspaceId = null): array
 
 function fetch_persona(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT id, name, description FROM personas WHERE user_id = ? AND id = ?');
+    $stmt = db()->prepare('SELECT * FROM personas WHERE user_id = ? AND id = ?');
     $stmt->execute([$userId, $id]);
     return $stmt->fetch() ?: null;
 }

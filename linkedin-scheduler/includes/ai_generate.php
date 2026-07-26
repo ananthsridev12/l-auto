@@ -66,6 +66,30 @@ function build_context_block(?string $brandBrief, ?array $persona, ?array $pilla
     if ($persona && !empty($persona['description'])) {
         $parts[] = "Target persona \"{$persona['name']}\": {$persona['description']}";
     }
+    // KB expansion Phase 2 (docs/KNOWLEDGE_BASE.md) — richer persona
+    // fields, appended as a separate block so a persona with only
+    // name+description (the pre-Phase-2 shape) produces byte-identical
+    // output to before this existed.
+    if ($persona) {
+        $personaExtra = [];
+        foreach ([
+            'Title'                => $persona['title'] ?? null,
+            'Pain points'          => $persona['pain_points'] ?? null,
+            'Objections'           => $persona['objections'] ?? null,
+            'Cares about (KPIs)'   => $persona['kpis'] ?? null,
+            'Communication style'  => $persona['communication_style'] ?? null,
+            'Responds best to'     => $persona['preferred_content'] ?? null,
+            'Good hook angle for this persona' => $persona['content_hook'] ?? null,
+        ] as $key => $value) {
+            $value = trim((string) $value);
+            if ($value !== '') {
+                $personaExtra[] = "{$key}: {$value}";
+            }
+        }
+        if ($personaExtra) {
+            $parts[] = "More about the \"{$persona['name']}\" persona:\n" . implode("\n", $personaExtra);
+        }
+    }
     if ($pillar && !empty($pillar['description'])) {
         $parts[] = "Content pillar \"{$pillar['name']}\": {$pillar['description']}";
     }
