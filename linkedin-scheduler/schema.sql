@@ -584,3 +584,28 @@ ALTER TABLE workspaces ADD COLUMN bad_example TEXT NULL;
 -- ai_settings block, kept here rather than a new table since it's a
 -- single per-workspace value, same shape as content_rules above.
 ALTER TABLE workspaces ADD COLUMN custom_instructions TEXT NULL;
+
+-- ── Knowledge Base expansion, Phase 1 — Senders ──
+-- See docs/KNOWLEDGE_BASE.md. A "sender" is the person whose voice a
+-- post is written in — for a Personal workspace this is usually the
+-- user themselves (one row, is_default=1); a Company workspace can
+-- have several (different employees ghostwriting under the same
+-- brand). Scoped by workspace_id alone, matching knowledge_documents'
+-- convention (no separate user_id column needed).
+CREATE TABLE IF NOT EXISTS `senders` (
+  `id`                INT AUTO_INCREMENT PRIMARY KEY,
+  `workspace_id`      INT NOT NULL,
+  `full_name`         VARCHAR(255) NOT NULL,
+  `title`             VARCHAR(255) NULL,
+  `linkedin_headline` VARCHAR(300) NULL,
+  `linkedin_about`    TEXT NULL,
+  `background`        TEXT NULL,          -- career summary for AI context
+  `credibility`       TEXT NULL,          -- why this person is worth listening to
+  `years_experience`  INT NULL,
+  `individual_tone`   TEXT NULL,          -- how this person specifically writes
+  `example_posts`     TEXT NULL,          -- paste 2-3 real LinkedIn posts as style examples
+  `post_topics`       TEXT NULL,          -- comma-sep topics this person covers
+  `is_default`        TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at`        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

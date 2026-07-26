@@ -34,3 +34,4 @@ mysql -u <user> -p <database> < migrations/0001_kb_workspace_identity_tone.sql
 | File | Phase | Summary |
 |---|---|---|
 | `0001_kb_workspace_identity_tone.sql` | 0 | Richer Company Identity + Tone & Voice fields on `workspaces` |
+| `0002_kb_senders.sql` | 1 | New `senders` table, wired into AI prompt context |

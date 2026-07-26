@@ -126,6 +126,39 @@ function workspace_context_text(?array $ws): string
     return implode("\n", $lines);
 }
 
+// KB expansion Phase 1 (docs/KNOWLEDGE_BASE.md) — the workspace's
+// default sender's voice, consumed by build_context_block() in
+// includes/ai_generate.php. This is the block the KB design doc calls
+// out as making a post "sound like the actual person, not a generic
+// AI" — individual_tone + example_posts are the highest-value fields.
+function sender_context_text(?array $sender): string
+{
+    if (!$sender) {
+        return '';
+    }
+    $who = trim((string) ($sender['full_name'] ?? ''));
+    if ($who === '') {
+        return '';
+    }
+    if (!empty($sender['title'])) {
+        $who .= ', ' . $sender['title'];
+    }
+    $lines = ["Writing as: {$who}"];
+    foreach ([
+        'Background'              => $sender['background'] ?? null,
+        'Credibility'             => $sender['credibility'] ?? null,
+        'This person\'s voice (follow closely)' => $sender['individual_tone'] ?? null,
+        'Real examples of their posts to mirror' => $sender['example_posts'] ?? null,
+        'Topics they usually write about' => $sender['post_topics'] ?? null,
+    ] as $key => $value) {
+        $value = trim((string) $value);
+        if ($value !== '') {
+            $lines[] = "{$key}: {$value}";
+        }
+    }
+    return implode("\n", $lines);
+}
+
 // Reference-document knowledge for the prompt (Phase B fills
 // knowledge_documents; safe no-op while the table is empty). Uses each
 // doc's compact AI summary when present, else raw extracted text,

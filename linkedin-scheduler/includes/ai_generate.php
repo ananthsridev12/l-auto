@@ -44,6 +44,14 @@ function build_context_block(?string $brandBrief, ?array $persona, ?array $pilla
 {
     $parts = [];
     if ($workspace) {
+        // KB expansion Phase 1 (docs/KNOWLEDGE_BASE.md) — sender voice
+        // goes first, matching the design doc's stated prompt order
+        // (who's writing, before who we are / what we offer).
+        $sender = fetch_default_sender((int) $workspace['id']);
+        $senderText = sender_context_text($sender);
+        if ($senderText !== '') {
+            $parts[] = $senderText;
+        }
         $profile = workspace_context_text($workspace);
         if ($profile !== '') {
             $parts[] = $profile;

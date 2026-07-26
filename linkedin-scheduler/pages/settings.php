@@ -321,6 +321,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    // KB expansion Phase 1 (docs/KNOWLEDGE_BASE.md) — Senders.
+    if (($_POST['form'] ?? '') === 'sender_add') {
+        $fullName = trim($_POST['sender_full_name'] ?? '');
+        if ($fullName === '') {
+            flash('error', 'Enter a name.');
+            redirect('pages/settings.php');
+        }
+        $yearsExp = trim($_POST['sender_years_experience'] ?? '');
+        db()->prepare(
+            'INSERT INTO senders (workspace_id, full_name, title, linkedin_headline, linkedin_about, background,
+             credibility, years_experience, individual_tone, example_posts, post_topics)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $workspaceId, $fullName,
+            trim($_POST['sender_title'] ?? '') ?: null,
+            trim($_POST['sender_linkedin_headline'] ?? '') ?: null,
+            trim($_POST['sender_linkedin_about'] ?? '') ?: null,
+            trim($_POST['sender_background'] ?? '') ?: null,
+            trim($_POST['sender_credibility'] ?? '') ?: null,
+            $yearsExp !== '' ? (int) $yearsExp : null,
+            trim($_POST['sender_individual_tone'] ?? '') ?: null,
+            trim($_POST['sender_example_posts'] ?? '') ?: null,
+            trim($_POST['sender_post_topics'] ?? '') ?: null,
+        ]);
+        $newSenderId = (int) db()->lastInsertId();
+        // First sender added to a workspace becomes the default
+        // automatically — most workspaces only ever have one.
+        if (count(fetch_senders($workspaceId)) === 1) {
+            set_default_sender($workspaceId, $newSenderId);
+        }
+        flash('success', "Sender \"{$fullName}\" saved.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'sender_set_default') {
+        set_default_sender($workspaceId, (int) ($_POST['sender_id'] ?? 0));
+        flash('success', 'Default sender updated.');
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'sender_delete') {
+        delete_sender($workspaceId, (int) ($_POST['sender_id'] ?? 0));
+        flash('success', 'Sender removed.');
+        redirect('pages/settings.php');
+    }
+
     if (($_POST['form'] ?? '') === 'pillar_add') {
         $name = trim($_POST['pillar_name'] ?? '');
         $desc = trim($_POST['pillar_description'] ?? '');
@@ -761,6 +807,7 @@ $aiProvider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;
 $redditCreds = get_reddit_credentials($userId);
 $workspaces = fetch_workspaces($userId);
 $personas = fetch_personas($userId, $workspaceId);
+$senders = fetch_senders($workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
 $defaultLayoutSingle = $workspace['default_layout_single'] ?? null;
 $defaultLayoutCarousel = $workspace['default_layout_carousel'] ?? null;
@@ -1493,6 +1540,77 @@ require __DIR__ . '/../includes/layout_top.php';
       <button type="submit" class="btn-tiny btn-danger">Reset Signature size to Auto</button>
     </form>
   <?php endif; ?>
+</section>
+
+<section class="card" data-tab="content">
+  <h2>Senders — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Who this workspace's posts are written as. <?= $workspace['type'] === 'personal' ? 'For a personal workspace this is usually just you.' : 'A company workspace can have several, e.g. different people ghostwriting under the same brand.' ?> The default sender's voice (tone + real example posts) is automatically woven into every AI generation in this workspace — this is the single fastest way to stop posts sounding like generic AI.</p>
+  <?php if ($senders): ?>
+    <?php foreach ($senders as $s): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($s['full_name']) ?><?= $s['is_default'] ? ' <span class="badge badge-active">Default</span>' : '' ?></span>
+          <span class="muted"><?= h($s['title'] ?? '') ?></span>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <?php if (!$s['is_default']): ?>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="sender_set_default">
+              <input type="hidden" name="sender_id" value="<?= (int) $s['id'] ?>">
+              <button type="submit" class="btn-tiny">Make Default</button>
+            </form>
+          <?php endif; ?>
+          <form method="post" onsubmit="return confirm('Remove this sender?');">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="sender_delete">
+            <input type="hidden" name="sender_id" value="<?= (int) $s['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No senders added yet.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="sender_add">
+    <label>Full name
+      <input type="text" name="sender_full_name" placeholder="e.g. Jane Smith" required>
+    </label>
+    <label>Title
+      <input type="text" name="sender_title" placeholder="e.g. Managing Director">
+    </label>
+    <label>Individual tone <span class="muted">(how THIS person specifically writes — critical for sounding real)</span>
+      <textarea name="sender_individual_tone" rows="2" placeholder="e.g. Direct and data-led. Short sentences. Always references a specific number or trend."></textarea>
+    </label>
+    <label>Example posts <span class="muted">(paste 2-3 real LinkedIn posts as style examples)</span>
+      <textarea name="sender_example_posts" rows="4"></textarea>
+    </label>
+    <details class="kb-details">
+      <summary>More details <span class="muted">(optional)</span></summary>
+      <label>LinkedIn headline
+        <input type="text" name="sender_linkedin_headline">
+      </label>
+      <label>LinkedIn "About" section
+        <textarea name="sender_linkedin_about" rows="3"></textarea>
+      </label>
+      <label>Background <span class="muted">(career summary for AI context)</span>
+        <textarea name="sender_background" rows="2"></textarea>
+      </label>
+      <label>Credibility <span class="muted">(why this person is worth listening to)</span>
+        <textarea name="sender_credibility" rows="2"></textarea>
+      </label>
+      <label>Years of experience
+        <input type="number" name="sender_years_experience" min="0">
+      </label>
+      <label>Post topics <span class="muted">(comma-separated)</span>
+        <input type="text" name="sender_post_topics" placeholder="e.g. ERP migration, SAP tips, leadership">
+      </label>
+    </details>
+    <button type="submit" class="btn-secondary">Add Sender</button>
+  </form>
 </section>
 
 <section class="card" data-tab="content">

@@ -101,6 +101,45 @@ function fetch_persona(int $userId, int $id): ?array
     return $stmt->fetch() ?: null;
 }
 
+// KB expansion Phase 1 (docs/KNOWLEDGE_BASE.md) — Senders: who a post's
+// voice belongs to. Scoped by workspace_id alone (no user_id column —
+// a net-new table with no legacy pre-workspace rows to keep visible).
+function fetch_senders(int $workspaceId): array
+{
+    $stmt = db()->prepare('SELECT * FROM senders WHERE workspace_id = ? ORDER BY is_default DESC, full_name');
+    $stmt->execute([$workspaceId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_sender(int $workspaceId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM senders WHERE workspace_id = ? AND id = ?');
+    $stmt->execute([$workspaceId, $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function fetch_default_sender(int $workspaceId): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM senders WHERE workspace_id = ? AND is_default = 1 LIMIT 1');
+    $stmt->execute([$workspaceId]);
+    return $stmt->fetch() ?: null;
+}
+
+// Only one sender per workspace may be default — clears any existing
+// default first, same application-level approach as
+// set_default_brand_palette() below.
+function set_default_sender(int $workspaceId, int $id): void
+{
+    $pdo = db();
+    $pdo->prepare('UPDATE senders SET is_default = 0 WHERE workspace_id = ?')->execute([$workspaceId]);
+    $pdo->prepare('UPDATE senders SET is_default = 1 WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
+}
+
+function delete_sender(int $workspaceId, int $id): void
+{
+    db()->prepare('DELETE FROM senders WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
+}
+
 // $workspaceId scopes results to a workspace; rows with NULL
 // workspace_id (created before the workspace migration ran) stay
 // visible everywhere so nothing disappears mid-rollout.
