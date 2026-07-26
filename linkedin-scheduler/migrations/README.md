@@ -38,3 +38,4 @@ mysql -u <user> -p <database> < migrations/0001_kb_workspace_identity_tone.sql
 | `0003_kb_personas_enrichment.sql` | 2 | Richer Persona fields (title, seniority, pain points, decision role, etc.), wired into AI prompt |
 | `0004_kb_verticals.sql` | 3 | New `verticals` table (business units / focus areas) |
 | `0005_kb_services.sql` | 4 | New `services` table (offerings + signal-matching fields) |
+| `0006_kb_icps.sql` | 5 | New `icps` table (company-level ideal customer profiles) |

@@ -15,7 +15,7 @@ additive — existing behavior is never changed, only extended.
 | 2 | Personas (enrich existing table) | **Done** | `migrations/0003_kb_personas_enrichment.sql` |
 | 3 | Verticals (new table) | **Done** | `migrations/0004_kb_verticals.sql` |
 | 4 | Services (new table) | **Done** | `migrations/0005_kb_services.sql` |
-| 5 | ICPs (new table) | Not started | — |
+| 5 | ICPs (new table) | **Done** | `migrations/0006_kb_icps.sql` |
 | 6 | Link Personas ↔ Verticals/Services | Not started | — |
 | 7 | Proof Points (new table) | Not started | — |
 | 8 | Documents polish (optional) | Not started | — |

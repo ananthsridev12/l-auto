@@ -184,6 +184,26 @@ function delete_service(int $workspaceId, int $id): void
     db()->prepare('DELETE FROM services WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
 }
 
+// KB expansion Phase 5 (docs/KNOWLEDGE_BASE.md) — ICPs.
+function fetch_icps(int $workspaceId): array
+{
+    $stmt = db()->prepare('SELECT * FROM icps WHERE workspace_id = ? ORDER BY name');
+    $stmt->execute([$workspaceId]);
+    return $stmt->fetchAll();
+}
+
+function fetch_icp(int $workspaceId, int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM icps WHERE workspace_id = ? AND id = ?');
+    $stmt->execute([$workspaceId, $id]);
+    return $stmt->fetch() ?: null;
+}
+
+function delete_icp(int $workspaceId, int $id): void
+{
+    db()->prepare('DELETE FROM icps WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
+}
+
 // $workspaceId scopes results to a workspace; rows with NULL
 // workspace_id (created before the workspace migration ran) stay
 // visible everywhere so nothing disappears mid-rollout.

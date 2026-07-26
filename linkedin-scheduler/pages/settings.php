@@ -467,6 +467,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    // KB expansion Phase 5 (docs/KNOWLEDGE_BASE.md) — ICPs.
+    if (($_POST['form'] ?? '') === 'icp_add') {
+        $name = trim($_POST['icp_name'] ?? '');
+        if ($name === '') {
+            flash('error', 'Enter an ICP name.');
+            redirect('pages/settings.php');
+        }
+        $verticalId = (int) ($_POST['icp_vertical_id'] ?? 0) ?: null;
+        if ($verticalId !== null && !fetch_vertical($workspaceId, $verticalId)) {
+            $verticalId = null;
+        }
+        $serviceId = (int) ($_POST['icp_service_id'] ?? 0) ?: null;
+        if ($serviceId !== null && !fetch_service($workspaceId, $serviceId)) {
+            $serviceId = null;
+        }
+        db()->prepare(
+            'INSERT INTO icps (workspace_id, vertical_id, service_id, name, size_range, revenue_range, industries,
+             geographies, tech_stack_signals, trigger_events, perfect_fit, poor_fit, disqualifiers, buying_process)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $workspaceId, $verticalId, $serviceId, $name,
+            trim($_POST['icp_size_range'] ?? '') ?: null,
+            trim($_POST['icp_revenue_range'] ?? '') ?: null,
+            trim($_POST['icp_industries'] ?? '') ?: null,
+            trim($_POST['icp_geographies'] ?? '') ?: null,
+            trim($_POST['icp_tech_stack_signals'] ?? '') ?: null,
+            trim($_POST['icp_trigger_events'] ?? '') ?: null,
+            trim($_POST['icp_perfect_fit'] ?? '') ?: null,
+            trim($_POST['icp_poor_fit'] ?? '') ?: null,
+            trim($_POST['icp_disqualifiers'] ?? '') ?: null,
+            trim($_POST['icp_buying_process'] ?? '') ?: null,
+        ]);
+        flash('success', "ICP \"{$name}\" saved.");
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'icp_delete') {
+        delete_icp($workspaceId, (int) ($_POST['icp_id'] ?? 0));
+        flash('success', 'ICP removed.');
+        redirect('pages/settings.php');
+    }
+
     if (($_POST['form'] ?? '') === 'pillar_add') {
         $name = trim($_POST['pillar_name'] ?? '');
         $desc = trim($_POST['pillar_description'] ?? '');
@@ -910,6 +952,7 @@ $personas = fetch_personas($userId, $workspaceId);
 $senders = fetch_senders($workspaceId);
 $verticals = fetch_verticals($workspaceId);
 $services = fetch_services($workspaceId);
+$icps = fetch_icps($workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
 $defaultLayoutSingle = $workspace['default_layout_single'] ?? null;
 $defaultLayoutCarousel = $workspace['default_layout_carousel'] ?? null;
@@ -1854,6 +1897,92 @@ require __DIR__ . '/../includes/layout_top.php';
       </label>
     </details>
     <button type="submit" class="btn-secondary">Add Service</button>
+  </form>
+</section>
+
+<section class="card" data-tab="content">
+  <h2>Ideal Customer Profiles — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Who the perfect <?= $workspace['type'] === 'personal' ? 'reader/client' : 'customer' ?> is — company-level fit criteria, separate from an individual Persona (a role within that company).</p>
+  <?php if ($icps): ?>
+    <?php foreach ($icps as $ic): ?>
+      <div class="account-row">
+        <div class="account-info">
+          <span><?= h($ic['name']) ?></span>
+          <span class="muted"><?= h(mb_strimwidth($ic['perfect_fit'] ?? '', 0, 100, '…')) ?></span>
+        </div>
+        <form method="post" onsubmit="return confirm('Remove this ICP?');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="icp_delete">
+          <input type="hidden" name="icp_id" value="<?= (int) $ic['id'] ?>">
+          <button type="submit" class="btn-tiny btn-danger">Remove</button>
+        </form>
+      </div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <p class="muted">No ICPs added yet.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="icp_add">
+    <label>Name
+      <input type="text" name="icp_name" placeholder="e.g. Mid-market Manufacturing CIO" required>
+    </label>
+    <?php if ($verticals || $services): ?>
+      <?php if ($verticals): ?>
+        <label>Vertical <span class="muted">(optional)</span>
+          <select name="icp_vertical_id">
+            <option value="">— None —</option>
+            <?php foreach ($verticals as $v): ?>
+              <option value="<?= (int) $v['id'] ?>"><?= h($v['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      <?php endif; ?>
+      <?php if ($services): ?>
+        <label>Service <span class="muted">(optional)</span>
+          <select name="icp_service_id">
+            <option value="">— None —</option>
+            <?php foreach ($services as $sv): ?>
+              <option value="<?= (int) $sv['id'] ?>"><?= h($sv['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      <?php endif; ?>
+    <?php endif; ?>
+    <label>Perfect fit
+      <textarea name="icp_perfect_fit" rows="2" placeholder="e.g. On SAP ECC, under 5000 employees, has internal IT team"></textarea>
+    </label>
+    <details class="kb-details">
+      <summary>More details <span class="muted">(optional)</span></summary>
+      <label>Size range
+        <input type="text" name="icp_size_range" placeholder="e.g. 500-5000 employees">
+      </label>
+      <label>Revenue range
+        <input type="text" name="icp_revenue_range" placeholder="e.g. $100M-$1B">
+      </label>
+      <label>Industries <span class="muted">(comma-separated)</span>
+        <input type="text" name="icp_industries" placeholder="e.g. Manufacturing, Industrial">
+      </label>
+      <label>Geographies <span class="muted">(comma-separated)</span>
+        <input type="text" name="icp_geographies" placeholder="e.g. US, UK, Germany">
+      </label>
+      <label>Tech stack signals
+        <input type="text" name="icp_tech_stack_signals">
+      </label>
+      <label>Trigger events
+        <textarea name="icp_trigger_events" rows="2" placeholder="e.g. ECC end of maintenance announcement, merger, new CIO hire"></textarea>
+      </label>
+      <label>Poor fit
+        <textarea name="icp_poor_fit" rows="2" placeholder="e.g. Greenfield with no ERP, under 100 employees"></textarea>
+      </label>
+      <label>Disqualifiers
+        <input type="text" name="icp_disqualifiers" placeholder="e.g. Already on S/4HANA, using Oracle, no budget cycle">
+      </label>
+      <label>Buying process
+        <textarea name="icp_buying_process" rows="2"></textarea>
+      </label>
+    </details>
+    <button type="submit" class="btn-secondary">Add ICP</button>
   </form>
 </section>
 
