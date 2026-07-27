@@ -22,6 +22,19 @@ additive — existing behavior is never changed, only extended.
 | 9 | Wire Service/ICP/Proof into AI generation | **Done** | — (code only, no schema change) |
 | 10 | Signal matching + KB completeness (optional stretch) | **Done** | — (code only, no schema change) |
 
+Phase 15 (KB round 2): CSV import for the 6 list-shaped KB modules
+(Verticals, Services, ICPs, Personas, Senders, Proof Points) — each
+tab's list panel has an "Import from CSV" file input + "Download
+template" link (`assets/templates/kb_*_template.csv`), a fixed
+expected header row (no column-mapping UI, matching the app's existing
+CSV conventions), and a plain multipart-form POST handler
+(`*_import`) in `pages/knowledge.php` reusing `csv_load_all_rows()`
+from `includes/csv_parser.php`. `vertical_name`/`service_name` CSV
+columns resolve to ids by name lookup within the importing workspace
+(`find_vertical_id_by_name()`/`find_service_id_by_name()` in
+`includes/post_helpers.php`) — an unresolved name imports the row with
+that link left blank rather than failing it.
+
 Phase 12 (KB round 2): the entire Knowledge Base UI moved out of
 Settings into its own page, `pages/knowledge.php` — 12 tabs (Company,
 Verticals, Services, ICPs, Personas, Tone & Voice, Senders, Proof

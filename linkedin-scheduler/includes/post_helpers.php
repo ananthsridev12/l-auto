@@ -164,6 +164,35 @@ function delete_vertical(int $workspaceId, int $id): void
     db()->prepare('DELETE FROM verticals WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
 }
 
+// KB round 2, Phase 15 (docs/KNOWLEDGE_BASE.md) — CSV import resolves a
+// vertical_name/service_name column to an id by name lookup within the
+// importing workspace (a human-editable CSV can't know internal
+// auto-increment ids). No match = left unlinked, not a failed row —
+// same graceful-degradation ethos as everywhere else in this file.
+function find_vertical_id_by_name(int $workspaceId, string $name): ?int
+{
+    $name = trim($name);
+    if ($name === '') {
+        return null;
+    }
+    $stmt = db()->prepare('SELECT id FROM verticals WHERE workspace_id = ? AND name = ? LIMIT 1');
+    $stmt->execute([$workspaceId, $name]);
+    $id = $stmt->fetchColumn();
+    return $id ? (int) $id : null;
+}
+
+function find_service_id_by_name(int $workspaceId, string $name): ?int
+{
+    $name = trim($name);
+    if ($name === '') {
+        return null;
+    }
+    $stmt = db()->prepare('SELECT id FROM services WHERE workspace_id = ? AND name = ? LIMIT 1');
+    $stmt->execute([$workspaceId, $name]);
+    $id = $stmt->fetchColumn();
+    return $id ? (int) $id : null;
+}
+
 // KB expansion Phase 4 (docs/KNOWLEDGE_BASE.md) — Services.
 function fetch_services(int $workspaceId): array
 {

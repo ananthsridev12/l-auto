@@ -1,0 +1,2 @@
+client_name,client_industry,client_size,vertical_name,service_name,challenge,solution,outcomes,metrics,quote,quote_attribution,is_public
+Acme Manufacturing,Industrial Manufacturing,1200 employees,ERP Practice,SAP S/4 Migration,Legacy SAP ECC was blocking a plant expansion,Migrated to S/4HANA in 9 months with zero downtime,Reduced close time by 40%,"Reduced close time by 40%, saved $2M",The team made a migration we dreaded feel routine.,Jane Doe VP Operations,1

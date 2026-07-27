@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/kb_documents.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
+require_once __DIR__ . '/../includes/csv_parser.php';
 
 require_login();
 $userId = current_user_id();
@@ -265,6 +266,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/knowledge.php');
     }
 
+    // KB round 2, Phase 15 (docs/KNOWLEDGE_BASE.md) — CSV import. Fixed
+    // expected header row (see assets/templates/kb_personas_template.csv),
+    // no column-mapping UI — matches the app's existing CSV conventions
+    // (Content Studio/Import). Plain form POST + redirect + flash, same
+    // as every other KB mutation, not the AJAX preview/confirm flow
+    // Content Studio uses (that exists only because it also renders AI
+    // images, which KB rows never do).
+    if (($_POST['form'] ?? '') === 'persona_import') {
+        if (empty($_FILES['persona_csv']['tmp_name']) || $_FILES['persona_csv']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose a CSV file to import.');
+            redirect('pages/knowledge.php#personas');
+        }
+        $rows = csv_load_all_rows($_FILES['persona_csv']['tmp_name']);
+        $imported = 0;
+        $skipped = 0;
+        $stmt = db()->prepare(
+            'INSERT INTO personas (user_id, workspace_id, name, description, title, department, seniority,
+             reporting_to, goals, pain_points, objections, kpis, decision_role, communication_style,
+             preferred_content, watering_holes, content_hook, vertical_id, service_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), title = VALUES(title),
+             department = VALUES(department), seniority = VALUES(seniority), reporting_to = VALUES(reporting_to),
+             goals = VALUES(goals), pain_points = VALUES(pain_points), objections = VALUES(objections),
+             kpis = VALUES(kpis), decision_role = VALUES(decision_role), communication_style = VALUES(communication_style),
+             preferred_content = VALUES(preferred_content), watering_holes = VALUES(watering_holes),
+             content_hook = VALUES(content_hook), vertical_id = VALUES(vertical_id), service_id = VALUES(service_id)'
+        );
+        foreach ($rows as $row) {
+            $name = trim($row['name'] ?? '');
+            if ($name === '') {
+                $skipped++;
+                continue;
+            }
+            $seniority = in_array($row['seniority'] ?? '', ['C-Suite', 'VP', 'Director', 'Manager', 'Individual Contributor'], true) ? $row['seniority'] : null;
+            $decisionRole = in_array($row['decision_role'] ?? '', ['Economic Buyer', 'Champion', 'Technical Buyer', 'End User', 'Influencer', 'Blocker'], true) ? $row['decision_role'] : null;
+            $stmt->execute([
+                $userId, $workspaceId, $name,
+                trim($row['description'] ?? '') ?: null,
+                trim($row['title'] ?? '') ?: null,
+                trim($row['department'] ?? '') ?: null,
+                $seniority,
+                trim($row['reporting_to'] ?? '') ?: null,
+                trim($row['goals'] ?? '') ?: null,
+                trim($row['pain_points'] ?? '') ?: null,
+                trim($row['objections'] ?? '') ?: null,
+                trim($row['kpis'] ?? '') ?: null,
+                $decisionRole,
+                trim($row['communication_style'] ?? '') ?: null,
+                trim($row['preferred_content'] ?? '') ?: null,
+                trim($row['watering_holes'] ?? '') ?: null,
+                trim($row['content_hook'] ?? '') ?: null,
+                find_vertical_id_by_name($workspaceId, $row['vertical_name'] ?? ''),
+                find_service_id_by_name($workspaceId, $row['service_name'] ?? ''),
+            ]);
+            $imported++;
+        }
+        flash($imported > 0 ? 'success' : 'error', "Imported {$imported} persona(s)" . ($skipped ? ", skipped {$skipped} row(s) missing a name" : '') . '.');
+        redirect('pages/knowledge.php#personas');
+    }
+
     if (($_POST['form'] ?? '') === 'sender_add') {
         $fullName = trim($_POST['sender_full_name'] ?? '');
         if ($fullName === '') {
@@ -308,6 +369,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/knowledge.php');
     }
 
+    if (($_POST['form'] ?? '') === 'sender_import') {
+        if (empty($_FILES['sender_csv']['tmp_name']) || $_FILES['sender_csv']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose a CSV file to import.');
+            redirect('pages/knowledge.php#senders');
+        }
+        $rows = csv_load_all_rows($_FILES['sender_csv']['tmp_name']);
+        $imported = 0;
+        $skipped = 0;
+        foreach ($rows as $row) {
+            $fullName = trim($row['full_name'] ?? '');
+            if ($fullName === '') {
+                $skipped++;
+                continue;
+            }
+            $yearsExp = trim($row['years_experience'] ?? '');
+            db()->prepare(
+                'INSERT INTO senders (workspace_id, full_name, title, linkedin_headline, linkedin_about, background,
+                 credibility, years_experience, individual_tone, example_posts, post_topics)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            )->execute([
+                $workspaceId, $fullName,
+                trim($row['title'] ?? '') ?: null,
+                trim($row['linkedin_headline'] ?? '') ?: null,
+                trim($row['linkedin_about'] ?? '') ?: null,
+                trim($row['background'] ?? '') ?: null,
+                trim($row['credibility'] ?? '') ?: null,
+                $yearsExp !== '' ? (int) $yearsExp : null,
+                trim($row['individual_tone'] ?? '') ?: null,
+                trim($row['example_posts'] ?? '') ?: null,
+                trim($row['post_topics'] ?? '') ?: null,
+            ]);
+            $newSenderId = (int) db()->lastInsertId();
+            if (!empty($row['is_default']) || count(fetch_senders($workspaceId)) === 1) {
+                set_default_sender($workspaceId, $newSenderId);
+            }
+            $imported++;
+        }
+        flash($imported > 0 ? 'success' : 'error', "Imported {$imported} sender(s)" . ($skipped ? ", skipped {$skipped} row(s) missing a name" : '') . '.');
+        redirect('pages/knowledge.php#senders');
+    }
+
     if (($_POST['form'] ?? '') === 'vertical_add') {
         $name = trim($_POST['vertical_name'] ?? '');
         if ($name === '') {
@@ -335,6 +437,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         delete_vertical($workspaceId, (int) ($_POST['vertical_id'] ?? 0));
         flash('success', 'Vertical removed.');
         redirect('pages/knowledge.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'vertical_import') {
+        if (empty($_FILES['vertical_csv']['tmp_name']) || $_FILES['vertical_csv']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose a CSV file to import.');
+            redirect('pages/knowledge.php#verticals');
+        }
+        $rows = csv_load_all_rows($_FILES['vertical_csv']['tmp_name']);
+        $imported = 0;
+        $skipped = 0;
+        $stmt = db()->prepare(
+            'INSERT INTO verticals (workspace_id, name, focus, industries, priority, differentiators, head_name, positioning)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($rows as $row) {
+            $name = trim($row['name'] ?? '');
+            if ($name === '') {
+                $skipped++;
+                continue;
+            }
+            $priority = in_array($row['priority'] ?? '', ['core', 'growth', 'emerging'], true) ? $row['priority'] : 'core';
+            $stmt->execute([
+                $workspaceId, $name,
+                trim($row['focus'] ?? '') ?: null,
+                trim($row['industries'] ?? '') ?: null,
+                $priority,
+                trim($row['differentiators'] ?? '') ?: null,
+                trim($row['head_name'] ?? '') ?: null,
+                trim($row['positioning'] ?? '') ?: null,
+            ]);
+            $imported++;
+        }
+        flash($imported > 0 ? 'success' : 'error', "Imported {$imported} vertical(s)" . ($skipped ? ", skipped {$skipped} row(s) missing a name" : '') . '.');
+        redirect('pages/knowledge.php#verticals');
     }
 
     if (($_POST['form'] ?? '') === 'service_add') {
@@ -379,6 +515,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/knowledge.php');
     }
 
+    if (($_POST['form'] ?? '') === 'service_import') {
+        if (empty($_FILES['service_csv']['tmp_name']) || $_FILES['service_csv']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose a CSV file to import.');
+            redirect('pages/knowledge.php#services');
+        }
+        $rows = csv_load_all_rows($_FILES['service_csv']['tmp_name']);
+        $imported = 0;
+        $skipped = 0;
+        $stmt = db()->prepare(
+            'INSERT INTO services (workspace_id, vertical_id, name, one_liner, industries, icp_size, buyer_titles,
+             engagement_model, signal_keywords, signal_types, tech_triggers, competing_tools, description,
+             problem_statement, outcomes, differentiators, proof_points)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($rows as $row) {
+            $name = trim($row['name'] ?? '');
+            if ($name === '') {
+                $skipped++;
+                continue;
+            }
+            $stmt->execute([
+                $workspaceId,
+                find_vertical_id_by_name($workspaceId, $row['vertical_name'] ?? ''),
+                $name,
+                trim($row['one_liner'] ?? '') ?: null,
+                trim($row['industries'] ?? '') ?: null,
+                trim($row['icp_size'] ?? '') ?: null,
+                trim($row['buyer_titles'] ?? '') ?: null,
+                trim($row['engagement_model'] ?? '') ?: null,
+                trim($row['signal_keywords'] ?? '') ?: null,
+                trim($row['signal_types'] ?? '') ?: null,
+                trim($row['tech_triggers'] ?? '') ?: null,
+                trim($row['competing_tools'] ?? '') ?: null,
+                trim($row['description'] ?? '') ?: null,
+                trim($row['problem_statement'] ?? '') ?: null,
+                trim($row['outcomes'] ?? '') ?: null,
+                trim($row['differentiators'] ?? '') ?: null,
+                trim($row['proof_points'] ?? '') ?: null,
+            ]);
+            $imported++;
+        }
+        flash($imported > 0 ? 'success' : 'error', "Imported {$imported} service(s)" . ($skipped ? ", skipped {$skipped} row(s) missing a name" : '') . '.');
+        redirect('pages/knowledge.php#services');
+    }
+
     if (($_POST['form'] ?? '') === 'icp_add') {
         $name = trim($_POST['icp_name'] ?? '');
         if ($name === '') {
@@ -420,6 +601,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/knowledge.php');
     }
 
+    if (($_POST['form'] ?? '') === 'icp_import') {
+        if (empty($_FILES['icp_csv']['tmp_name']) || $_FILES['icp_csv']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose a CSV file to import.');
+            redirect('pages/knowledge.php#icps');
+        }
+        $rows = csv_load_all_rows($_FILES['icp_csv']['tmp_name']);
+        $imported = 0;
+        $skipped = 0;
+        $stmt = db()->prepare(
+            'INSERT INTO icps (workspace_id, vertical_id, service_id, name, size_range, revenue_range, industries,
+             geographies, tech_stack_signals, trigger_events, perfect_fit, poor_fit, disqualifiers, buying_process)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($rows as $row) {
+            $name = trim($row['name'] ?? '');
+            if ($name === '') {
+                $skipped++;
+                continue;
+            }
+            $stmt->execute([
+                $workspaceId,
+                find_vertical_id_by_name($workspaceId, $row['vertical_name'] ?? ''),
+                find_service_id_by_name($workspaceId, $row['service_name'] ?? ''),
+                $name,
+                trim($row['size_range'] ?? '') ?: null,
+                trim($row['revenue_range'] ?? '') ?: null,
+                trim($row['industries'] ?? '') ?: null,
+                trim($row['geographies'] ?? '') ?: null,
+                trim($row['tech_stack_signals'] ?? '') ?: null,
+                trim($row['trigger_events'] ?? '') ?: null,
+                trim($row['perfect_fit'] ?? '') ?: null,
+                trim($row['poor_fit'] ?? '') ?: null,
+                trim($row['disqualifiers'] ?? '') ?: null,
+                trim($row['buying_process'] ?? '') ?: null,
+            ]);
+            $imported++;
+        }
+        flash($imported > 0 ? 'success' : 'error', "Imported {$imported} ICP(s)" . ($skipped ? ", skipped {$skipped} row(s) missing a name" : '') . '.');
+        redirect('pages/knowledge.php#icps');
+    }
+
     if (($_POST['form'] ?? '') === 'proof_point_add') {
         $clientName = trim($_POST['proof_client_name'] ?? '');
         if ($clientName === '') {
@@ -458,6 +680,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         delete_proof_point($workspaceId, (int) ($_POST['proof_point_id'] ?? 0));
         flash('success', 'Proof point removed.');
         redirect('pages/knowledge.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'proof_point_import') {
+        if (empty($_FILES['proof_point_csv']['tmp_name']) || $_FILES['proof_point_csv']['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Choose a CSV file to import.');
+            redirect('pages/knowledge.php#proof');
+        }
+        $rows = csv_load_all_rows($_FILES['proof_point_csv']['tmp_name']);
+        $imported = 0;
+        $skipped = 0;
+        $stmt = db()->prepare(
+            'INSERT INTO proof_points (workspace_id, vertical_id, service_id, client_name, client_industry,
+             client_size, challenge, solution, outcomes, metrics, quote, quote_attribution, is_public)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($rows as $row) {
+            $clientName = trim($row['client_name'] ?? '');
+            if ($clientName === '') {
+                $skipped++;
+                continue;
+            }
+            $isPublic = strtolower(trim($row['is_public'] ?? '1'));
+            $stmt->execute([
+                $workspaceId,
+                find_vertical_id_by_name($workspaceId, $row['vertical_name'] ?? ''),
+                find_service_id_by_name($workspaceId, $row['service_name'] ?? ''),
+                $clientName,
+                trim($row['client_industry'] ?? '') ?: null,
+                trim($row['client_size'] ?? '') ?: null,
+                trim($row['challenge'] ?? '') ?: null,
+                trim($row['solution'] ?? '') ?: null,
+                trim($row['outcomes'] ?? '') ?: null,
+                trim($row['metrics'] ?? '') ?: null,
+                trim($row['quote'] ?? '') ?: null,
+                trim($row['quote_attribution'] ?? '') ?: null,
+                in_array($isPublic, ['0', 'no', 'false'], true) ? 0 : 1,
+            ]);
+            $imported++;
+        }
+        flash($imported > 0 ? 'success' : 'error', "Imported {$imported} proof point(s)" . ($skipped ? ", skipped {$skipped} row(s) missing a client name" : '') . '.');
+        redirect('pages/knowledge.php#proof');
     }
 
     if (($_POST['form'] ?? '') === 'pillar_add') {
@@ -702,6 +965,14 @@ require __DIR__ . '/../includes/layout_top.php';
     </details>
     <button type="submit" class="btn-secondary">Add Vertical</button>
   </form>
+  <form method="post" enctype="multipart/form-data" class="stacked-form" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-200);">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="vertical_import">
+    <label>Import from CSV
+      <input type="file" name="vertical_csv" accept=".csv" required>
+    </label>
+    <div><button type="submit" class="btn-tiny">Import CSV</button> <a href="<?= h(app_path('assets/templates/kb_verticals_template.csv')) ?>" download class="muted" style="font-size:12px;">Download template</a></div>
+  </form>
 </section>
 
 <section class="card" data-tab="services">
@@ -788,6 +1059,14 @@ require __DIR__ . '/../includes/layout_top.php';
     </details>
     <button type="submit" class="btn-secondary">Add Service</button>
   </form>
+  <form method="post" enctype="multipart/form-data" class="stacked-form" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-200);">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="service_import">
+    <label>Import from CSV <span class="muted">(vertical_name column matches an existing Vertical by name)</span>
+      <input type="file" name="service_csv" accept=".csv" required>
+    </label>
+    <div><button type="submit" class="btn-tiny">Import CSV</button> <a href="<?= h(app_path('assets/templates/kb_services_template.csv')) ?>" download class="muted" style="font-size:12px;">Download template</a></div>
+  </form>
 </section>
 
 <section class="card" data-tab="icps">
@@ -873,6 +1152,14 @@ require __DIR__ . '/../includes/layout_top.php';
       </label>
     </details>
     <button type="submit" class="btn-secondary">Add ICP</button>
+  </form>
+  <form method="post" enctype="multipart/form-data" class="stacked-form" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-200);">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="icp_import">
+    <label>Import from CSV <span class="muted">(vertical_name/service_name columns match by name)</span>
+      <input type="file" name="icp_csv" accept=".csv" required>
+    </label>
+    <div><button type="submit" class="btn-tiny">Import CSV</button> <a href="<?= h(app_path('assets/templates/kb_icps_template.csv')) ?>" download class="muted" style="font-size:12px;">Download template</a></div>
   </form>
 </section>
 
@@ -994,6 +1281,14 @@ require __DIR__ . '/../includes/layout_top.php';
       <?php endif; ?>
     </details>
     <button type="submit" class="btn-secondary">Add Persona</button>
+  </form>
+  <form method="post" enctype="multipart/form-data" class="stacked-form" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-200);">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="persona_import">
+    <label>Import from CSV <span class="muted">(vertical_name/service_name columns match by name)</span>
+      <input type="file" name="persona_csv" accept=".csv" required>
+    </label>
+    <div><button type="submit" class="btn-tiny">Import CSV</button> <a href="<?= h(app_path('assets/templates/kb_personas_template.csv')) ?>" download class="muted" style="font-size:12px;">Download template</a></div>
   </form>
 </section>
 
@@ -1123,6 +1418,14 @@ require __DIR__ . '/../includes/layout_top.php';
     </details>
     <button type="submit" class="btn-secondary">Add Sender</button>
   </form>
+  <form method="post" enctype="multipart/form-data" class="stacked-form" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-200);">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="sender_import">
+    <label>Import from CSV
+      <input type="file" name="sender_csv" accept=".csv" required>
+    </label>
+    <div><button type="submit" class="btn-tiny">Import CSV</button> <a href="<?= h(app_path('assets/templates/kb_senders_template.csv')) ?>" download class="muted" style="font-size:12px;">Download template</a></div>
+  </form>
 </section>
 
 <section class="card" data-tab="proof">
@@ -1203,6 +1506,14 @@ require __DIR__ . '/../includes/layout_top.php';
       <label class="checkbox-row"><input type="checkbox" name="proof_is_public" checked> OK to share publicly</label>
     </details>
     <button type="submit" class="btn-secondary">Add Proof Point</button>
+  </form>
+  <form method="post" enctype="multipart/form-data" class="stacked-form" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-200);">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="proof_point_import">
+    <label>Import from CSV <span class="muted">(vertical_name/service_name columns match by name)</span>
+      <input type="file" name="proof_point_csv" accept=".csv" required>
+    </label>
+    <div><button type="submit" class="btn-tiny">Import CSV</button> <a href="<?= h(app_path('assets/templates/kb_proof_points_template.csv')) ?>" download class="muted" style="font-size:12px;">Download template</a></div>
   </form>
 </section>
 

@@ -1,0 +1,2 @@
+name,vertical_name,service_name,size_range,revenue_range,industries,geographies,tech_stack_signals,trigger_events,perfect_fit,poor_fit,disqualifiers,buying_process
+Mid-market Manufacturing CIO,ERP Practice,SAP S/4 Migration,500-5000,$100M-$1B,"Manufacturing,Industrial","US,UK,Germany",,"ECC end of maintenance announcement,merger,new CIO hire","On SAP ECC, under 5000 employees, has internal IT team","Greenfield with no ERP, <100 employees","Already on S/4HANA,using Oracle,no budget cycle",
