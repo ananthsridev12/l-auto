@@ -20,7 +20,7 @@ additive — existing behavior is never changed, only extended.
 | 7 | Proof Points (new table) | **Done** | `migrations/0008_kb_proof_points.sql` |
 | 8 | Documents polish (optional) | **Done** | `migrations/0010_kb_documents_polish.sql` |
 | 9 | Wire Service/ICP/Proof into AI generation | **Done** | — (code only, no schema change) |
-| 10 | Signal matching + KB completeness (optional stretch) | Not started | — |
+| 10 | Signal matching + KB completeness (optional stretch) | **Done** | — (code only, no schema change) |
 
 Phase 12 (KB round 2): the entire Knowledge Base UI moved out of
 Settings into its own page, `pages/knowledge.php` — 12 tabs (Company,

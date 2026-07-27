@@ -184,33 +184,63 @@ function delete_service(int $workspaceId, int $id): void
     db()->prepare('DELETE FROM services WHERE workspace_id = ? AND id = ?')->execute([$workspaceId, $id]);
 }
 
-// KB expansion Phase 9 (docs/KNOWLEDGE_BASE.md) — Calendar Batch has no
-// per-post Service picker (it auto-generates unattended), so it matches
-// a service by simple keyword overlap between the topic/pillar name and
-// services.signal_keywords instead. A much simpler first cut than full
-// scoring (see Phase 10 in docs/KNOWLEDGE_BASE.md); returns null (no
-// service context added) when nothing overlaps.
+// KB expansion Phase 9/10 (docs/KNOWLEDGE_BASE.md) — Calendar Batch has
+// no per-post Service picker (it auto-generates unattended), so it
+// matches a service by keyword overlap between the topic/pillar name
+// and the service's signal fields instead. Weighted similarly to the
+// ISE design doc's KBMatcher (signal_types/tech_triggers count for more
+// than a plain signal_keywords hit, industries count for less) — but
+// adapted to match a free-text topic string rather than a structured
+// target-company row, since this app has no separate "companies" table.
+// Deterministic, no AI involved. Returns null below the qualifying
+// threshold so "no confident match" never forces irrelevant context in.
+const SERVICE_MATCH_MIN_SCORE = 2;
+
 function match_service_by_keywords(int $workspaceId, string $topic): ?array
 {
     $topicWords = preg_split('/[^a-z0-9]+/', strtolower(trim($topic)), -1, PREG_SPLIT_NO_EMPTY);
     if (!$topicWords) {
         return null;
     }
+    $topicWords = array_flip($topicWords);
     $best = null;
     $bestScore = 0;
     foreach (fetch_services($workspaceId) as $service) {
-        $keywords = strtolower(trim((string) ($service['signal_keywords'] ?? '')));
-        if ($keywords === '') {
-            continue;
-        }
-        $serviceWords = preg_split('/[^a-z0-9]+/', $keywords, -1, PREG_SPLIT_NO_EMPTY);
-        $score = count(array_intersect($topicWords, $serviceWords));
+        $score = score_service_signal_overlap($service, $topicWords);
         if ($score > $bestScore) {
             $bestScore = $score;
             $best = $service;
         }
     }
-    return $best;
+    return $bestScore >= SERVICE_MATCH_MIN_SCORE ? $best : null;
+}
+
+// Weighted overlap between a service's signal fields and a set of
+// lowercased topic words (as an array_flip'd lookup for O(1) membership
+// checks). Exposed separately from match_service_by_keywords() so a
+// future caller (e.g. a KB completeness / signal-strength display) can
+// score one specific service without re-fetching the whole list.
+function score_service_signal_overlap(array $service, array $topicWordLookup): int
+{
+    $score = 0;
+    foreach ([
+        'signal_keywords' => 2,
+        'signal_types'    => 3,
+        'tech_triggers'   => 3,
+        'industries'      => 1,
+    ] as $field => $weight) {
+        $raw = strtolower(trim((string) ($service[$field] ?? '')));
+        if ($raw === '') {
+            continue;
+        }
+        $fieldWords = preg_split('/[^a-z0-9]+/', $raw, -1, PREG_SPLIT_NO_EMPTY);
+        foreach ($fieldWords as $word) {
+            if (isset($topicWordLookup[$word])) {
+                $score += $weight;
+            }
+        }
+    }
+    return $score;
 }
 
 // KB expansion Phase 5 (docs/KNOWLEDGE_BASE.md) — ICPs.
@@ -268,6 +298,35 @@ function fetch_matching_proof_point(int $workspaceId, int $serviceId, ?int $vert
     $stmt = db()->prepare('SELECT * FROM proof_points WHERE workspace_id = ? AND vertical_id = ? AND is_public = 1 ORDER BY created_at DESC LIMIT 1');
     $stmt->execute([$workspaceId, $verticalId]);
     return $stmt->fetch() ?: null;
+}
+
+// KB round 2, Phase 14 (KB Phase 10 — docs/KNOWLEDGE_BASE.md) — a fill
+// summary for the Knowledge Base page's top strip. Informational only;
+// generation already degrades gracefully regardless of what's filled.
+// 'mode' mirrors the design doc's own Lite/Full detection: Full once
+// there's at least one Vertical AND one Service to match against.
+function kb_completeness(int $userId, array $workspace): array
+{
+    $workspaceId = (int) $workspace['id'];
+    $companyFilled = trim((string) ($workspace['about'] ?? '')) !== '' || trim((string) ($workspace['credibility_statement'] ?? '')) !== '';
+    $toneFilled = trim((string) ($workspace['tone_descriptors'] ?? '')) !== ''
+        || trim((string) ($workspace['words_never'] ?? '')) !== ''
+        || trim((string) ($workspace['good_example'] ?? '')) !== '';
+    $verticalCount = count(fetch_verticals($workspaceId));
+    $serviceCount = count(fetch_services($workspaceId));
+
+    return [
+        'company_filled' => $companyFilled,
+        'tone_filled'    => $toneFilled,
+        'senders'        => count(fetch_senders($workspaceId)),
+        'verticals'      => $verticalCount,
+        'services'       => $serviceCount,
+        'icps'           => count(fetch_icps($workspaceId)),
+        'personas'       => count(fetch_personas($userId, $workspaceId)),
+        'proof_points'   => count(fetch_proof_points($workspaceId)),
+        'documents'      => count(fetch_knowledge_documents($workspaceId)),
+        'mode'           => ($verticalCount > 0 && $serviceCount > 0) ? 'full' : 'lite',
+    ];
 }
 
 // $workspaceId scopes results to a workspace; rows with NULL

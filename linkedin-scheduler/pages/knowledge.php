@@ -524,6 +524,7 @@ $knowledgeDocuments = fetch_knowledge_documents($workspaceId);
 $ctaLibrary = fetch_cta_library($userId, $workspaceId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 $brandPalettes = fetch_brand_palettes($userId);
+$kbCompleteness = kb_completeness($userId, $workspace);
 
 $pageTitle  = 'Knowledge Base';
 $activePage = 'knowledge';
@@ -532,6 +533,27 @@ require __DIR__ . '/../includes/layout_top.php';
 ?>
 <div class="page-header"><h1>Knowledge Base — <?= h($workspace['name']) ?></h1></div>
 <p class="muted" style="margin-top:-14px; margin-bottom:20px;">Everything here is scoped to the active workspace — switch workspaces with the selector at the top of the sidebar to edit a different one's knowledge base. This is the context every AI generation in this workspace automatically draws on.</p>
+
+<div class="card" style="padding:14px 20px; margin-bottom:20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+  <span class="badge <?= $kbCompleteness['mode'] === 'full' ? 'badge-active' : 'badge-warning' ?>">
+    <?= $kbCompleteness['mode'] === 'full' ? 'Full Mode' : 'Lite Mode' ?>
+  </span>
+  <span class="muted" style="font-size:12px;">
+    <?= $kbCompleteness['mode'] === 'full'
+        ? 'At least one Vertical and one Service exist — AI generation can match a specific Service to what you write about.'
+        : 'Add at least one Vertical and one Service to unlock Service matching (still fully optional — generation works fine without it).' ?>
+  </span>
+  <span class="muted" style="font-size:12px; margin-left:auto;">
+    Company <?= $kbCompleteness['company_filled'] ? '✓' : '—' ?> ·
+    Tone <?= $kbCompleteness['tone_filled'] ? '✓' : '—' ?> ·
+    Senders <?= $kbCompleteness['senders'] ?> ·
+    Verticals <?= $kbCompleteness['verticals'] ?> ·
+    Services <?= $kbCompleteness['services'] ?> ·
+    ICPs <?= $kbCompleteness['icps'] ?> ·
+    Proof Points <?= $kbCompleteness['proof_points'] ?> ·
+    Documents <?= $kbCompleteness['documents'] ?>
+  </span>
+</div>
 
 <nav class="settings-tabs" id="kbTabs">
   <button type="button" class="settings-tab-btn" data-tab-target="company">Company</button>
