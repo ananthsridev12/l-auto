@@ -150,8 +150,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $destPath = $dir . '/' . $storedName;
         file_put_contents($destPath, $contents);
         $extractedText = extract_document_text($destPath, $kind);
-        db()->prepare('INSERT INTO knowledge_documents (workspace_id, filename, filepath, kind, extracted_text) VALUES (?, ?, ?, ?, ?)')
-            ->execute([$workspaceId, mb_substr($originalName, 0, 255), $destPath, $kind, $extractedText]);
+        // KB round 2, Phase 13 (KB Phase 8) — organizational metadata,
+        // all optional; doesn't change how the document feeds AI context.
+        $docType = in_array($_POST['kb_doc_type'] ?? '', ['case_study', 'whitepaper', 'brochure', 'deck', 'one_pager', 'roi_calculator', 'video', 'other'], true) ? $_POST['kb_doc_type'] : 'other';
+        $docVerticalId = (int) ($_POST['kb_doc_vertical_id'] ?? 0) ?: null;
+        if ($docVerticalId !== null && !fetch_vertical($workspaceId, $docVerticalId)) {
+            $docVerticalId = null;
+        }
+        $docServiceId = (int) ($_POST['kb_doc_service_id'] ?? 0) ?: null;
+        if ($docServiceId !== null && !fetch_service($workspaceId, $docServiceId)) {
+            $docServiceId = null;
+        }
+        db()->prepare(
+            'INSERT INTO knowledge_documents (workspace_id, filename, filepath, kind, extracted_text, doc_type, use_case, vertical_id, service_id, is_public)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $workspaceId, mb_substr($originalName, 0, 255), $destPath, $kind, $extractedText,
+            $docType,
+            trim($_POST['kb_doc_use_case'] ?? '') ?: null,
+            $docVerticalId, $docServiceId,
+            isset($_POST['kb_doc_is_public']) ? 1 : 0,
+        ]);
         flash($extractedText !== null ? 'success' : 'error',
             $extractedText !== null
                 ? "\"{$originalName}\" uploaded — its text is now part of this workspace's AI context."
@@ -1174,6 +1193,8 @@ require __DIR__ . '/../includes/layout_top.php';
         <div class="account-info">
           <span><?= h($doc['filename']) ?></span>
           <span class="badge badge-format"><?= strtoupper(h($doc['kind'])) ?></span>
+          <span class="badge"><?= h(ucwords(str_replace('_', ' ', $doc['doc_type']))) ?></span>
+          <?php if (!$doc['is_public']): ?><span class="badge badge-warning">Internal only</span><?php endif; ?>
           <?php if (!$doc['has_text']): ?>
             <span class="badge badge-warning">No readable text</span>
           <?php elseif ($doc['has_summary']): ?>
@@ -1210,6 +1231,45 @@ require __DIR__ . '/../includes/layout_top.php';
     <label>Upload document <span class="muted">(PDF, .docx, .txt, or .md — up to 10MB)</span>
       <input type="file" name="kb_doc" accept=".pdf,.docx,.txt,.md" required>
     </label>
+    <label>Document type <span class="muted">(optional)</span>
+      <select name="kb_doc_type">
+        <option value="other" selected>Other</option>
+        <option value="case_study">Case Study</option>
+        <option value="whitepaper">Whitepaper</option>
+        <option value="brochure">Brochure</option>
+        <option value="deck">Deck</option>
+        <option value="one_pager">One Pager</option>
+        <option value="roi_calculator">ROI Calculator</option>
+        <option value="video">Video</option>
+      </select>
+    </label>
+    <details class="kb-details">
+      <summary>More details <span class="muted">(optional)</span></summary>
+      <label>Use case <span class="muted">(when/where to share this)</span>
+        <input type="text" name="kb_doc_use_case" placeholder="e.g. Share in follow-up messages after a demo">
+      </label>
+      <?php if ($verticals): ?>
+        <label>Vertical <span class="muted">(optional)</span>
+          <select name="kb_doc_vertical_id">
+            <option value="">— None —</option>
+            <?php foreach ($verticals as $v): ?>
+              <option value="<?= (int) $v['id'] ?>"><?= h($v['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      <?php endif; ?>
+      <?php if ($services): ?>
+        <label>Service <span class="muted">(optional)</span>
+          <select name="kb_doc_service_id">
+            <option value="">— None —</option>
+            <?php foreach ($services as $sv): ?>
+              <option value="<?= (int) $sv['id'] ?>"><?= h($sv['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      <?php endif; ?>
+      <label class="checkbox-row"><input type="checkbox" name="kb_doc_is_public" checked> OK to share publicly</label>
+    </details>
     <button type="submit" class="btn-secondary">Upload</button>
   </form>
 </section>

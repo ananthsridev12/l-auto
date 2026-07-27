@@ -225,7 +225,7 @@ function extract_document_text(string $filePath, string $kind): ?string
 function fetch_knowledge_documents(int $workspaceId): array
 {
     $stmt = db()->prepare(
-        'SELECT id, filename, kind, uploaded_at,
+        'SELECT id, filename, kind, uploaded_at, doc_type, use_case, vertical_id, service_id, is_public,
                 (extracted_text IS NOT NULL) AS has_text,
                 (summary IS NOT NULL) AS has_summary
          FROM knowledge_documents WHERE workspace_id = ? ORDER BY uploaded_at DESC'
