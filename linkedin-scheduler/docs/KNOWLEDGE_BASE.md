@@ -22,6 +22,18 @@ additive — existing behavior is never changed, only extended.
 | 9 | Wire Service/ICP/Proof into AI generation | **Done** | — (code only, no schema change) |
 | 10 | Signal matching + KB completeness (optional stretch) | Not started | — |
 
+Phase 12 (KB round 2): the entire Knowledge Base UI moved out of
+Settings into its own page, `pages/knowledge.php` — 12 tabs (Company,
+Verticals, Services, ICPs, Personas, Tone & Voice, Senders, Proof
+Points, Documents, plus this app's own Content Pillars/CTA
+Library/Tag Directory extras beyond the ISE 9-block pattern). Settings
+now only has Account/Brand (branding+design)/Integrations. The old
+single "Knowledge Hub" workspace-profile form was split into two
+independent forms/handlers (`workspace_profile_company` /
+`workspace_profile_tone`) so saving one tab never blanks the other's
+fields. No schema change, no data migration — same tables, same
+columns, purely a UI reorganization.
+
 Phase 9 detail: `build_context_block()`/`build_generation_prompt()`/
 `generate_creative_via_ai()` gained a trailing `?array $service = null`
 param (backward-compatible — every existing call site still works
