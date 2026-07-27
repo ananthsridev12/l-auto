@@ -4,9 +4,10 @@
 $__user = current_user();
 $__flashError   = flash('error');
 $__flashSuccess = flash('success');
+$__theme = $__user ? get_user_theme((int) $__user['id']) : null;
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"<?= $__theme ? ' data-theme="' . h($__theme) . '"' : '' ?>>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -68,6 +69,9 @@ $__flashSuccess = flash('success');
         <span class="user-name"><?= h($__user['name'] ?: $__user['email']) ?></span>
         <a href="<?= h(app_path('logout.php')) ?>" class="logout-link">Sign out</a>
       </div>
+      <button type="button" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">
+        <span id="themeToggleIcon"><?= $__theme === 'dark' ? '☀️' : '🌙' ?></span>
+      </button>
     </div>
     <?php endif; ?>
   </aside>
@@ -78,6 +82,24 @@ $__flashSuccess = flash('success');
     document.querySelectorAll('#sidebar nav a').forEach(function (a) {
       a.addEventListener('click', closeSidebar);
     });
+
+    (function () {
+      var btn = document.getElementById('themeToggleBtn');
+      if (!btn) return;
+      var icon = document.getElementById('themeToggleIcon');
+      var html = document.documentElement;
+      btn.addEventListener('click', function () {
+        var current = html.getAttribute('data-theme')
+          || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        var next = current === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        icon.textContent = next === 'dark' ? '☀️' : '🌙';
+        var fd = new FormData();
+        fd.append('csrf', <?= json_encode(csrf_token()) ?>);
+        fd.append('theme', next);
+        fetch(<?= json_encode(app_path('api/set_theme.php')) ?>, { method: 'POST', body: fd });
+      });
+    })();
   </script>
 
   <main class="main">

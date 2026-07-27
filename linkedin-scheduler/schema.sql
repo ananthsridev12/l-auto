@@ -736,3 +736,9 @@ CREATE TABLE IF NOT EXISTS `proof_points` (
   FOREIGN KEY (`vertical_id`) REFERENCES `verticals`(`id`) ON DELETE SET NULL,
   FOREIGN KEY (`service_id`) REFERENCES `services`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Light/dark theme preference ──
+-- NULL = follow the browser's prefers-color-scheme automatically; an
+-- explicit 'light'/'dark' always wins over that. See includes/helpers.php
+-- get_user_theme()/set_user_theme() and includes/layout_top.php.
+ALTER TABLE users ADD COLUMN theme VARCHAR(10) DEFAULT NULL;

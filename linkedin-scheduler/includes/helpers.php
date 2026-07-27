@@ -146,6 +146,23 @@ function set_enabled_formats(int $userId, array $formats): void
     $stmt->execute([implode(',', $formats), $userId]);
 }
 
+// 'light'/'dark' or null (= follow the browser's prefers-color-scheme).
+// See includes/layout_top.php and api/set_theme.php.
+function get_user_theme(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT theme FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $theme = $stmt->fetchColumn();
+    return in_array($theme, ['light', 'dark'], true) ? $theme : null;
+}
+
+function set_user_theme(int $userId, ?string $theme): void
+{
+    $theme = in_array($theme, ['light', 'dark'], true) ? $theme : null;
+    $stmt = db()->prepare('UPDATE users SET theme = ? WHERE id = ?');
+    $stmt->execute([$theme, $userId]);
+}
+
 function get_gemini_api_key(int $userId): ?string
 {
     $stmt = db()->prepare('SELECT gemini_api_key FROM users WHERE id = ?');
