@@ -64,6 +64,7 @@ foreach (array_values($edited['slides']) as $i => $slide) {
     $slides[] = [
         'slide_number' => $i + 1,
         'headline'     => trim((string) ($slide['headline'] ?? '')),
+        'subheading'   => trim((string) ($slide['subheading'] ?? '')),
         'body'         => trim((string) ($slide['body'] ?? '')),
         'points'       => $points,
     ];

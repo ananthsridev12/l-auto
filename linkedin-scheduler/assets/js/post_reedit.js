@@ -17,6 +17,7 @@
     document.querySelectorAll('#reeditCard .slide-fieldset').forEach(function (fs) {
       slides.push({
         headline: fs.querySelector('.reedit-headline').value,
+        subheading: fs.querySelector('.reedit-subheading').value,
         body: fs.querySelector('.reedit-body').value,
         points: fs.querySelector('.reedit-points').value.split('\n')
           .map(function (p) { return p.trim(); })

@@ -219,6 +219,9 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <label class="field-row">Headline
         <input type="text" class="reedit-headline" value="<?= h($slide['headline'] ?? '') ?>">
       </label>
+      <label class="field-row">Subheading <span class="muted">(optional)</span>
+        <input type="text" class="reedit-subheading" value="<?= h($slide['subheading'] ?? '') ?>">
+      </label>
       <label class="field-row">Body
         <textarea class="reedit-body" rows="2"><?= h($slide['body'] ?? '') ?></textarea>
       </label>
