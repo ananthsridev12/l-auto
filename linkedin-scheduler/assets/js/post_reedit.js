@@ -26,6 +26,10 @@
     });
 
     var creative = { slides: slides };
+    var seriesLabelEl = document.getElementById('reeditSeriesLabelInput');
+    if (seriesLabelEl && seriesLabelEl.value.trim()) {
+      creative.series_label = seriesLabelEl.value.trim();
+    }
     var tpl = document.getElementById('reeditTemplateSelect').value;
     if (tpl.indexOf('custom:') === 0) {
       creative.template = tpl;

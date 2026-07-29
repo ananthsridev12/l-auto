@@ -213,6 +213,9 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
 <section class="card" id="reeditCard">
   <h2>Edit Image Content</h2>
   <p class="muted">This image was generated from the content below — edit it and re-render to replace the image. The caption above is separate and saves with the form as usual.</p>
+  <label class="field-row">Eyebrow / Series Label <span class="muted">(optional — small label above the logo on slide 1)</span>
+    <input type="text" id="reeditSeriesLabelInput" value="<?= h($creative['series_label'] ?? '') ?>">
+  </label>
   <?php foreach ($creative['slides'] as $si => $slide): ?>
     <fieldset class="slide-fieldset">
       <legend>Slide <?= $si + 1 ?></legend>

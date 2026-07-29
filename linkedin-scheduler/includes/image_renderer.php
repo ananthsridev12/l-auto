@@ -2238,6 +2238,14 @@ function render_slide_single($im, array $data, array $p, string $name, string $l
     $slide = $data['slides'][0];
 
     $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12));
+    // Optional, same as render_slide_hook()'s eyebrow — Single Image
+    // creatives already carry series_label (creative_series_label()
+    // sets it regardless of format), it just wasn't drawn here before.
+    $seriesLabel = trim($data['series_label'] ?? '');
+    if ($seriesLabel !== '') {
+        render_text($im, $cx, $topY, strtoupper($seriesLabel), rs(16), false, $p['counter']);
+        $topY += render_lh(rs(16)) + rs(8);
+    }
     // Checkbox-driven only — the AI never writes this itself, same as how
     // the Carousel CTA checkbox only ever overrides, never auto-generates.
     // Lives in the footer's defined right-hand slot (render_footer_simple()),

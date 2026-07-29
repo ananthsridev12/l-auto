@@ -79,6 +79,7 @@ require __DIR__ . '/../includes/layout_top.php';
             <button type="button" class="btn-tiny generate-one-btn">Generate</button>
           <?php else: ?>
             <label class="field-row">Title <input type="text" class="title-input" value="<?= h($p['title'] ?? '') ?>"></label>
+            <label class="field-row">Eyebrow / Series Label <span class="muted">(optional — small label above the logo on slide 1)</span> <input type="text" class="series-label-input" value="<?= h($p['creative']['series_label'] ?? '') ?>"></label>
             <label class="field-row">Caption <textarea class="caption-input" rows="4"><?= h($p['caption'] ?? '') ?></textarea></label>
             <label class="checkbox-row"><input type="checkbox" class="cta-enabled-toggle"> Include a CTA</label>
             <input type="text" class="cta-text-input" placeholder="e.g. Book a call with our team" style="width:100%; margin-top:6px; display:none;">

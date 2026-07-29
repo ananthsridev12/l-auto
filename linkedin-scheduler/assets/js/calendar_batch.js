@@ -103,6 +103,8 @@
         var titleInput = card.querySelector('.title-input');
         var captionInput = card.querySelector('.caption-input');
         if (!titleInput || !captionInput) return; // no content generated yet, nothing to approve
+        var seriesLabelInput = card.querySelector('.series-label-input');
+        var seriesLabel = seriesLabelInput && seriesLabelInput.value.trim() ? seriesLabelInput.value.trim() : null;
         var slides = [];
         card.querySelectorAll('.slide-fieldset').forEach(function (fs) {
           slides.push({
@@ -159,7 +161,7 @@
           }
         }
 
-        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition, font_scale: fontScaleChanged ? fontScale : null, cta_style: ctaStyle });
+        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, series_label: seriesLabel, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition, font_scale: fontScaleChanged ? fontScale : null, cta_style: ctaStyle });
       });
       if (!postsData.length) {
         contentStatus.textContent = 'Select at least one post to approve.';

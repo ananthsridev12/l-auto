@@ -17,6 +17,7 @@
   var formatSelect = document.getElementById('formatSelect');
   var captionEl = document.getElementById('caption');
   var titleEl = document.getElementById('titleField');
+  var seriesLabelEl = document.getElementById('aiSeriesLabelInput');
   var jsonField = document.getElementById('aiCreativeJsonField');
   var form = document.getElementById('newPostForm');
   if (!form || (!aiToggle && !manualToggle)) {
@@ -214,6 +215,9 @@
           if (captionEl && currentCreative.caption) {
             captionEl.value = currentCreative.caption;
           }
+          if (seriesLabelEl && currentCreative.series_label) {
+            seriesLabelEl.value = currentCreative.series_label;
+          }
           renderReview();
         })
         .catch(function (err) {
@@ -311,6 +315,12 @@
     syncFieldsIntoCreative();
     currentCreative.title = titleEl ? titleEl.value : currentCreative.title;
     currentCreative.caption = captionEl ? captionEl.value : currentCreative.caption;
+    var seriesLabel = seriesLabelEl ? seriesLabelEl.value.trim() : '';
+    if (seriesLabel) {
+      currentCreative.series_label = seriesLabel;
+    } else {
+      delete currentCreative.series_label;
+    }
     var templateSelect = document.getElementById('aiTemplateSelect');
     var tpl = templateSelect ? templateSelect.value : '';
     if (tpl.indexOf('custom:') === 0) {

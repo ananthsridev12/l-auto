@@ -336,6 +336,9 @@ require __DIR__ . '/../includes/layout_top.php';
       </div>
 
       <div id="creativeSlidesPanel" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
+        <label>Eyebrow / Series Label <span class="muted">(optional — small label above the logo on slide 1)</span>
+          <input type="text" id="aiSeriesLabelInput" placeholder="e.g. Product Updates · Educational">
+        </label>
         <label>Color Palette <span class="muted">(optional)</span>
           <select id="aiTemplateSelect">
             <option value="">Auto</option>

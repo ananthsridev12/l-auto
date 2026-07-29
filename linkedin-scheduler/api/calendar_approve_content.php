@@ -41,6 +41,7 @@ foreach ($postsData as $p) {
     }
     $creative = [
         'title'      => $p['title'] ?? '',
+        'series_label' => $p['series_label'] ?? null,
         'caption'    => $p['caption'] ?? '',
         'slides'     => $p['slides'] ?? [],
         'template'   => $p['template'] ?? null,
@@ -51,8 +52,11 @@ foreach ($postsData as $p) {
         'font_scale' => $p['font_scale'] ?? null,
         'cta_style' => $p['cta_style'] ?? null,
     ];
-    // Preserve format/hashtags/series_label from the existing creative_json
-    // rather than losing them — merge on top of what's already stored.
+    // Preserve format/hashtags from the existing creative_json rather
+    // than losing them — merge on top of what's already stored.
+    // series_label is now editable above (its input is pre-filled from
+    // the existing value on page load), so it's part of $creative like
+    // every other editable field, not preserve-only.
     $existingStmt = db()->prepare('SELECT creative_json FROM posts WHERE id = ? AND user_id = ?');
     $existingStmt->execute([$postId, $userId]);
     $existing = json_decode((string) $existingStmt->fetchColumn(), true) ?: [];
