@@ -49,11 +49,21 @@ others. This works with any pair (or all four at once).
   since it's a drawing technique, not a font file. Everywhere else
   (subheading, body, points), `__bold__` is a normal regular→bold
   weight change, same as before.
-- **Colors are chosen automatically, not literally.** `**word**` and
-  `++word++` don't let you pick an arbitrary hex color — they swap to
-  one of the palette's pre-verified, guaranteed-legible text colors
-  (so the result is always readable against that slide's background).
-  You control *that* a word stands out, not the exact shade.
+- **Colors are chosen automatically, not literally — unless you opt out.**
+  By default, `**word**` and `++word++` don't let you pick an arbitrary
+  hex color — they swap to one of the palette's pre-verified,
+  guaranteed-legible text colors (so the result is always readable
+  against that slide's background). You control *that* a word stands
+  out, not the exact shade. If your palette's accent color needs to
+  show up as literal text (e.g. a brand red for `**word**`), check
+  "Use accent color literally for `**bold**` text" wherever you're
+  editing the post (New Post, the saved-post re-edit card, or Calendar
+  Batch review). This is **not contrast-checked** against the
+  background — only enable it if you've confirmed your accent color is
+  actually readable on your background. It only affects `**word**`
+  (headline/subheading/body/minimal- and divider-style points); `++`
+  still uses the guaranteed-legible highlight color, and boxed
+  body/points are unaffected either way (see below).
 - **Boxed body text and numbered-card points are an exception.** Body
   text is drawn inside a solid accent-colored box on Bold layout
   (always) and Classic layout (Hook/Single slides only); points are

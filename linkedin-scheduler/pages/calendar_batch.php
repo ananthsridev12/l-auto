@@ -103,6 +103,7 @@ require __DIR__ . '/../includes/layout_top.php';
                 <?php endforeach; ?>
               </div>
             <?php endif; ?>
+            <label class="checkbox-row"><input type="checkbox" class="accent-literal-toggle"<?= !empty($p['creative']['accent_literal']) ? ' checked' : '' ?>> Use accent color literally for <code>**bold**</code> text <span class="muted">(skips the safe headline/body swap)</span></label>
             <label class="field-row">Color Palette
               <select class="template-select">
                 <option value="">Auto</option>

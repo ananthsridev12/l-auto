@@ -1233,8 +1233,25 @@ function render_wrap_markup_clamped(string $text, int $size, bool $baseBold, flo
 // draws $p['headline'], body draws $p['body']). Returns the other of
 // the {headline, body} pair — both are palette-guaranteed-legible, so
 // the swap is always safe regardless of which one is "normal" here.
+//
+// Opt-in override: when the creative sets 'accent_literal' (a checkbox
+// exposed wherever a post's content is edited), ** draws in the
+// palette's raw accent color instead of this safe swap — not contrast-
+// checked against bg, since honoring the user's own accent hex exactly
+// (no blending) was requested over guaranteed legibility.
+// render_creative_to_slides() stashes the flag onto $p itself rather
+// than threading a new param through every call site, since $p
+// is already passed everywhere this function is called from. Every
+// call site of this function draws directly on the plain bg (never on
+// an accent-filled box — those hardcode accent_text and never call
+// this function at all), so the raw accent color is exactly what's
+// being requested here, not a value that could collide with its own
+// background.
 function render_markup_alt_color(int $normalColor, array $p): int
 {
+    if (!empty($p['_accent_literal']) && isset($p['accent'])) {
+        return $p['accent'];
+    }
     return $normalColor === $p['headline'] ? $p['body'] : $p['headline'];
 }
 
@@ -2370,6 +2387,9 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     // ('outline'). Purely a draw-treatment choice — has no effect on
     // whether a CTA shows at all, which is still just "is $cta blank?"
     $ctaStyle = in_array($data['cta_style'] ?? '', ['button', 'outline'], true) ? $data['cta_style'] : 'text';
+    // Optional checkbox ("Use accent color literally for **bold** text")
+    // — see render_markup_alt_color()'s doc comment for what this changes.
+    $accentLiteral = !empty($data['accent_literal']);
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
@@ -2382,6 +2402,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $im = imagecreatetruecolor($canvasW, $canvasH);
         render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH);
         $p = render_allocate_palette_colors($im, $paletteColors);
+        $p['_accent_literal'] = $accentLiteral;
         render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition, $ctaStyle);
         $filename = 'slide_01.png';
         $path = $outDir . '/' . $filename;
@@ -2396,6 +2417,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         $im = imagecreatetruecolor($canvasW, $canvasH);
         render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH);
         $p = render_allocate_palette_colors($im, $paletteColors);
+        $p['_accent_literal'] = $accentLiteral;
 
         if ($n === 1) {
             render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);

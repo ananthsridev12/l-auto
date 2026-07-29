@@ -30,6 +30,10 @@
     if (seriesLabelEl && seriesLabelEl.value.trim()) {
       creative.series_label = seriesLabelEl.value.trim();
     }
+    var accentLiteralEl = document.getElementById('reeditAccentLiteralToggle');
+    if (accentLiteralEl && accentLiteralEl.checked) {
+      creative.accent_literal = true;
+    }
     var tpl = document.getElementById('reeditTemplateSelect').value;
     if (tpl.indexOf('custom:') === 0) {
       creative.template = tpl;

@@ -339,6 +339,7 @@ require __DIR__ . '/../includes/layout_top.php';
         <label>Eyebrow / Series Label <span class="muted">(optional — small label above the logo on slide 1)</span>
           <input type="text" id="aiSeriesLabelInput" placeholder="e.g. Product Updates · Educational">
         </label>
+        <label class="checkbox-row"><input type="checkbox" id="aiAccentLiteralToggle"> Use accent color literally for <code>**bold**</code> text <span class="muted">(skips the safe headline/body swap — only enable if your accent color has good contrast against the background)</span></label>
         <label>Color Palette <span class="muted">(optional)</span>
           <select id="aiTemplateSelect">
             <option value="">Auto</option>

@@ -233,6 +233,7 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       </label>
     </fieldset>
   <?php endforeach; ?>
+  <label class="checkbox-row"><input type="checkbox" id="reeditAccentLiteralToggle"<?= !empty($creative['accent_literal']) ? ' checked' : '' ?>> Use accent color literally for <code>**bold**</code> text <span class="muted">(skips the safe headline/body swap — only enable if your accent color has good contrast against the background)</span></label>
   <label>Color Palette
     <select id="reeditTemplateSelect">
       <?= render_palette_select_options($creative['template'] ?? null, $brandPalettes, true) ?>

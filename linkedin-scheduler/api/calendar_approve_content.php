@@ -51,6 +51,7 @@ foreach ($postsData as $p) {
         'text_position' => $p['text_position'] ?? null,
         'font_scale' => $p['font_scale'] ?? null,
         'cta_style' => $p['cta_style'] ?? null,
+        'accent_literal' => $p['accent_literal'] ?? null,
     ];
     // Preserve format/hashtags from the existing creative_json rather
     // than losing them — merge on top of what's already stored.

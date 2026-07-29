@@ -376,6 +376,12 @@
     } else {
       delete currentCreative.cta_style;
     }
+    var accentLiteralEl = document.getElementById('aiAccentLiteralToggle');
+    if (accentLiteralEl && accentLiteralEl.checked) {
+      currentCreative.accent_literal = true;
+    } else {
+      delete currentCreative.accent_literal;
+    }
     return currentCreative;
   }
 
