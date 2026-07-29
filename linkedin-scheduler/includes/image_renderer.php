@@ -1052,11 +1052,12 @@ function render_wrap_clamped(string $text, int $size, bool $bold, float $maxPx, 
 
 // ── Rich text markup ─────────────────────────────────────────────────
 // See docs/TEXT_FORMATTING.md for the user-facing reference. Four
-// marker types, each applying exactly one style. They do NOT nest or
-// combine — "**__word__**" resolves as a single **...** alt-color span
-// whose inner text is the literal characters "__word__", not
-// bold-and-colored. Pick one marker per span; wanting two styles on the
-// same phrase means two separate (possibly adjacent) marked spans.
+// marker types, and they DO nest/combine: wrapping one marker inside
+// another (e.g. "**__word__**") applies both styles to the same word
+// (render_tokenize_markup_range()'s $inherited param carries the outer
+// span's styles into its recursive re-scan of the inner text). Wrapping
+// the same marker type around itself isn't meaningful and just parses
+// left to right as separate adjacent spans.
 //   **word**  alt color  — swaps to whichever of {headline, body} isn't
 //                           the caller's own "normal" color (see
 //                           render_markup_alt_color()); the original
@@ -1083,26 +1084,47 @@ function render_strip_markup_markers(string $text): string
     return str_replace(['**', '++', '__', '*'], '', $text);
 }
 
-// Splits text on all 4 marker types in one left-to-right pass into a
-// flat word list, each word tagged with which styles apply to it plus
-// a 'glue' flag (true = no space before this word, e.g. the "." in
-// "__word__." which sits directly against the closing marker with no
-// whitespace in the source) — render_wrap_markup()/render_text_markup()
-// use this to avoid inserting a phantom space at marker boundaries.
+// Splits text on all 4 marker types into a flat word list, each word
+// tagged with which styles apply to it plus a 'glue' flag (true = no
+// space before this word, e.g. the "." in "__word__." which sits
+// directly against the closing marker with no whitespace in the
+// source) — render_wrap_markup()/render_text_markup() use this to
+// avoid inserting a phantom space at marker boundaries.
+//
+// Markers DO nest/combine: whatever's inside a matched span is itself
+// re-scanned for markers (render_tokenize_markup_range()), so
+// "**__word__**" applies both the outer span's alt-color and the
+// inner span's bold to "word" — wrap two (or more) different marker
+// types around the same text to combine their effects. Same-type
+// nesting (e.g. "**a **b** c**") isn't meaningful and is simply parsed
+// left to right, closing at the first matching pair.
 function render_tokenize_markup(string $text): array
 {
-    $pattern = '/\*\*(.+?)\*\*|\+\+(.+?)\+\+|__(.+?)__|\*(.+?)\*/';
     $words = [];
-    $pos = 0;
-    $len = strlen($text);
     $prevEnd = null;
-    while ($pos < $len && preg_match($pattern, $text, $m, PREG_OFFSET_CAPTURE, $pos)) {
+    render_tokenize_markup_range($text, 0, $text, $words, $prevEnd, ['altColor' => false, 'highlight' => false, 'bold' => false, 'italic' => false]);
+    return $words;
+}
+
+// Scans $rangeText (the substring of $fullText at absolute byte offset
+// $rangeOffset) for marker spans, appending words to $words by
+// reference. $inherited carries style flags already active from an
+// enclosing marker (empty at the top level) — a nested match's own
+// style is OR'd onto $inherited before recursing into its inner text,
+// which is what lets "**__word__**" produce a single word tagged both
+// altColor and bold instead of one replacing the other.
+function render_tokenize_markup_range(string $rangeText, int $rangeOffset, string $fullText, array &$words, ?int &$prevEnd, array $inherited): void
+{
+    $pattern = '/\*\*(.+?)\*\*|\+\+(.+?)\+\+|__(.+?)__|\*(.+?)\*/';
+    $pos = 0;
+    $len = strlen($rangeText);
+    while ($pos < $len && preg_match($pattern, $rangeText, $m, PREG_OFFSET_CAPTURE, $pos)) {
         $matchStart = $m[0][1];
         $matchText = $m[0][0];
         if ($matchStart > $pos) {
-            render_tokenize_markup_plain_at(substr($text, $pos, $matchStart - $pos), $pos, $text, $words, $prevEnd);
+            render_tokenize_markup_plain_at(substr($rangeText, $pos, $matchStart - $pos), $rangeOffset + $pos, $fullText, $words, $prevEnd, $inherited);
         }
-        $styles = ['altColor' => false, 'highlight' => false, 'bold' => false, 'italic' => false];
+        $styles = $inherited;
         if ($m[1][0] !== '') {
             $inner = $m[1];
             $styles['altColor'] = true;
@@ -1116,13 +1138,12 @@ function render_tokenize_markup(string $text): array
             $inner = $m[4];
             $styles['italic'] = true;
         }
-        render_tokenize_markup_plain_at($inner[0], $inner[1], $text, $words, $prevEnd, $styles);
+        render_tokenize_markup_range($inner[0], $rangeOffset + $inner[1], $fullText, $words, $prevEnd, $styles);
         $pos = $matchStart + strlen($matchText);
     }
     if ($pos < $len) {
-        render_tokenize_markup_plain_at(substr($text, $pos), $pos, $text, $words, $prevEnd);
+        render_tokenize_markup_plain_at(substr($rangeText, $pos), $rangeOffset + $pos, $fullText, $words, $prevEnd, $inherited);
     }
-    return $words;
 }
 
 // Appends words from $part (found at absolute byte offset $partOffset

@@ -22,13 +22,22 @@ Points: __Zero__ downtime during the migration
 The marker characters themselves never appear in the rendered image —
 only the styled text does.
 
+### Combining markers
+
+Wrap one marker inside another to combine effects on the same word or
+phrase:
+
+```
+**__bold and colored__**   → bold + accent color
+*++italic and highlighted++*   → italic + highlight color
+```
+
+Order doesn't matter (`**__word__**` and `__**word**__` do the same
+thing) — each marker in the stack adds its own effect on top of the
+others. This works with any pair (or all four at once).
+
 ## Rules and limitations
 
-- **One marker per span, no nesting or combining.** `**__word__**`
-  does not produce bold-and-colored text — the parser reads the outer
-  `**...**` span only and leaves the inner `__` characters as literal
-  text. To combine effects (e.g. bold *and* colored), style adjacent
-  words separately: `**bold** __word__`.
 - **Markers span whole words**, split on whitespace inside the marker.
   `**quote cycle**` marks both "quote" and "cycle".
 - **Headline text is already always bold** — the `__bold__` marker has
@@ -45,7 +54,13 @@ only the styled text does.
   and Bold layouts (Minimal and Divider point styles are not boxed).
   Only one color is verified legible on that specific fill, so `**`
   and `++` are inert there (no visible color change) — `*italic*` and
-  `__bold__` still work normally in those spots.
+  `__bold__` still work normally in those spots, including as part of
+  a combined marker (e.g. `**__word__**` still bolds, just without the
+  color change).
+- **Wrapping the same marker type around itself isn't meaningful**
+  (e.g. `**a **b** c**`) — it's parsed left to right as two separate
+  spans ("a" colored, "b" plain, "c" colored), not as true nesting.
+  Combining only makes sense across *different* marker types.
 - **CTA banner text does not support markers.** The banner's button/
   pill sizing math depends on measuring one plain line of text, so
   marker syntax is left as literal characters if used there. Avoid
