@@ -40,8 +40,15 @@ others. This works with any pair (or all four at once).
 
 - **Markers span whole words**, split on whitespace inside the marker.
   `**quote cycle**` marks both "quote" and "cycle".
-- **Headline text is already always bold** — the `__bold__` marker has
-  no visible effect there, but is harmless.
+- **Headline text is already always bold.** No bundled font ships a
+  heavier weight to step up to, so `__bold__` there instead triggers a
+  "faux bold" effect (the word is stamped a few extra times at 1px
+  offsets to thicken the strokes) — a visible, genuinely heavier look,
+  though slightly less crisp than a true Black-weight font would be.
+  Works with any active font (default, serif, or a custom Brand Font),
+  since it's a drawing technique, not a font file. Everywhere else
+  (subheading, body, points), `__bold__` is a normal regular→bold
+  weight change, same as before.
 - **Colors are chosen automatically, not literally.** `**word**` and
   `++word++` don't let you pick an arbitrary hex color — they swap to
   one of the palette's pre-verified, guaranteed-legible text colors

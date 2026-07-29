@@ -621,17 +621,30 @@ function render_ascent(int $size, bool $bold, string $role = 'body', bool $itali
 // substitution only) has no italic weight bundled, so a character that
 // needs the fallback still draws upright even inside italic text; a
 // rare edge case (only hit for glyphs the italic font itself lacks).
-function render_text($im, float $x, float $topY, string $text, int $size, bool $bold, int $color, string $role = 'body', bool $italic = false): void
+// $extraBold is a "faux bold" boost for a __bold__ marker used where
+// $bold is already true (headline text is always bold, so a plain
+// second Bold-weight draw would be a no-op) — no bundled font ships a
+// heavier weight to switch to, so this redraws each glyph run a few
+// times at 1px offsets to thicken the strokes instead. Only ever pass
+// this alongside $bold=true; it changes nothing about which font file
+// is used, only how many times/where it's stamped, so it works with
+// any active font (default, serif, brand upload) with no new assets.
+// Purely a draw-time effect — doesn't affect render_text_width()'s
+// measured advance width, so it never needs touching the wrap math.
+function render_text($im, float $x, float $topY, string $text, int $size, bool $bold, int $color, string $role = 'body', bool $italic = false, bool $extraBold = false): void
 {
     if ($text === '') {
         return;
     }
     $font = render_font_path($bold, $role, $italic);
     $baseline = (int) round($topY + render_ascent($size, $bold, $role, $italic));
+    $offsets = $extraBold ? [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0]] : [[0, 0]];
     $curX = $x;
     foreach (render_split_font_runs($text, $font, $bold) as [$run, $useFallback]) {
         $runFont = $useFallback ? render_fallback_font_path($bold) : $font;
-        imagettftext($im, $size, 0, (int) round($curX), $baseline, $color, $runFont, $run);
+        foreach ($offsets as [$dx, $dy]) {
+            imagettftext($im, $size, 0, (int) round($curX) + $dx, $baseline + $dy, $color, $runFont, $run);
+        }
         $bbox = imagettfbbox($size, 0, $runFont, $run);
         $curX += abs($bbox[2] - $bbox[0]);
     }
@@ -1239,8 +1252,14 @@ function render_text_markup($im, float $x, float $topY, array $line, int $size, 
             $cx += $spaceW;
         }
         $bold = $baseBold || $word['bold'];
+        // __bold__ requested on top of text that's already bold (e.g.
+        // headline) can't step up to a heavier font weight — none is
+        // bundled — so it steps up to the faux-bold draw instead. Where
+        // $baseBold is false (subheading/body/points), __bold__ is
+        // already a real, visible regular→bold change, so no boost.
+        $extraBold = $baseBold && $word['bold'];
         $color = $word['highlight'] ? $highlightColor : ($word['altColor'] ? $altColor : $normalColor);
-        render_text($im, $cx, $topY, $word['text'], $size, $bold, $color, $role, $word['italic']);
+        render_text($im, $cx, $topY, $word['text'], $size, $bold, $color, $role, $word['italic'], $extraBold);
         $cx += render_text_width($word['text'], $size, $bold, $role, $word['italic']);
     }
 }
