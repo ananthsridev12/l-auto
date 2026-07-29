@@ -377,6 +377,7 @@ require __DIR__ . '/../includes/layout_top.php';
           <label class="field-row">Body <input type="range" class="font-scale-slider" data-role="body" min="50" max="200" value="100" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>100%</span></label>
           <label class="field-row">Points <input type="range" class="font-scale-slider" data-role="points" min="50" max="200" value="100" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>100%</span></label>
         </div>
+        <p class="muted" style="margin:4px 0;">Style words in Headline/Subheading/Body/Points: <code>**accent**</code> <code>++highlight++</code> <code>*italic*</code> <code>__bold__</code> (one marker per word/phrase, doesn't combine)</p>
         <div id="aiSlidesReview"></div>
         <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
 

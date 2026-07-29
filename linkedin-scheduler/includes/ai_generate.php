@@ -279,7 +279,7 @@ IMAGE TEXT RULES (strict — the renderer truncates anything over these limits w
 - Points: EXACTLY 3, max 10 words each, never empty
 - All 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — that always belongs in the caption or a CTA slide, never inside the points list.
 - Write like a specific, opinionated LinkedIn post, not a generic corporate summary — concrete nouns and numbers beat vague phrases like "leverage synergies" or "drive results"
-- Optional: wrap at most 1-2 key words or a number/percentage in the headline with **double asterisks** to mark them for color emphasis (e.g. "60% faster **ESG reporting**") — only some design templates use this, so it's fine either way, but do it sparingly when you do
+- Optional: mark up to 1-2 key words or a number/percentage anywhere in the headline, subheading, body, or points using these markers (never nest or combine them — one marker per span): **word** for accent color, ++word++ for highlight color, *word* for italic, __word__ for bold (e.g. "60% faster **ESG reporting**"). Every template supports this now. Use sparingly — a whole sentence in markers looks worse than one sharp phrase.
 - Optional: a short "subheading" line (max 8 words) directly under the headline, for extra context that doesn't fit the headline itself. Leave it as an empty string unless it genuinely adds something the headline can't.
 
 EXAMPLE of the right length and style (topic: quoting delays in manufacturing):
@@ -328,7 +328,7 @@ SLIDE RULES (strict — the renderer truncates anything over these limits with a
 - Body: exactly 1 sentence, max 25 words
 - Points: max 10 words each
 - Within one Content slide, all 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — save that for slide 5.
-- Optional: wrap at most 1-2 key words or a number/percentage in each headline with **double asterisks** to mark them for color emphasis (e.g. "60% faster **ESG reporting**") — only some design templates use this, so it's fine either way, but do it sparingly when you do
+- Optional: mark up to 1-2 key words or a number/percentage anywhere in a slide's headline, subheading, body, or points using these markers (never nest or combine them — one marker per span): **word** for accent color, ++word++ for highlight color, *word* for italic, __word__ for bold (e.g. "60% faster **ESG reporting**"). Every template supports this now. Use sparingly — a whole sentence in markers looks worse than one sharp phrase.
 - Optional: any slide's "subheading" (max 8 words) can carry a short supporting line under its headline. Leave it as an empty string on slides where it doesn't add anything.
 
 EXAMPLE of the right length and style (topic: quoting delays in manufacturing, 4 slides):

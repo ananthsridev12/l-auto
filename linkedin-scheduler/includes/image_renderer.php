@@ -340,16 +340,51 @@ function rss(string $role, float $px): int
     return (int) round(rs($px) * render_font_scale_role($role));
 }
 
-function render_font_path(bool $bold, string $role = 'body'): string
+// $italic (rich-text `*word*`/`__word__` markers — see
+// render_tokenize_markup()) is a separate axis from $bold, not a
+// variant of the override chain: neither the brand-font override
+// (`brand_fonts.regular_path`/`bold_path` — no italic column) nor an
+// Inter upload ships an italic file in practice today, so italic
+// always resolves to a bundled Liberation Sans/Serif italic weight
+// instead of the active heading/body/serif font family. Documented in
+// docs/TEXT_FORMATTING.md as a known limitation, not a silent gap —
+// it still always renders italic, just not necessarily in the same
+// family as the surrounding upright text.
+function render_font_path(bool $bold, string $role = 'body', bool $italic = false): string
 {
     // Bundled, not overridable — a serif-styled design template should
     // always look serif regardless of what the user set as their brand
     // Heading/Body font, so templates stay visually predictable.
     if ($role === 'serif') {
-        $path = __DIR__ . '/../assets/fonts/LiberationSerif-' . ($bold ? 'Bold' : 'Regular') . '.ttf';
+        $suffix = $italic ? ($bold ? 'BoldItalic' : 'Italic') : ($bold ? 'Bold' : 'Regular');
+        $path = __DIR__ . '/../assets/fonts/LiberationSerif-' . $suffix . '.ttf';
         if (is_file($path)) {
             return $path;
         }
+    }
+
+    if ($italic) {
+        // Try an Inter italic file first (future-proofs a per-user Inter
+        // upload that does include one), then the bundled Liberation
+        // Sans italic — never the brand-font override or the plain
+        // Inter/DejaVu names below, since none of those are italic cuts.
+        $fontsDir = __DIR__ . '/../assets/fonts';
+        $names = $bold
+            ? ['Inter-BoldItalic.ttf', 'Inter_28pt-BoldItalic.ttf']
+            : ['Inter-Italic.ttf', 'Inter_28pt-Italic.ttf'];
+        foreach ($names as $name) {
+            $path = $fontsDir . '/' . $name;
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+        $path = $fontsDir . '/LiberationSans-' . ($bold ? 'BoldItalic' : 'Italic') . '.ttf';
+        if (is_file($path)) {
+            return $path;
+        }
+        // Last resort: render upright rather than throw — same
+        // "degrade safely" precedent as every other markup fallback.
+        return render_font_path($bold, $role);
     }
 
     $override = render_font_override_role($role);
@@ -551,12 +586,12 @@ function render_split_font_runs(string $text, string $fontPath, bool $bold): arr
     return $runs;
 }
 
-function render_text_width(string $text, int $size, bool $bold, string $role = 'body'): float
+function render_text_width(string $text, int $size, bool $bold, string $role = 'body', bool $italic = false): float
 {
     if ($text === '') {
         return 0.0;
     }
-    $font = render_font_path($bold, $role);
+    $font = render_font_path($bold, $role, $italic);
     $width = 0.0;
     foreach (render_split_font_runs($text, $font, $bold) as [$run, $useFallback]) {
         $runFont = $useFallback ? render_fallback_font_path($bold) : $font;
@@ -566,12 +601,12 @@ function render_text_width(string $text, int $size, bool $bold, string $role = '
     return $width;
 }
 
-function render_ascent(int $size, bool $bold, string $role = 'body'): float
+function render_ascent(int $size, bool $bold, string $role = 'body', bool $italic = false): float
 {
     static $cache = [];
-    $key = $role . ($bold ? 'b' : 'r') . $size;
+    $key = $role . ($bold ? 'b' : 'r') . ($italic ? 'i' : 'u') . $size;
     if (!isset($cache[$key])) {
-        $bbox = imagettfbbox($size, 0, render_font_path($bold, $role), 'Ágy');
+        $bbox = imagettfbbox($size, 0, render_font_path($bold, $role, $italic), 'Ágy');
         $cache[$key] = -$bbox[7];
     }
     return $cache[$key];
@@ -581,13 +616,18 @@ function render_ascent(int $size, bool $bold, string $role = 'body'): float
 // converting to GD's baseline-relative imagettftext() internally.
 // Characters the resolved font can't draw are rendered in the bundled
 // fallback font at the same size/baseline — see render_split_font_runs().
-function render_text($im, float $x, float $topY, string $text, int $size, bool $bold, int $color, string $role = 'body'): void
+// $italic resolves a real italic-cut font file (render_font_path()), not
+// a programmatic slant — the fallback-glyph font (DejaVu, missing-glyph
+// substitution only) has no italic weight bundled, so a character that
+// needs the fallback still draws upright even inside italic text; a
+// rare edge case (only hit for glyphs the italic font itself lacks).
+function render_text($im, float $x, float $topY, string $text, int $size, bool $bold, int $color, string $role = 'body', bool $italic = false): void
 {
     if ($text === '') {
         return;
     }
-    $font = render_font_path($bold, $role);
-    $baseline = (int) round($topY + render_ascent($size, $bold, $role));
+    $font = render_font_path($bold, $role, $italic);
+    $baseline = (int) round($topY + render_ascent($size, $bold, $role, $italic));
     $curX = $x;
     foreach (render_split_font_runs($text, $font, $bold) as [$run, $useFallback]) {
         $runFont = $useFallback ? render_fallback_font_path($bold) : $font;
@@ -906,7 +946,7 @@ function render_numbered_card_height(string $text, int $fontSize, string $layout
     }
     [, , $cw] = render_content_edges();
     $badge = rs(44); $px = rs(20); $py = rs(15);
-    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $badge - $px * 2 - rs(18), 2);
+    $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $badge - $px * 2 - rs(18), 2);
     $ch = max($badge + $py * 2, count($lines) * render_lh($fontSize) + $py * 2);
     return $ch + rs(14); // + the gap render_numbered_card() adds below each card
 }
@@ -918,7 +958,7 @@ function render_minimal_point_height(string $text, int $fontSize): float
     [, , $cw] = render_content_edges();
     $barW = rs(4); $gap = rs(16);
     $numW = render_text_width('00  ', $fontSize, true);
-    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $barW - $gap - $numW, 2);
+    $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $barW - $gap - $numW, 2);
     return count($lines) * render_lh($fontSize) + rs(6) + rs(20); // top pad + gap below
 }
 
@@ -928,7 +968,7 @@ function render_divider_point_height(string $text, int $fontSize): float
 {
     [, , $cw] = render_content_edges();
     $aw = render_text_width('↘  ', $fontSize, true);
-    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $aw, 2);
+    $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $aw, 2);
     return count($lines) * render_lh($fontSize) + rs(28); // text height + rule + gap below
 }
 
@@ -978,11 +1018,11 @@ function render_fit_font_size(array $items, float $startY, float $ceiling, array
 // under $maxLines, falling back to the smallest candidate otherwise.
 function render_fit_headline_size(string $text, float $maxPx, array $candidateSizes, int $maxLines, bool $bold = true, string $role = 'heading'): int
 {
-    // Strip **emphasis** markers before measuring — even on a template
-    // that won't color them, drawing always strips them too (see
-    // render_draw_headline()), so leaving them in here would measure
-    // width the actual output never has.
-    $text = render_strip_emphasis_markers($text);
+    // Strip markup markers before measuring — drawing always resolves
+    // them to styled-but-marker-free text (see render_draw_headline()),
+    // so leaving them in here would measure width the actual output
+    // never has.
+    $text = render_strip_markup_markers($text);
     foreach ($candidateSizes as $size) {
         if (count(render_wrap($text, $size, $bold, $maxPx, $role)) <= $maxLines) {
             return $size;
@@ -1010,58 +1050,126 @@ function render_wrap_clamped(string $text, int $size, bool $bold, float $maxPx, 
     return $lines;
 }
 
-// ── Headline color emphasis ──────────────────────────────────────────
-// A handful of reference designs (Arbor, Savvy Finance, "Creative
-// Business") color specific words within one headline to highlight them.
-// Reuses a familiar **word** marker syntax right inside the headline
-// string — no new JSON field, works everywhere headline text already
-// flows (AI generation, manual typing, review-card edits). Only design
-// templates with emphasis=true in render_design_templates() actually
-// color the marked runs; every other template strips markers via
-// render_strip_emphasis_markers() and draws plain text, so typing ** on
-// a non-emphasis template degrades safely instead of showing literal
-// asterisks.
+// ── Rich text markup ─────────────────────────────────────────────────
+// See docs/TEXT_FORMATTING.md for the user-facing reference. Four
+// marker types, each applying exactly one style. They do NOT nest or
+// combine — "**__word__**" resolves as a single **...** alt-color span
+// whose inner text is the literal characters "__word__", not
+// bold-and-colored. Pick one marker per span; wanting two styles on the
+// same phrase means two separate (possibly adjacent) marked spans.
+//   **word**  alt color  — swaps to whichever of {headline, body} isn't
+//                           the caller's own "normal" color (see
+//                           render_markup_alt_color()); the original
+//                           **word** headline-only marker's exact
+//                           behavior, now also available in body/points.
+//   ++word++  highlight  — draws in the palette's accent_text color (a
+//                           third guaranteed-legible color).
+//   *word*    italic     — a real italic-cut font file, not a
+//                           programmatic slant (render_font_path()).
+//   __word__  bold       — a no-op where the surrounding text is already
+//                           always bold (headline); meaningful in
+//                           body/points, which draw at bold=false by
+//                           default.
+// Works everywhere text already flows (AI generation, manual typing,
+// review-card edits) and on every design template — no per-template
+// gate. Typing a marker where the surrounding punctuation doesn't
+// actually pair up just leaves literal asterisks/underscores, the same
+// "degrades safely" behavior the original **word** marker had.
 
-function render_strip_emphasis_markers(string $text): string
+function render_strip_markup_markers(string $text): string
 {
-    return str_replace('**', '', $text);
+    // Longest/most-specific markers first so "**" isn't partially eaten
+    // by a "*" pass before the "**" pass sees it.
+    return str_replace(['**', '++', '__', '*'], '', $text);
 }
 
-// Splits headline text on **marker** spans into a flat word list tagged
-// with whether each word should be drawn in the accent color.
-function render_tokenize_emphasis(string $text): array
+// Splits text on all 4 marker types in one left-to-right pass into a
+// flat word list, each word tagged with which styles apply to it plus
+// a 'glue' flag (true = no space before this word, e.g. the "." in
+// "__word__." which sits directly against the closing marker with no
+// whitespace in the source) — render_wrap_markup()/render_text_markup()
+// use this to avoid inserting a phantom space at marker boundaries.
+function render_tokenize_markup(string $text): array
 {
-    $parts = preg_split('/\*\*(.+?)\*\*/', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+    $pattern = '/\*\*(.+?)\*\*|\+\+(.+?)\+\+|__(.+?)__|\*(.+?)\*/';
     $words = [];
-    foreach ($parts as $i => $part) {
-        $emphasized = $i % 2 === 1; // odd indices are the captured **...** groups
-        foreach (preg_split('/\s+/', trim($part)) as $word) {
-            if ($word !== '') {
-                $words[] = ['text' => $word, 'emphasized' => $emphasized];
-            }
+    $pos = 0;
+    $len = strlen($text);
+    $prevEnd = null;
+    while ($pos < $len && preg_match($pattern, $text, $m, PREG_OFFSET_CAPTURE, $pos)) {
+        $matchStart = $m[0][1];
+        $matchText = $m[0][0];
+        if ($matchStart > $pos) {
+            render_tokenize_markup_plain_at(substr($text, $pos, $matchStart - $pos), $pos, $text, $words, $prevEnd);
         }
+        $styles = ['altColor' => false, 'highlight' => false, 'bold' => false, 'italic' => false];
+        if ($m[1][0] !== '') {
+            $inner = $m[1];
+            $styles['altColor'] = true;
+        } elseif ($m[2][0] !== '') {
+            $inner = $m[2];
+            $styles['highlight'] = true;
+        } elseif ($m[3][0] !== '') {
+            $inner = $m[3];
+            $styles['bold'] = true;
+        } else {
+            $inner = $m[4];
+            $styles['italic'] = true;
+        }
+        render_tokenize_markup_plain_at($inner[0], $inner[1], $text, $words, $prevEnd, $styles);
+        $pos = $matchStart + strlen($matchText);
+    }
+    if ($pos < $len) {
+        render_tokenize_markup_plain_at(substr($text, $pos), $pos, $text, $words, $prevEnd);
     }
     return $words;
 }
 
-// Emphasis-aware counterpart to render_wrap() — same greedy word-wrap
-// algorithm, but each line is an array of word structs (not a plain
-// string) so render_text_emphasized() knows which words to color.
-function render_wrap_emphasized(string $text, int $size, bool $bold, float $maxPx, string $role = 'body'): array
+// Appends words from $part (found at absolute byte offset $partOffset
+// within the full $text) to $words by reference, each tagged with
+// $styles and a 'glue' flag computed from whether the raw gap since the
+// previous word (tracked via $prevEnd, updated in place) contains any
+// whitespace — no whitespace in the gap (e.g. just a closing "**") means
+// this word should render glued directly against the previous one.
+function render_tokenize_markup_plain_at(string $part, int $partOffset, string $text, array &$words, ?int &$prevEnd, array $styles = ['altColor' => false, 'highlight' => false, 'bold' => false, 'italic' => false]): void
 {
-    $words = render_tokenize_emphasis($text);
+    if (!preg_match_all('/\S+/', $part, $m, PREG_OFFSET_CAPTURE)) {
+        return;
+    }
+    foreach ($m[0] as [$word, $offsetInPart]) {
+        $absOffset = $partOffset + $offsetInPart;
+        $glue = $prevEnd !== null && !preg_match('/\s/', substr($text, $prevEnd, $absOffset - $prevEnd));
+        $words[] = ['text' => $word, 'glue' => $glue] + $styles;
+        $prevEnd = $absOffset + strlen($word);
+    }
+}
+
+// Markup-aware counterpart to render_wrap() — same greedy word-wrap
+// algorithm, but each line is an array of word structs (not a plain
+// string) and width is measured per-word using that word's own
+// resolved bold ($baseBold OR'd with its __bold__ marker) + italic
+// flags, so a bold/italic run wraps at its true (wider) width.
+function render_wrap_markup(string $text, int $size, bool $baseBold, float $maxPx, string $role = 'body'): array
+{
+    $words = render_tokenize_markup($text);
     if (!$words) {
         return [[]];
     }
     $lines = [];
     $current = [];
+    $currentW = 0.0;
+    $spaceW = render_text_width(' ', $size, $baseBold, $role);
     foreach ($words as $word) {
-        $test = implode(' ', array_map(fn ($w) => $w['text'], array_merge($current, [$word])));
-        if ($current && render_text_width($test, $size, $bold, $role) > $maxPx) {
+        $wordW = render_text_width($word['text'], $size, $baseBold || $word['bold'], $role, $word['italic']);
+        $sep = ($current && !empty($word['glue'])) ? 0.0 : $spaceW;
+        $testW = $current ? $currentW + $sep + $wordW : $wordW;
+        if ($current && $testW > $maxPx) {
             $lines[] = $current;
             $current = [$word];
+            $currentW = $wordW;
         } else {
             $current[] = $word;
+            $currentW = $testW;
         }
     }
     if ($current) {
@@ -1072,9 +1180,9 @@ function render_wrap_emphasized(string $text, int $size, bool $bold, float $maxP
 
 // Hard line-count cap, mirroring render_wrap_clamped()'s guarantee for
 // the plain-text path.
-function render_wrap_emphasized_clamped(string $text, int $size, bool $bold, float $maxPx, int $maxLines, string $role = 'body'): array
+function render_wrap_markup_clamped(string $text, int $size, bool $baseBold, float $maxPx, int $maxLines, string $role = 'body'): array
 {
-    $lines = render_wrap_emphasized($text, $size, $bold, $maxPx, $role);
+    $lines = render_wrap_markup($text, $size, $baseBold, $maxPx, $role);
     if (count($lines) <= $maxLines) {
         return $lines;
     }
@@ -1087,52 +1195,56 @@ function render_wrap_emphasized_clamped(string $text, int $size, bool $bold, flo
     return $lines;
 }
 
-// Draws one render_wrap_emphasized() line, switching color per word.
-function render_text_emphasized($im, float $x, float $topY, array $line, int $size, bool $bold, int $normalColor, int $accentColor, string $role = 'body'): void
+// $normalColor: this context's own default text color (e.g. headline
+// draws $p['headline'], body draws $p['body']). Returns the other of
+// the {headline, body} pair — both are palette-guaranteed-legible, so
+// the swap is always safe regardless of which one is "normal" here.
+function render_markup_alt_color(int $normalColor, array $p): int
+{
+    return $normalColor === $p['headline'] ? $p['body'] : $p['headline'];
+}
+
+// Draws one render_wrap_markup() line, resolving each word's own
+// color/bold/italic. $normalColor/$altColor/$highlightColor are plain
+// GD color ints (already allocated) — never $p['accent']/$p['cta_bg']/
+// etc. here, only the guaranteed-legible-as-text roles (see the
+// palette color role table in docs/TEXT_FORMATTING.md).
+function render_text_markup($im, float $x, float $topY, array $line, int $size, bool $baseBold, int $normalColor, int $altColor, int $highlightColor, string $role = 'body'): void
 {
     $cx = $x;
-    $spaceW = render_text_width(' ', $size, $bold, $role);
-    foreach ($line as $word) {
-        render_text($im, $cx, $topY, $word['text'], $size, $bold, $word['emphasized'] ? $accentColor : $normalColor, $role);
-        $cx += render_text_width($word['text'], $size, $bold, $role) + $spaceW;
+    $spaceW = render_text_width(' ', $size, $baseBold, $role);
+    foreach ($line as $i => $word) {
+        if ($i > 0 && empty($word['glue'])) {
+            $cx += $spaceW;
+        }
+        $bold = $baseBold || $word['bold'];
+        $color = $word['highlight'] ? $highlightColor : ($word['altColor'] ? $altColor : $normalColor);
+        render_text($im, $cx, $topY, $word['text'], $size, $bold, $color, $role, $word['italic']);
+        $cx += render_text_width($word['text'], $size, $bold, $role, $word['italic']);
     }
 }
 
 // Resolves font size + wrapped lines for a headline, branching on the
-// active design template's font role (sans/serif) and whether it colors
-// emphasized **word** spans. $lines is either an array of plain strings
-// (no emphasis) or render_wrap_emphasized_clamped()'s word-struct lines
-// (emphasis) — render_draw_headline_line() below knows how to draw both.
-// Shared by render_draw_headline() (top-anchored) and
+// active design template's font role (sans/serif). $lines is always
+// render_wrap_markup_clamped()'s word-struct-line shape — every
+// template supports markup now, so there's no more plain-string path
+// here. Shared by render_draw_headline() (top-anchored) and
 // render_draw_headline_centered() (the "Title Only" treatment) so both
 // stay in exact agreement about sizing/wrapping.
 function render_resolve_headline_lines(string $headline, float $cw, array $candidateSizes, int $maxLines, array $preset): array
 {
     $fontRole = $preset['font'] === 'serif' ? 'serif' : 'heading';
-    if ($preset['emphasis']) {
-        $hs = render_fit_headline_size($headline, $cw, $candidateSizes, $maxLines, true, $fontRole);
-        $lines = render_wrap_emphasized_clamped($headline, $hs, true, $cw, $maxLines, $fontRole);
-    } else {
-        $plain = render_strip_emphasis_markers($headline);
-        $hs = render_fit_headline_size($plain, $cw, $candidateSizes, $maxLines, true, $fontRole);
-        $lines = render_wrap_clamped($plain, $hs, true, $cw, $maxLines, $fontRole);
-    }
+    $hs = render_fit_headline_size($headline, $cw, $candidateSizes, $maxLines, true, $fontRole);
+    $lines = render_wrap_markup_clamped($headline, $hs, true, $cw, $maxLines, $fontRole);
     return [$hs, render_lh($hs), $lines, $fontRole];
 }
 
-// Draws one line from render_resolve_headline_lines() — a plain string
-// or an emphasized word-struct line, depending on $preset['emphasis'].
-// body, not accent, for the emphasized color — same reasoning as every
-// other legibility fix this session: accent is only ever a
-// guaranteed-safe fill/tint, not guaranteed readable as text (it's
-// deliberately close to bg on some palettes, e.g. Cream).
+// Draws one render_resolve_headline_lines() line. Headline text is
+// always bold regardless of markup, so a __word__ marker here is a
+// harmless no-op; **/++/* all apply normally.
 function render_draw_headline_line($im, $line, float $x, float $y, int $hs, array $p, array $preset, string $fontRole): void
 {
-    if ($preset['emphasis']) {
-        render_text_emphasized($im, $x, $y, $line, $hs, true, $p['headline'], $p['body'], $fontRole);
-    } else {
-        render_text($im, $x, $y, $line, $hs, true, $p['headline'], $fontRole);
-    }
+    render_text_markup($im, $x, $y, $line, $hs, true, $p['headline'], render_markup_alt_color($p['headline'], $p), $p['accent_text'], $fontRole);
 }
 
 // Shared by all 4 slide types — top-anchored headline draw (the normal
@@ -1264,7 +1376,7 @@ function render_minimal_point($im, int $num, string $text, float $y, array $p, i
     $barW = rs(4); $gap = rs(16); $py = rs(6);
     $numLbl = sprintf('%02d', $num) . '  ';
     $numW = render_text_width($numLbl, $fontSize, true);
-    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $barW - $gap - $numW, 2);
+    $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $barW - $gap - $numW, 2);
     $lineH = render_lh($fontSize);
     $textH = count($lines) * $lineH;
 
@@ -1277,8 +1389,9 @@ function render_minimal_point($im, int $num, string $text, float $y, array $p, i
     // marker, not something anyone has to read.
     $tx = $cx + $barW + $gap;
     render_text($im, $tx, $y + $py, $numLbl, $fontSize, true, $p['body']);
+    $altColor = render_markup_alt_color($p['body'], $p);
     foreach ($lines as $i => $line) {
-        render_text($im, $tx + $numW, $y + $py + $i * $lineH, $line, $fontSize, false, $p['body']);
+        render_text_markup($im, $tx + $numW, $y + $py + $i * $lineH, $line, $fontSize, false, $p['body'], $altColor, $p['accent_text']);
     }
 
     return $y + $py + $textH + rs(20);
@@ -1290,15 +1403,16 @@ function render_divider_point($im, int $num, string $text, float $y, array $p, i
 {
     [$cx, $rx, $cw] = render_content_edges();
     $aw = render_text_width('↘  ', $fontSize, true);
-    $lines = render_wrap_clamped($text, $fontSize, false, $cw - $aw, 2);
+    $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $aw, 2);
     $lh = render_lh($fontSize);
 
     // headline, not accent — same reasoning as render_minimal_point()'s
     // number label: this arrow sits directly on bg, so it needs
     // guaranteed contrast, not a decorative tint.
     render_text($im, $cx, $y, '↘', $fontSize, true, $p['headline']);
+    $altColor = render_markup_alt_color($p['body'], $p);
     foreach ($lines as $i => $line) {
-        render_text($im, $cx + $aw, $y + $i * $lh, $line, $fontSize, false, $p['body']);
+        render_text_markup($im, $cx + $aw, $y + $i * $lh, $line, $fontSize, false, $p['body'], $altColor, $p['accent_text']);
     }
     $textH = count($lines) * $lh;
     $ruleY = $y + $textH + rs(14);
@@ -1316,7 +1430,7 @@ function render_numbered_card($im, int $num, string $text, float $y, array $p, i
     }
     [$cx, $rx, $cw] = render_content_edges();
     $fs = $fontSize; $badge = rs(44); $px = rs(20); $py = rs(15);
-    $lines = render_wrap_clamped($text, $fs, false, $cw - $badge - $px * 2 - rs(18), 2);
+    $lines = render_wrap_markup_clamped($text, $fs, false, $cw - $badge - $px * 2 - rs(18), 2);
     $lineH = render_lh($fs);
     $textH = count($lines) * $lineH;
     $ch = max($badge + $py * 2, $textH + $py * 2);
@@ -1337,8 +1451,12 @@ function render_numbered_card($im, int $num, string $text, float $y, array $p, i
 
     $tx = $bx + $badge + rs(16);
     $ty = $y + ($ch - $textH) / 2;
+    // Same accent-fill contrast reasoning as render_body_boxed(): only
+    // accent_text is checked against this card's accent background, so
+    // ** stays inert here rather than risk drawing headline/body on a
+    // fill it was never contrast-verified against.
     foreach ($lines as $i => $line) {
-        render_text($im, $tx, $ty + $i * $lineH, $line, $fs, false, $p['accent_text']);
+        render_text_markup($im, $tx, $ty + $i * $lineH, $line, $fs, false, $p['accent_text'], $p['accent_text'], $p['accent_text']);
     }
 
     return $y + $ch + rs(14);
@@ -1642,12 +1760,16 @@ function render_body_boxed($im, string $body, float $y, array $p, float $cx, flo
     }
     $fs = rss('body', 27);
     $blh = render_lh($fs);
-    $lines = render_wrap_clamped($body, $fs, false, $cw - rs(24), 5);
+    $lines = render_wrap_markup_clamped($body, $fs, false, $cw - rs(24), 5);
     $ph = count($lines) * $blh + rs(28);
     render_rrect($im, $cx, $y, $cx + $cw, $y + $ph, $p['accent'], rs(10));
     $ty = $y + rs(14);
+    // accent_text is the only color contrast-checked against this box's
+    // accent fill (see render_derive_palette_colors()) — headline/body
+    // are only checked against the slide bg, so ** markers stay inert
+    // here (altColor = normal color) rather than risk illegible text.
     foreach ($lines as $line) {
-        render_text($im, $cx + rs(22), $ty, $line, $fs, false, $p['accent_text']);
+        render_text_markup($im, $cx + rs(22), $ty, $line, $fs, false, $p['accent_text'], $p['accent_text'], $p['accent_text']);
         $ty += $blh;
     }
     return $y + $ph;
@@ -1663,8 +1785,9 @@ function render_body_freestanding($im, string $body, float $y, array $p, float $
     }
     $bs = render_fit_headline_size($body, $cw, [rss('body', 26), rss('body', 23), rss('body', 20)], 3, false, 'body');
     $blh = render_lh($bs);
-    foreach (render_wrap_clamped($body, $bs, false, $cw, 3, 'body') as $line) {
-        render_text($im, $cx, $y, $line, $bs, false, $p['body'], 'body');
+    $altColor = render_markup_alt_color($p['body'], $p);
+    foreach (render_wrap_markup_clamped($body, $bs, false, $cw, 3, 'body') as $line) {
+        render_text_markup($im, $cx, $y, $line, $bs, false, $p['body'], $altColor, $p['accent_text'], 'body');
         $y += $blh;
     }
     return $y;
@@ -1680,7 +1803,7 @@ function render_body_boxed_height(string $body, float $cw): float
         return 0;
     }
     $fs = rss('body', 27);
-    $lines = render_wrap_clamped($body, $fs, false, $cw - rs(24), 5);
+    $lines = render_wrap_markup_clamped($body, $fs, false, $cw - rs(24), 5);
     return count($lines) * render_lh($fs) + rs(28);
 }
 
@@ -1691,7 +1814,7 @@ function render_body_freestanding_height(string $body, float $cw): float
         return 0;
     }
     $bs = render_fit_headline_size($body, $cw, [rss('body', 26), rss('body', 23), rss('body', 20)], 3, false, 'body');
-    $lines = render_wrap_clamped($body, $bs, false, $cw, 3, 'body');
+    $lines = render_wrap_markup_clamped($body, $bs, false, $cw, 3, 'body');
     return count($lines) * render_lh($bs);
 }
 
@@ -1742,7 +1865,7 @@ function render_subheading_height(string $subheading, float $cw): float
         return 0;
     }
     $fs = rss('subheading', 24);
-    $lines = render_wrap_clamped($subheading, $fs, false, $cw, 2, 'body');
+    $lines = render_wrap_markup_clamped($subheading, $fs, false, $cw, 2, 'body');
     return count($lines) * render_lh($fs) + rs(6);
 }
 
@@ -1752,9 +1875,10 @@ function render_draw_subheading($im, string $subheading, float $x, float $y, flo
         return $y;
     }
     $fs = rss('subheading', 24);
-    $lines = render_wrap_clamped($subheading, $fs, false, $cw, 2, 'body');
+    $lines = render_wrap_markup_clamped($subheading, $fs, false, $cw, 2, 'body');
+    $altColor = render_markup_alt_color($p['body'], $p);
     foreach ($lines as $line) {
-        render_text($im, $x, $y, $line, $fs, false, $p['body'], 'body');
+        render_text_markup($im, $x, $y, $line, $fs, false, $p['body'], $altColor, $p['accent_text'], 'body');
         $y += render_lh($fs);
     }
     return $y + rs(6);
@@ -1773,36 +1897,37 @@ function render_draw_subheading($im, string $subheading, float $x, float $y, flo
 //   boxing, and footer treatment from — those 4 things already have
 //   exactly 3 well-tested shapes, so new templates just pick one rather
 //   than re-deriving a 4th/5th/6th variant of each.
-// - font/emphasis/decoration/listOverride/ctaOverride: the newer,
-//   independent axes (serif vs sans, colored **word** headline spans,
-//   a corner decoration, and optional list/CTA style swaps) that give
-//   each preset its distinct identity on top of its legacyBase.
+// - font/decoration/listOverride/ctaOverride: the newer, independent
+//   axes (serif vs sans, a corner decoration, and optional list/CTA
+//   style swaps) that give each preset its distinct identity on top of
+//   its legacyBase. Rich text markup (bold/italic/alt-color/highlight —
+//   see docs/TEXT_FORMATTING.md) works on every preset, not gated here.
 // classic/minimal/bold keep the exact field values that reproduce their
 // pre-gallery behavior byte-for-byte.
 function render_design_templates(): array
 {
     return [
-        'classic' => ['name' => 'Classic', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
-        'minimal' => ['name' => 'Minimal', 'legacyBase' => 'minimal', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
-        'bold'    => ['name' => 'Bold Blocks', 'legacyBase' => 'bold', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
+        'classic' => ['name' => 'Classic', 'legacyBase' => 'classic', 'font' => 'sans', 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
+        'minimal' => ['name' => 'Minimal', 'legacyBase' => 'minimal', 'font' => 'sans', 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
+        'bold'    => ['name' => 'Bold Blocks', 'legacyBase' => 'bold', 'font' => 'sans', 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
 
-        'editorial_serif'    => ['name' => 'Editorial Serif', 'legacyBase' => 'minimal', 'font' => 'serif', 'emphasis' => true, 'decoration' => null, 'listOverride' => 'divider', 'ctaOverride' => null],
-        'serif_spotlight'    => ['name' => 'Serif Spotlight', 'legacyBase' => 'classic', 'font' => 'serif', 'emphasis' => true, 'decoration' => 'bleed_circle', 'listOverride' => null, 'ctaOverride' => null],
-        'halftone_pop'       => ['name' => 'Halftone Pop', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => true, 'decoration' => 'halftone', 'listOverride' => 'divider', 'ctaOverride' => 'pill'],
-        'corner_accent'      => ['name' => 'Corner Accent', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => 'triangles', 'listOverride' => 'divider', 'ctaOverride' => 'outline'],
-        'bold_serif'         => ['name' => 'Bold Serif', 'legacyBase' => 'bold', 'font' => 'serif', 'emphasis' => true, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
-        'pill_editorial'     => ['name' => 'Pill Editorial', 'legacyBase' => 'minimal', 'font' => 'serif', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => 'pill'],
-        'spotlight_bold'     => ['name' => 'Spotlight Bold', 'legacyBase' => 'bold', 'font' => 'sans', 'emphasis' => false, 'decoration' => 'bleed_circle', 'listOverride' => null, 'ctaOverride' => null],
-        'clean_divider'      => ['name' => 'Clean Divider', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => 'divider', 'ctaOverride' => 'outline'],
-        'outline_frame'      => ['name' => 'Outline Frame', 'legacyBase' => 'classic', 'font' => 'sans', 'emphasis' => false, 'decoration' => 'triangles', 'listOverride' => null, 'ctaOverride' => 'outline'],
-        'halftone_editorial' => ['name' => 'Halftone Editorial', 'legacyBase' => 'minimal', 'font' => 'serif', 'emphasis' => true, 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
-        'dotted_bold'        => ['name' => 'Dotted Bold', 'legacyBase' => 'bold', 'font' => 'sans', 'emphasis' => true, 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
+        'editorial_serif'    => ['name' => 'Editorial Serif', 'legacyBase' => 'minimal', 'font' => 'serif', 'decoration' => null, 'listOverride' => 'divider', 'ctaOverride' => null],
+        'serif_spotlight'    => ['name' => 'Serif Spotlight', 'legacyBase' => 'classic', 'font' => 'serif', 'decoration' => 'bleed_circle', 'listOverride' => null, 'ctaOverride' => null],
+        'halftone_pop'       => ['name' => 'Halftone Pop', 'legacyBase' => 'classic', 'font' => 'sans', 'decoration' => 'halftone', 'listOverride' => 'divider', 'ctaOverride' => 'pill'],
+        'corner_accent'      => ['name' => 'Corner Accent', 'legacyBase' => 'classic', 'font' => 'sans', 'decoration' => 'triangles', 'listOverride' => 'divider', 'ctaOverride' => 'outline'],
+        'bold_serif'         => ['name' => 'Bold Serif', 'legacyBase' => 'bold', 'font' => 'serif', 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null],
+        'pill_editorial'     => ['name' => 'Pill Editorial', 'legacyBase' => 'minimal', 'font' => 'serif', 'decoration' => null, 'listOverride' => null, 'ctaOverride' => 'pill'],
+        'spotlight_bold'     => ['name' => 'Spotlight Bold', 'legacyBase' => 'bold', 'font' => 'sans', 'decoration' => 'bleed_circle', 'listOverride' => null, 'ctaOverride' => null],
+        'clean_divider'      => ['name' => 'Clean Divider', 'legacyBase' => 'classic', 'font' => 'sans', 'decoration' => null, 'listOverride' => 'divider', 'ctaOverride' => 'outline'],
+        'outline_frame'      => ['name' => 'Outline Frame', 'legacyBase' => 'classic', 'font' => 'sans', 'decoration' => 'triangles', 'listOverride' => null, 'ctaOverride' => 'outline'],
+        'halftone_editorial' => ['name' => 'Halftone Editorial', 'legacyBase' => 'minimal', 'font' => 'serif', 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
+        'dotted_bold'        => ['name' => 'Dotted Bold', 'legacyBase' => 'bold', 'font' => 'sans', 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
 
         // 'stat' => true is the one flag every render_slide_*() checks for
         // before its usual headline/body/points flow — see
         // render_stat_content(). Everything else (chrome, footer, CTA) is
         // untouched, same as any other template.
-        'big_stat' => ['name' => 'Big Stat', 'legacyBase' => 'minimal', 'font' => 'sans', 'emphasis' => false, 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null, 'stat' => true],
+        'big_stat' => ['name' => 'Big Stat', 'legacyBase' => 'minimal', 'font' => 'sans', 'decoration' => null, 'listOverride' => null, 'ctaOverride' => null, 'stat' => true],
     ];
 }
 
