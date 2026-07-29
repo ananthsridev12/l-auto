@@ -162,28 +162,38 @@ function mix_colors(array $c1, array $c2, float $pct): array
 // existing auto-derived 'name'/'accent_text'/'headline' roles for the
 // footer (see render_creative_to_slides()), so it's only present in the
 // returned array's 'signature' key when the user actually set one.
-function render_derive_palette_colors(string $bgHex, string $textHex, ?string $accentHex = null, ?string $ctaHex = null, ?string $signatureHex = null): array
+// $bodyHex/$accentTextHex/$badgeTextHex/$ctaTextHex are optional overrides
+// for the 4 roles that would otherwise always be computed (body: text
+// blended 35% toward bg; accent_text/badge_text/cta_text: an auto-picked
+// best-contrast choice between bg/text) — same "unset = auto-derive, set
+// = use literally" pattern $accentHex/$ctaHex/$signatureHex already have.
+// A set $bodyHex also becomes 'counter'/'rule'/'name' below, since those
+// three already reused the same computed $body value — overriding the
+// source value keeps them all consistent rather than only fixing one of
+// the four. None of these overrides are contrast-checked against bg when
+// set — same trade-off as accent_literal in render_markup_alt_color().
+function render_derive_palette_colors(string $bgHex, string $textHex, ?string $accentHex = null, ?string $ctaHex = null, ?string $signatureHex = null, ?string $bodyHex = null, ?string $accentTextHex = null, ?string $badgeTextHex = null, ?string $ctaTextHex = null): array
 {
     $bg     = hex_to_rgb($bgHex);
     $text   = hex_to_rgb($textHex);
     $accent = $accentHex ? hex_to_rgb($accentHex) : mix_colors($bg, $text, 0.08);
     $cta    = $ctaHex ? hex_to_rgb($ctaHex) : $text;
-    $body   = mix_colors($text, $bg, 0.35);
+    $body   = $bodyHex ? hex_to_rgb($bodyHex) : mix_colors($text, $bg, 0.35);
 
     $colors = [
         'bg'          => $bg,
         'headline'    => $text,
         'body'        => $body,
         'accent'      => $accent,
-        'accent_text' => best_contrast([$bg, $text], $accent),
+        'accent_text' => $accentTextHex ? hex_to_rgb($accentTextHex) : best_contrast([$bg, $text], $accent),
         'badge_bg'    => $text,
-        'badge_text'  => best_contrast([$bg, $text], $text),
+        'badge_text'  => $badgeTextHex ? hex_to_rgb($badgeTextHex) : best_contrast([$bg, $text], $text),
         'bar'         => $text,
         'counter'     => $body,
         'rule'        => $body,
         'divider'     => $accent,
         'cta_bg'      => $cta,
-        'cta_text'    => best_contrast([$bg, $text], $cta),
+        'cta_text'    => $ctaTextHex ? hex_to_rgb($ctaTextHex) : best_contrast([$bg, $text], $cta),
         'name'        => $body,
     ];
     if ($signatureHex) {
@@ -206,13 +216,13 @@ function render_resolve_palette_colors($templateValue, int $userId, ?string $ser
     if (is_string($templateValue) && str_starts_with($templateValue, 'custom:')) {
         $palette = fetch_brand_palette($userId, (int) substr($templateValue, 7));
         if ($palette) {
-            return render_derive_palette_colors($palette['bg_color'], $palette['text_color'], $palette['accent_color'], $palette['cta_color'], $palette['signature_color'] ?? null);
+            return render_derive_palette_colors($palette['bg_color'], $palette['text_color'], $palette['accent_color'], $palette['cta_color'], $palette['signature_color'] ?? null, $palette['body_color'] ?? null, $palette['accent_text_color'] ?? null, $palette['badge_text_color'] ?? null, $palette['cta_text_color'] ?? null);
         }
     }
 
     $defaultPalette = fetch_default_brand_palette($userId);
     if ($defaultPalette) {
-        return render_derive_palette_colors($defaultPalette['bg_color'], $defaultPalette['text_color'], $defaultPalette['accent_color'], $defaultPalette['cta_color'], $defaultPalette['signature_color'] ?? null);
+        return render_derive_palette_colors($defaultPalette['bg_color'], $defaultPalette['text_color'], $defaultPalette['accent_color'], $defaultPalette['cta_color'], $defaultPalette['signature_color'] ?? null, $defaultPalette['body_color'] ?? null, $defaultPalette['accent_text_color'] ?? null, $defaultPalette['badge_text_color'] ?? null, $defaultPalette['cta_text_color'] ?? null);
     }
 
     return render_palettes()[render_get_palette_id_by_series_label($seriesLabel)];

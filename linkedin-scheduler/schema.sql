@@ -214,6 +214,20 @@ ALTER TABLE brand_palettes
 ALTER TABLE brand_palettes
   ADD COLUMN background_image_path VARCHAR(500) DEFAULT NULL;
 
+-- Optional per-palette overrides for the derived text colors that were
+-- previously always computed (body: text blended 35% toward bg;
+-- accent_text/badge_text/cta_text: best-contrast auto-pick) — see
+-- includes/image_renderer.php render_derive_palette_colors(). NULL
+-- keeps the existing auto-derived behavior; a set hex is used
+-- literally, same optional/auto-generate pattern as accent_color/
+-- cta_color/signature_color above. Only meaningful on custom palettes;
+-- the 4 built-in presets (render_palettes()) are fully fixed.
+ALTER TABLE brand_palettes
+  ADD COLUMN body_color VARCHAR(7) DEFAULT NULL,
+  ADD COLUMN accent_text_color VARCHAR(7) DEFAULT NULL,
+  ADD COLUMN badge_text_color VARCHAR(7) DEFAULT NULL,
+  ADD COLUMN cta_text_color VARCHAR(7) DEFAULT NULL;
+
 -- Auto-assigns a Design Template so bulk generation (Content Studio CSV
 -- upload, Content Calendar Generator) doesn't require picking one by
 -- hand for every row/post — see includes/post_helpers.php

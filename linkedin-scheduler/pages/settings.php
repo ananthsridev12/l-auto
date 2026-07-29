@@ -214,15 +214,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $accent = trim($_POST['palette_accent'] ?? '') ?: null;
         $cta = trim($_POST['palette_cta'] ?? '') ?: null;
         $signature = trim($_POST['palette_signature'] ?? '') ?: null;
+        $bodyOverride = trim($_POST['palette_body'] ?? '') ?: null;
+        $accentTextOverride = trim($_POST['palette_accent_text'] ?? '') ?: null;
+        $badgeTextOverride = trim($_POST['palette_badge_text'] ?? '') ?: null;
+        $ctaTextOverride = trim($_POST['palette_cta_text'] ?? '') ?: null;
         if ($name === '' || !preg_match('/^#[0-9A-Fa-f]{6}$/', $bg) || !preg_match('/^#[0-9A-Fa-f]{6}$/', $text)) {
             flash('error', 'Enter a palette name and valid Background/Text colors.');
             redirect('pages/settings.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO brand_palettes (user_id, name, bg_color, text_color, accent_color, cta_color, signature_color) VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE bg_color = VALUES(bg_color), text_color = VALUES(text_color), accent_color = VALUES(accent_color), cta_color = VALUES(cta_color), signature_color = VALUES(signature_color)'
+            'INSERT INTO brand_palettes (user_id, name, bg_color, text_color, accent_color, cta_color, signature_color, body_color, accent_text_color, badge_text_color, cta_text_color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE bg_color = VALUES(bg_color), text_color = VALUES(text_color), accent_color = VALUES(accent_color), cta_color = VALUES(cta_color), signature_color = VALUES(signature_color), body_color = VALUES(body_color), accent_text_color = VALUES(accent_text_color), badge_text_color = VALUES(badge_text_color), cta_text_color = VALUES(cta_text_color)'
         );
-        $stmt->execute([$userId, $name, $bg, $text, $accent, $cta, $signature]);
+        $stmt->execute([$userId, $name, $bg, $text, $accent, $cta, $signature, $bodyOverride, $accentTextOverride, $badgeTextOverride, $ctaTextOverride]);
         flash('success', "Palette \"{$name}\" saved.");
         redirect('pages/settings.php');
     }
@@ -785,7 +789,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card" data-tab="brand">
   <h2>Brand Palettes</h2>
-  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; Accent, CTA, and Signature colors are optional — leave "Auto-generate" checked to derive them automatically with guaranteed-readable contrast. Signature specifically controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes. Each palette can also have its own background photo (upload it square, matching the post's 1:1 shape, for a clean fit — off-square images are still center-cropped automatically) — select "Image" as the Background when generating a post using that palette. Your palette's Background color is drawn as a semi-transparent tint over the photo so text stays readable.</p>
+  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; everything else is optional — leave "Auto-generate" checked to derive it automatically with guaranteed-readable contrast, or uncheck it to set your own literal color instead. Body/Points Text, Text-on-Accent, Badge Text, and CTA Text are the colors this app would otherwise always compute for you (Body/Points blends your Text color 35% toward Background; the other three auto-pick whichever of Background/Text contrasts best against their fill) — setting one directly is <strong>not contrast-checked</strong>, so only do it if you've confirmed it's actually readable. Signature controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes. Each palette can also have its own background photo (upload it square, matching the post's 1:1 shape, for a clean fit — off-square images are still center-cropped automatically) — select "Image" as the Background when generating a post using that palette. Your palette's Background color is drawn as a semi-transparent tint over the photo so text stays readable.</p>
   <?php if ($brandPalettes): ?>
     <?php foreach ($brandPalettes as $bp): ?>
       <div class="account-row">
@@ -801,6 +805,10 @@ require __DIR__ . '/../includes/layout_top.php';
             <?php if ($bp['accent_color']): ?><span title="Accent <?= h($bp['accent_color']) ?>" style="background:<?= h($bp['accent_color']) ?>"></span><?php endif; ?>
             <?php if ($bp['cta_color']): ?><span title="CTA <?= h($bp['cta_color']) ?>" style="background:<?= h($bp['cta_color']) ?>"></span><?php endif; ?>
             <?php if ($bp['signature_color']): ?><span title="Signature <?= h($bp['signature_color']) ?>" style="background:<?= h($bp['signature_color']) ?>"></span><?php endif; ?>
+            <?php if ($bp['body_color']): ?><span title="Body/Points Text <?= h($bp['body_color']) ?>" style="background:<?= h($bp['body_color']) ?>"></span><?php endif; ?>
+            <?php if ($bp['accent_text_color']): ?><span title="Text-on-Accent <?= h($bp['accent_text_color']) ?>" style="background:<?= h($bp['accent_text_color']) ?>"></span><?php endif; ?>
+            <?php if ($bp['badge_text_color']): ?><span title="Badge Text <?= h($bp['badge_text_color']) ?>" style="background:<?= h($bp['badge_text_color']) ?>"></span><?php endif; ?>
+            <?php if ($bp['cta_text_color']): ?><span title="CTA Text <?= h($bp['cta_text_color']) ?>" style="background:<?= h($bp['cta_text_color']) ?>"></span><?php endif; ?>
           </span>
         </div>
         <div class="inline-form">
@@ -810,7 +818,11 @@ require __DIR__ . '/../includes/layout_top.php';
             data-text="<?= h($bp['text_color']) ?>"
             data-accent="<?= h($bp['accent_color'] ?? '') ?>"
             data-cta="<?= h($bp['cta_color'] ?? '') ?>"
-            data-signature="<?= h($bp['signature_color'] ?? '') ?>">Edit</button>
+            data-signature="<?= h($bp['signature_color'] ?? '') ?>"
+            data-body="<?= h($bp['body_color'] ?? '') ?>"
+            data-accent_text="<?= h($bp['accent_text_color'] ?? '') ?>"
+            data-badge_text="<?= h($bp['badge_text_color'] ?? '') ?>"
+            data-cta_text="<?= h($bp['cta_text_color'] ?? '') ?>">Edit</button>
           <?php if (!$bp['is_default']): ?>
             <form method="post">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -869,6 +881,22 @@ require __DIR__ . '/../includes/layout_top.php';
     <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_signature" checked> Auto-generate Signature color</label>
     <label>Signature
       <span class="color-field"><input type="color" name="palette_signature" id="palette_signature" value="#0D530E" disabled><input type="text" class="hex-input" data-for="palette_signature" value="#0D530E" maxlength="7" disabled></span>
+    </label>
+    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_body" checked> Auto-generate Body/Points Text color</label>
+    <label>Body/Points Text
+      <span class="color-field"><input type="color" name="palette_body" id="palette_body" value="#7776AD" disabled><input type="text" class="hex-input" data-for="palette_body" value="#7776AD" maxlength="7" disabled></span>
+    </label>
+    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_accent_text" checked> Auto-generate Text-on-Accent color</label>
+    <label>Text-on-Accent <span class="muted">(text drawn on top of an accent-filled box/card)</span>
+      <span class="color-field"><input type="color" name="palette_accent_text" id="palette_accent_text" value="#0D530E" disabled><input type="text" class="hex-input" data-for="palette_accent_text" value="#0D530E" maxlength="7" disabled></span>
+    </label>
+    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_badge_text" checked> Auto-generate Badge Text color</label>
+    <label>Badge Text <span class="muted">(the numbered pill badges)</span>
+      <span class="color-field"><input type="color" name="palette_badge_text" id="palette_badge_text" value="#FBF5DD" disabled><input type="text" class="hex-input" data-for="palette_badge_text" value="#FBF5DD" maxlength="7" disabled></span>
+    </label>
+    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_cta_text" checked> Auto-generate CTA Text color</label>
+    <label>CTA Text <span class="muted">(text on the CTA banner/button)</span>
+      <span class="color-field"><input type="color" name="palette_cta_text" id="palette_cta_text" value="#FBF5DD" disabled><input type="text" class="hex-input" data-for="palette_cta_text" value="#FBF5DD" maxlength="7" disabled></span>
     </label>
     <button type="submit" class="btn-secondary" id="paletteSubmitBtn">Add Palette</button>
     <button type="button" class="btn-tiny" id="paletteCancelEdit" style="display:none; align-self:flex-start;">Cancel edit</button>
@@ -1251,6 +1279,10 @@ document.querySelectorAll('.color-field').forEach(function (field) {
       setField('palette_accent', btn.dataset.accent);
       setField('palette_cta', btn.dataset.cta);
       setField('palette_signature', btn.dataset.signature);
+      setField('palette_body', btn.dataset.body);
+      setField('palette_accent_text', btn.dataset.accent_text);
+      setField('palette_badge_text', btn.dataset.badge_text);
+      setField('palette_cta_text', btn.dataset.cta_text);
       submitBtn.textContent = 'Update Palette';
       cancelBtn.style.display = 'inline-block';
       form.scrollIntoView({ behavior: 'smooth', block: 'center' });

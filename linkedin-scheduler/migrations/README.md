@@ -43,3 +43,4 @@ mysql -u <user> -p <database> < migrations/0001_kb_workspace_identity_tone.sql
 | `0008_kb_proof_points.sql` | 7 | New `proof_points` table (client outcomes / case studies) |
 | `0009_user_theme_preference.sql` | 11 | `users.theme` — light/dark preference for the app-wide theme toggle |
 | `0010_kb_documents_polish.sql` | 13 (KB Phase 8) | `knowledge_documents` — doc_type/use_case/vertical_id/service_id/is_public |
+| `0011_brand_palette_text_overrides.sql` | — | `brand_palettes` — optional body_color/accent_text_color/badge_text_color/cta_text_color overrides for the previously always-derived text colors |
