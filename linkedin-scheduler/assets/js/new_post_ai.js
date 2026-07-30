@@ -4,7 +4,9 @@
   var aiToggle = document.getElementById('aiGenerateToggle');
   var manualToggle = document.getElementById('manualCreativeToggle');
   var aiFields = document.getElementById('aiGenerateFields');
-  var slidesPanel = document.getElementById('creativeSlidesPanel');
+  var settingsPanel = document.getElementById('aiSettingsPanel');
+  var slidesReviewPanel = document.getElementById('aiSlidesReviewPanel');
+  var previewPanel = document.getElementById('aiPreviewPanel');
   var ctaPanel = document.getElementById('ctaFieldsPanel');
   var ctaEnabled = document.getElementById('ctaEnabled');
   var ctaText = document.getElementById('ctaText');
@@ -28,6 +30,33 @@
   // 'ai' | 'manual' | null — which of the two mutually-exclusive toggles
   // currently owns currentCreative/the shared review UI.
   var mode = null;
+  // 'kb' | 'custom' — which AI prompt mode is active; only meaningful
+  // while mode === 'ai'. See generate_creative_via_ai_custom_prompt()
+  // in includes/ai_generate.php for what 'custom' skips server-side.
+  var promptMode = 'kb';
+  var promptModeKb = document.getElementById('aiPromptModeKb');
+  var promptModeCustom = document.getElementById('aiPromptModeCustom');
+  var aiKbFields = document.getElementById('aiKbFields');
+  var aiCustomFields = document.getElementById('aiCustomFields');
+  var aiKbHint = document.getElementById('aiKbHint');
+  var aiCustomHint = document.getElementById('aiCustomHint');
+
+  function updatePromptModeFields() {
+    if (aiKbFields) aiKbFields.style.display = promptMode === 'kb' ? '' : 'none';
+    if (aiCustomFields) aiCustomFields.style.display = promptMode === 'custom' ? '' : 'none';
+    if (aiKbHint) aiKbHint.style.display = promptMode === 'kb' ? '' : 'none';
+    if (aiCustomHint) aiCustomHint.style.display = promptMode === 'custom' ? '' : 'none';
+  }
+  if (promptModeKb) {
+    promptModeKb.addEventListener('change', function () {
+      if (promptModeKb.checked) { promptMode = 'kb'; updatePromptModeFields(); }
+    });
+  }
+  if (promptModeCustom) {
+    promptModeCustom.addEventListener('change', function () {
+      if (promptModeCustom.checked) { promptMode = 'custom'; updatePromptModeFields(); }
+    });
+  }
 
   function emptySlide() {
     return { headline: '', subheading: '', body: '', points: ['', '', ''] };
@@ -75,7 +104,9 @@
       if (reviewEl) reviewEl.innerHTML = '';
     }
     if (aiFields) aiFields.style.display = mode === 'ai' ? 'flex' : 'none';
-    if (slidesPanel) slidesPanel.style.display = (mode && !isTextPost) ? 'flex' : 'none';
+    if (settingsPanel) settingsPanel.style.display = (mode && !isTextPost) ? 'flex' : 'none';
+    if (slidesReviewPanel) slidesReviewPanel.style.display = (mode && !isTextPost) ? 'block' : 'none';
+    if (previewPanel) previewPanel.style.display = (mode && !isTextPost) ? 'block' : 'none';
     if (ctaPanel) ctaPanel.style.display = mode ? 'flex' : 'none';
     if (addSlideBtn) {
       addSlideBtn.style.display = (mode === 'manual' && formatSelect.value === 'Carousel') ? 'inline-block' : 'none';
@@ -85,6 +116,7 @@
     }
   }
   updatePanels();
+  updatePromptModeFields();
 
   if (aiToggle) {
     aiToggle.addEventListener('change', function () {
@@ -176,26 +208,37 @@
   if (generateBtn) {
     generateBtn.addEventListener('click', function () {
       var format = formatSelect.value;
-      var topic = document.getElementById('aiTopic').value.trim();
-      var caption = captionEl ? captionEl.value.trim() : '';
-      if (!topic && !caption) {
-        statusEl.textContent = 'Enter a topic/title (or write a caption) first.';
-        return;
-      }
-
       var fd = new FormData();
       fd.append('csrf', window.NEW_POST_CSRF);
       fd.append('format', format);
-      fd.append('topic', topic);
-      var lengthSelect = document.getElementById('aiLength');
-      fd.append('length', lengthSelect ? lengthSelect.value : 'medium');
-      appendKbField(fd, 'aiPersonaSelect', 'aiPersona', 'persona_id', 'persona');
-      appendKbField(fd, 'aiPillarSelect', 'aiType', 'pillar_id', 'type');
-      var serviceSelect = document.getElementById('aiServiceSelect');
-      fd.append('service_id', serviceSelect ? serviceSelect.value : '');
-      fd.append('cta_id', '');
-      fd.append('cta', ctaEnabled && ctaEnabled.checked && ctaText ? ctaText.value.trim() : '');
-      fd.append('caption', caption);
+
+      if (promptMode === 'custom') {
+        var customPrompt = document.getElementById('aiCustomPromptInput').value.trim();
+        if (!customPrompt) {
+          statusEl.textContent = 'Enter a prompt to generate from.';
+          return;
+        }
+        fd.append('prompt_mode', 'custom');
+        fd.append('custom_prompt', customPrompt);
+      } else {
+        var topic = document.getElementById('aiTopic').value.trim();
+        var caption = captionEl ? captionEl.value.trim() : '';
+        if (!topic && !caption) {
+          statusEl.textContent = 'Enter a topic/title (or write a caption) first.';
+          return;
+        }
+        fd.append('prompt_mode', 'kb');
+        fd.append('topic', topic);
+        var lengthSelect = document.getElementById('aiLength');
+        fd.append('length', lengthSelect ? lengthSelect.value : 'medium');
+        appendKbField(fd, 'aiPersonaSelect', 'aiPersona', 'persona_id', 'persona');
+        appendKbField(fd, 'aiPillarSelect', 'aiType', 'pillar_id', 'type');
+        var serviceSelect = document.getElementById('aiServiceSelect');
+        fd.append('service_id', serviceSelect ? serviceSelect.value : '');
+        fd.append('cta_id', '');
+        fd.append('cta', ctaEnabled && ctaEnabled.checked && ctaText ? ctaText.value.trim() : '');
+        fd.append('caption', caption);
+      }
 
       statusEl.textContent = 'Generating...';
       generateBtn.disabled = true;

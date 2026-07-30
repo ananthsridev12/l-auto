@@ -195,6 +195,97 @@ CAPTION RULES:
 RULES;
 }
 
+// Structural word/slide-count rules per format — split out of
+// build_generation_prompt() so generate_creative_via_ai_custom_prompt()
+// (the "Custom Prompt" AI mode, which skips all Knowledge Base/brand
+// context) can reuse them verbatim: these are renderer-driven
+// constraints (what keeps a slide from overflowing), not brand content,
+// so they still apply even when nothing else about the prompt is
+// KB-informed. Text Post has no slide content, so no rules to return.
+function build_slide_rules_bullets(string $format): string
+{
+    if ($format === 'Single Image') {
+        return <<<RULES
+IMAGE TEXT RULES (strict — the renderer truncates anything over these limits with an ellipsis, so staying within them is what keeps the image looking clean):
+- Headline: max 8 words, one line of thought, no trailing punctuation
+- Body: exactly 1 sentence, max 25 words
+- Points: EXACTLY 3, max 10 words each, never empty
+- All 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — that always belongs in the caption or a CTA slide, never inside the points list.
+- Write like a specific, opinionated LinkedIn post, not a generic corporate summary — concrete nouns and numbers beat vague phrases like "leverage synergies" or "drive results"
+- Optional: mark up to 1-2 key words or a number/percentage anywhere in the headline, subheading, body, or points using these markers: **word** for accent color, ++word++ for highlight color, *word* for italic, __word__ for bold (e.g. "60% faster **ESG reporting**") — wrap one marker inside another, e.g. **__word__**, to combine effects on the same word. Every template supports this now. Use sparingly — a whole sentence in markers looks worse than one sharp phrase.
+- Optional: a short "subheading" line (max 8 words) directly under the headline, for extra context that doesn't fit the headline itself. Leave it as an empty string unless it genuinely adds something the headline can't.
+RULES;
+    }
+    if ($format === 'Carousel') {
+        return <<<RULES
+SLIDE RULES (strict — the renderer truncates anything over these limits with an ellipsis, so staying within them is what keeps every slide looking clean):
+- Slide 1 (Hook): Headline + Body only — NO points
+- Slides 2-4 (Content): Headline + Body + EXACTLY 3 points
+- Slide 5 (CTA): Headline + Body + exactly 1 point, which is the CTA line
+- Headline: max 8 words, one line of thought, no trailing punctuation
+- Body: exactly 1 sentence, max 25 words
+- Points: max 10 words each
+- Within one Content slide, all 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — save that for slide 5.
+- Optional: mark up to 1-2 key words or a number/percentage anywhere in a slide's headline, subheading, body, or points using these markers: **word** for accent color, ++word++ for highlight color, *word* for italic, __word__ for bold (e.g. "60% faster **ESG reporting**") — wrap one marker inside another, e.g. **__word__**, to combine effects on the same word. Every template supports this now. Use sparingly — a whole sentence in markers looks worse than one sharp phrase.
+- Optional: any slide's "subheading" (max 8 words) can carry a short supporting line under its headline. Leave it as an empty string on slides where it doesn't add anything.
+RULES;
+    }
+    return '';
+}
+
+// The exact "Return ONLY raw JSON..." tail per format — split out for
+// the same reason as build_slide_rules_bullets() above (Custom Prompt
+// mode needs the output contract even without any KB context).
+function build_json_schema_block(string $format): string
+{
+    if ($format === 'Single Image') {
+        return <<<SCHEMA
+Return ONLY raw JSON — no markdown, no code fences, no explanation:
+{
+  "title": "image title",
+  "caption": "full LinkedIn caption text including hashtags",
+  "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
+  "slides": [
+    {
+      "slide_number": 1,
+      "headline": "Headline here",
+      "subheading": "",
+      "body": "Body sentence.",
+      "points": ["Point one", "Point two", "Point three"]
+    }
+  ]
+}
+SCHEMA;
+    }
+    if ($format === 'Carousel') {
+        return <<<SCHEMA
+Return ONLY raw JSON — no markdown, no code fences, no explanation:
+{
+  "title": "carousel title",
+  "caption": "full LinkedIn caption text including hashtags",
+  "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
+  "slides": [
+    {"slide_number": 1, "headline": "Hook headline here", "subheading": "", "body": "Teaser sentence.", "points": []},
+    {"slide_number": 2, "headline": "Slide 2 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
+    {"slide_number": 3, "headline": "Slide 3 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
+    {"slide_number": 4, "headline": "Slide 4 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
+    {"slide_number": 5, "headline": "Closing headline", "subheading": "", "body": "One closing sentence.", "points": ["Exact CTA line here"]}
+  ]
+}
+SCHEMA;
+    }
+    // Text Post
+    return <<<SCHEMA
+Return ONLY raw JSON — no markdown, no code fences, no explanation:
+{
+  "title": "short internal title for this post",
+  "caption": "full LinkedIn post text including hashtags",
+  "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
+  "slides": []
+}
+SCHEMA;
+}
+
 function build_generation_prompt(array $row, string $format, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null, array $relatedMemory = [], ?array $service = null): string
 {
     $context = build_context_block($brandBrief, $persona, $pillar, $workspace, $relatedMemory, $service);
@@ -232,6 +323,7 @@ NEWSBLOCK;
             ? "Use this exact caption (do not change it):\n\"\"\"\n{$caption}\n\"\"\""
             : build_caption_rules($cta, $length);
 
+        $schema = build_json_schema_block('Text Post');
         return <<<PROMPT
 {$context}You are a LinkedIn content specialist writing a text-only post for a B2B engineering/manufacturing audience.
 
@@ -245,13 +337,7 @@ CAPTION:
 
 {$styleRules}
 
-Return ONLY raw JSON — no markdown, no code fences, no explanation:
-{
-  "title": "short internal title for this post",
-  "caption": "full LinkedIn post text including hashtags",
-  "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
-  "slides": []
-}
+{$schema}
 PROMPT;
     }
 
@@ -260,6 +346,8 @@ PROMPT;
         : build_caption_rules($cta, $length);
 
     if ($format === 'Single Image') {
+        $bullets = build_slide_rules_bullets('Single Image');
+        $schema = build_json_schema_block('Single Image');
         return <<<PROMPT
 {$context}You are a LinkedIn content specialist creating a single-image post for a B2B engineering/manufacturing audience.
 
@@ -273,14 +361,7 @@ POST DETAILS:
 CAPTION:
 {$captionBlock}
 
-IMAGE TEXT RULES (strict — the renderer truncates anything over these limits with an ellipsis, so staying within them is what keeps the image looking clean):
-- Headline: max 8 words, one line of thought, no trailing punctuation
-- Body: exactly 1 sentence, max 25 words
-- Points: EXACTLY 3, max 10 words each, never empty
-- All 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — that always belongs in the caption or a CTA slide, never inside the points list.
-- Write like a specific, opinionated LinkedIn post, not a generic corporate summary — concrete nouns and numbers beat vague phrases like "leverage synergies" or "drive results"
-- Optional: mark up to 1-2 key words or a number/percentage anywhere in the headline, subheading, body, or points using these markers: **word** for accent color, ++word++ for highlight color, *word* for italic, __word__ for bold (e.g. "60% faster **ESG reporting**") — wrap one marker inside another, e.g. **__word__**, to combine effects on the same word. Every template supports this now. Use sparingly — a whole sentence in markers looks worse than one sharp phrase.
-- Optional: a short "subheading" line (max 8 words) directly under the headline, for extra context that doesn't fit the headline itself. Leave it as an empty string unless it genuinely adds something the headline can't.
+{$bullets}
 
 EXAMPLE of the right length and style (topic: quoting delays in manufacturing):
   Body: "Manual quoting creates delays, errors, and lost revenue."
@@ -288,24 +369,12 @@ EXAMPLE of the right length and style (topic: quoting delays in manufacturing):
 
 {$styleRules}
 
-Return ONLY raw JSON — no markdown, no code fences, no explanation:
-{
-  "title": "image title",
-  "caption": "full LinkedIn caption text including hashtags",
-  "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
-  "slides": [
-    {
-      "slide_number": 1,
-      "headline": "Headline here",
-      "subheading": "",
-      "body": "Body sentence.",
-      "points": ["Point one", "Point two", "Point three"]
-    }
-  ]
-}
+{$schema}
 PROMPT;
     }
 
+    $bullets = build_slide_rules_bullets('Carousel');
+    $schema = build_json_schema_block('Carousel');
     return <<<PROMPT
 {$context}You are a LinkedIn content specialist creating a carousel post for a B2B engineering/manufacturing audience.
 
@@ -320,16 +389,7 @@ POST DETAILS:
 CAPTION:
 {$captionBlock}
 
-SLIDE RULES (strict — the renderer truncates anything over these limits with an ellipsis, so staying within them is what keeps every slide looking clean):
-- Slide 1 (Hook): Headline + Body only — NO points
-- Slides 2-4 (Content): Headline + Body + EXACTLY 3 points
-- Slide 5 (CTA): Headline + Body + exactly 1 point, which is the CTA line
-- Headline: max 8 words, one line of thought, no trailing punctuation
-- Body: exactly 1 sentence, max 25 words
-- Points: max 10 words each
-- Within one Content slide, all 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — save that for slide 5.
-- Optional: mark up to 1-2 key words or a number/percentage anywhere in a slide's headline, subheading, body, or points using these markers: **word** for accent color, ++word++ for highlight color, *word* for italic, __word__ for bold (e.g. "60% faster **ESG reporting**") — wrap one marker inside another, e.g. **__word__**, to combine effects on the same word. Every template supports this now. Use sparingly — a whole sentence in markers looks worse than one sharp phrase.
-- Optional: any slide's "subheading" (max 8 words) can carry a short supporting line under its headline. Leave it as an empty string on slides where it doesn't add anything.
+{$bullets}
 
 EXAMPLE of the right length and style (topic: quoting delays in manufacturing, 4 slides):
   Slide 1 (Hook): "Your Quote Cycle Is Leaking Revenue" / "When quoting takes too long, deals fall through."
@@ -339,19 +399,7 @@ EXAMPLE of the right length and style (topic: quoting delays in manufacturing, 4
 
 {$styleRules}
 
-Return ONLY raw JSON — no markdown, no code fences, no explanation:
-{
-  "title": "carousel title",
-  "caption": "full LinkedIn caption text including hashtags",
-  "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
-  "slides": [
-    {"slide_number": 1, "headline": "Hook headline here", "subheading": "", "body": "Teaser sentence.", "points": []},
-    {"slide_number": 2, "headline": "Slide 2 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
-    {"slide_number": 3, "headline": "Slide 3 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
-    {"slide_number": 4, "headline": "Slide 4 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
-    {"slide_number": 5, "headline": "Closing headline", "subheading": "", "body": "One closing sentence.", "points": ["Exact CTA line here"]}
-  ]
-}
+{$schema}
 PROMPT;
 }
 
@@ -477,16 +525,52 @@ function ai_call_openai(string $prompt, string $apiKey, string $model): string
 // just IDs — pass null for either when the caller has nothing selected.
 function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBrief = null, ?array $persona = null, ?array $pillar = null, ?array $workspace = null, array $relatedMemory = [], ?array $service = null): array
 {
-    $provider = $aiConfig['provider'] ?? 'gemini';
-    $label = AI_PROVIDER_LABELS[$provider] ?? ucfirst($provider);
-
     if (!ai_configured($aiConfig)) {
+        $label = AI_PROVIDER_LABELS[$aiConfig['provider'] ?? 'gemini'] ?? ucfirst($aiConfig['provider'] ?? 'gemini');
         throw new RuntimeException("Add a {$label} API key in Settings to use AI generation, or fill in the Creative Content column for this row instead.");
     }
 
     $rawFormat = trim($row['Final_Format'] ?? '');
     $format = in_array($rawFormat, ['Single Image', 'Text Post'], true) ? $rawFormat : 'Carousel';
     $prompt = build_generation_prompt($row, $format, $brandBrief, $persona, $pillar, $workspace, $relatedMemory, $service);
+
+    return ai_generate_dispatch($prompt, $format, $aiConfig, creative_series_label($row));
+}
+
+// "Custom Prompt" AI mode — the user supplies the entire prompt
+// themselves; no Knowledge Base/brand context, no persona/pillar
+// targeting, no per-row POST DETAILS/CAPTION section, no domain-
+// flavored EXAMPLE block. Still keeps the structural word/slide-count
+// rules (build_slide_rules_bullets()) and the generic writing-quality
+// guidance (AI_STYLE_RULES) — both are renderer/quality constraints,
+// not brand content, so they still apply even with zero KB reference.
+// series_label is always '' here (no Pillar/Type row exists to derive
+// one from) — the user can still set the Eyebrow field manually.
+function generate_creative_via_ai_custom_prompt(string $format, string $userPrompt, array $aiConfig): array
+{
+    if (!ai_configured($aiConfig)) {
+        $label = AI_PROVIDER_LABELS[$aiConfig['provider'] ?? 'gemini'] ?? ucfirst($aiConfig['provider'] ?? 'gemini');
+        throw new RuntimeException("Add a {$label} API key in Settings to use AI generation.");
+    }
+
+    $bullets = build_slide_rules_bullets($format);
+    $schema = build_json_schema_block($format);
+    $parts = array_filter([$userPrompt, $bullets, AI_STYLE_RULES, $schema], fn ($p) => $p !== '');
+    $prompt = implode("\n\n", $parts);
+
+    return ai_generate_dispatch($prompt, $format, $aiConfig, '');
+}
+
+// Shared by generate_creative_via_ai() and
+// generate_creative_via_ai_custom_prompt() — provider dispatch, JSON
+// validation, and $creative['format']/'series_label'/'hashtags']
+// finalization. $seriesLabel is passed in rather than derived here
+// since the two callers compute it differently (from a CSV/KB $row, or
+// not at all in custom-prompt mode).
+function ai_generate_dispatch(string $prompt, string $format, array $aiConfig, string $seriesLabel): array
+{
+    $provider = $aiConfig['provider'] ?? 'gemini';
+    $label = AI_PROVIDER_LABELS[$provider] ?? ucfirst($provider);
 
     $text = match ($provider) {
         'claude' => ai_call_claude($prompt, $aiConfig['api_key'], $aiConfig['model']),
@@ -503,7 +587,7 @@ function generate_creative_via_ai(array $row, array $aiConfig, ?string $brandBri
     }
 
     $creative['format']       = $format === 'Single Image' ? 'single' : ($format === 'Text Post' ? 'text' : 'carousel');
-    $creative['series_label'] = creative_series_label($row);
+    $creative['series_label'] = $seriesLabel;
     if (empty($creative['hashtags'])) {
         $creative['hashtags'] = creative_extract_hashtags($creative['caption'] ?? '');
     }

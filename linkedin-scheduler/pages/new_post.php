@@ -233,9 +233,10 @@ require __DIR__ . '/../includes/layout_top.php';
     <p class="muted">Text Post, Single Image, and Carousel are all disabled in <a href="<?= h(app_path('pages/settings.php')) ?>#account">Settings</a> — enable at least one to compose a new post here.</p>
   </section>
 <?php else: ?>
-<div class="post-card">
-  <div class="post-layout">
-    <div class="slides-panel">
+<div class="post-card post-card--composer">
+  <div class="post-composer">
+    <div class="post-col-input">
+      <div class="post-col-heading">Settings</div>
       <label style="width:100%;">Format
         <select name="format" id="formatSelect" form="newPostForm">
           <?php foreach ($availableFormats as $fmt): ?>
@@ -284,58 +285,75 @@ require __DIR__ . '/../includes/layout_top.php';
       </div>
 
       <div id="aiGenerateFields" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
-        <label>Topic / Title
-          <input type="text" id="aiTopic">
-        </label>
+        <div class="prompt-mode-toggle">
+          <input type="radio" name="aiPromptMode" id="aiPromptModeKb" value="kb" checked>
+          <label for="aiPromptModeKb">Regular</label>
+          <input type="radio" name="aiPromptMode" id="aiPromptModeCustom" value="custom">
+          <label for="aiPromptModeCustom">Custom Prompt</label>
+        </div>
+        <p class="prompt-mode-hint" id="aiKbHint">Uses your Knowledge Base (persona, pillar, brand voice, documents) to write the post.</p>
+        <p class="prompt-mode-hint" id="aiCustomHint" style="display:none;">No Knowledge Base is referenced — the AI follows only what you type below. There's no Length picker in this mode; word count and structure are entirely up to your prompt.</p>
 
-        <label>Length
-          <select id="aiLength">
-            <option value="very_short">Very Short (~40-60 words)</option>
-            <option value="short">Short (~80-120 words)</option>
-            <option value="medium" selected>Medium (~150-250 words)</option>
-            <option value="long">Long (~300-400 words)</option>
-            <option value="blog_length">Blog Length (~500-700 words)</option>
-          </select>
-        </label>
+        <div id="aiKbFields">
+          <label>Topic / Title
+            <input type="text" id="aiTopic">
+          </label>
 
-        <label>Persona <span class="muted">(optional)</span>
-          <select id="aiPersonaSelect">
-            <option value="">— None —</option>
-            <?php foreach ($personas as $p): ?>
-              <option value="<?= (int) $p['id'] ?>"><?= h($p['name']) ?></option>
-            <?php endforeach; ?>
-            <option value="custom">Custom / type my own…</option>
-          </select>
-        </label>
-        <input type="text" id="aiPersona" placeholder="Describe the target persona" style="width:100%; margin-top:6px; display:none;">
+          <label>Length
+            <select id="aiLength">
+              <option value="very_short">Very Short (~40-60 words)</option>
+              <option value="short">Short (~80-120 words)</option>
+              <option value="medium" selected>Medium (~150-250 words)</option>
+              <option value="long">Long (~300-400 words)</option>
+              <option value="blog_length">Blog Length (~500-700 words)</option>
+            </select>
+          </label>
 
-        <label>Content Pillar / Style <span class="muted">(optional)</span>
-          <select id="aiPillarSelect">
-            <option value="">— None —</option>
-            <?php foreach ($contentPillars as $cp): ?>
-              <option value="<?= (int) $cp['id'] ?>"><?= h($cp['name']) ?></option>
-            <?php endforeach; ?>
-            <option value="custom">Custom / type my own…</option>
-          </select>
-        </label>
-        <input type="text" id="aiType" placeholder="e.g. Case Study, Checklist" style="width:100%; margin-top:6px; display:none;">
+          <label>Persona <span class="muted">(optional)</span>
+            <select id="aiPersonaSelect">
+              <option value="">— None —</option>
+              <?php foreach ($personas as $p): ?>
+                <option value="<?= (int) $p['id'] ?>"><?= h($p['name']) ?></option>
+              <?php endforeach; ?>
+              <option value="custom">Custom / type my own…</option>
+            </select>
+          </label>
+          <input type="text" id="aiPersona" placeholder="Describe the target persona" style="width:100%; margin-top:6px; display:none;">
 
-        <?php if ($services): ?>
-        <label>Service being pitched <span class="muted">(optional)</span>
-          <select id="aiServiceSelect">
-            <option value="">— None —</option>
-            <?php foreach ($services as $svc): ?>
-              <option value="<?= (int) $svc['id'] ?>"><?= h($svc['name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </label>
-        <?php endif; ?>
+          <label>Content Pillar / Style <span class="muted">(optional)</span>
+            <select id="aiPillarSelect">
+              <option value="">— None —</option>
+              <?php foreach ($contentPillars as $cp): ?>
+                <option value="<?= (int) $cp['id'] ?>"><?= h($cp['name']) ?></option>
+              <?php endforeach; ?>
+              <option value="custom">Custom / type my own…</option>
+            </select>
+          </label>
+          <input type="text" id="aiType" placeholder="e.g. Case Study, Checklist" style="width:100%; margin-top:6px; display:none;">
+
+          <?php if ($services): ?>
+          <label>Service being pitched <span class="muted">(optional)</span>
+            <select id="aiServiceSelect">
+              <option value="">— None —</option>
+              <?php foreach ($services as $svc): ?>
+                <option value="<?= (int) $svc['id'] ?>"><?= h($svc['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <?php endif; ?>
+        </div>
+
+        <div id="aiCustomFields" style="display:none;">
+          <label>Your Prompt
+            <textarea id="aiCustomPromptInput" rows="7" placeholder="Write the full prompt yourself — e.g. &quot;Write a LinkedIn post announcing our new pricing tiers, aimed at startup founders, upbeat tone, ending with a question.&quot;"></textarea>
+          </label>
+        </div>
 
         <button type="button" id="aiGenerateBtn" class="btn-secondary" style="margin-top:8px;">Generate</button>
         <p id="aiGenerateStatus" class="muted"></p>
       </div>
 
-      <div id="creativeSlidesPanel" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
+      <div id="aiSettingsPanel" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
         <label>Eyebrow / Series Label <span class="muted">(optional — small label above the logo on slide 1)</span>
           <input type="text" id="aiSeriesLabelInput" placeholder="e.g. Product Updates · Educational">
         </label>
@@ -383,29 +401,36 @@ require __DIR__ . '/../includes/layout_top.php';
           <label class="field-row">Points <input type="range" class="font-scale-slider" data-role="points" min="50" max="200" value="100" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>100%</span></label>
         </div>
         <p class="muted" style="margin:4px 0;">Style words in Headline/Subheading/Body/Points: <code>**accent**</code> <code>++highlight++</code> <code>*italic*</code> <code>__bold__</code> — nest markers to combine, e.g. <code>**__word__**</code> for bold + color</p>
-        <div id="aiSlidesReview"></div>
-        <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
-
-        <div class="sticky-action-bar">
-          <button type="button" id="previewImageBtn" class="btn-secondary">Generate Image Preview</button>
-          <p id="previewStatus" class="muted"></p>
-          <div id="imagePreviewResult" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
-        </div>
       </div>
     </div>
 
-    <div class="editor-panel">
+    <div class="post-col-caption">
+      <div class="post-col-heading">Post Content</div>
+      <div class="editor-label">Caption</div>
+      <?php include __DIR__ . '/_formatter_toolbar.php'; ?>
+      <textarea id="caption" name="caption" class="caption-editor" form="newPostForm"></textarea>
+
+      <label>Title <span class="muted">(optional)</span>
+        <input type="text" name="title" id="titleField" form="newPostForm">
+      </label>
+
+      <div id="aiSlidesReviewPanel" style="display:none;">
+        <div id="aiSlidesReview"></div>
+        <button type="button" id="addSlideBtn" class="btn-tiny" style="display:none; margin-top:8px;">+ Add Slide</button>
+      </div>
+    </div>
+
+    <div class="post-col-image">
+      <div class="post-col-heading">Image &amp; Publish</div>
+      <div id="aiPreviewPanel" style="display:none;">
+        <button type="button" id="previewImageBtn" class="btn-secondary">Generate Image Preview</button>
+        <p id="previewStatus" class="muted"></p>
+        <div id="imagePreviewResult" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
+      </div>
+
       <form method="post" id="newPostForm" enctype="multipart/form-data">
         <input type="hidden" name="csrf" value="<?= h($token) ?>">
         <input type="hidden" name="ai_creative_json" id="aiCreativeJsonField">
-
-        <div class="editor-label">Caption</div>
-        <?php include __DIR__ . '/_formatter_toolbar.php'; ?>
-        <textarea id="caption" name="caption" class="caption-editor"></textarea>
-
-        <label>Title <span class="muted">(optional)</span>
-          <input type="text" name="title" id="titleField">
-        </label>
 
         <label>Campaign ID <span class="muted">(optional — auto-generated if left blank)</span>
           <input type="text" name="campaign_id" placeholder="e.g. LAUNCH-01">

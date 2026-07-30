@@ -32,6 +32,22 @@ if (!in_array($format, ['Text Post', 'Single Image', 'Carousel'], true)) {
     json_response(['success' => false, 'error' => 'Choose a post format first.'], 422);
 }
 
+// "Custom Prompt" mode — the user writes the entire prompt themselves;
+// no Knowledge Base/persona/pillar/service resolution happens at all,
+// see generate_creative_via_ai_custom_prompt() in includes/ai_generate.php.
+if (trim($_POST['prompt_mode'] ?? 'kb') === 'custom') {
+    $customPrompt = trim($_POST['custom_prompt'] ?? '');
+    if ($customPrompt === '') {
+        json_response(['success' => false, 'error' => 'Enter a prompt to generate from.'], 422);
+    }
+    try {
+        $creative = generate_creative_via_ai_custom_prompt($format, $customPrompt, $aiConfig);
+    } catch (Throwable $e) {
+        json_response(['success' => false, 'error' => $e->getMessage()], 502);
+    }
+    json_response(['success' => true, 'creative' => $creative]);
+}
+
 // Knowledge Base picks (dropdowns in New Post's AI panel) take priority
 // over the free-text fallback fields when present.
 $personaId = (int) ($_POST['persona_id'] ?? 0);
