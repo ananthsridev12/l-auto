@@ -48,6 +48,11 @@
     if (bg && bg !== 'flat') {
       creative.background = bg;
     }
+    var bgOpacityEl = document.getElementById('reeditBgOpacitySlider');
+    var bgOpacity = bgOpacityEl ? parseInt(bgOpacityEl.value, 10) : 50;
+    if (bg === 'image' && !isNaN(bgOpacity) && bgOpacity !== 50) {
+      creative.bg_image_opacity = bgOpacity;
+    }
     var size = document.getElementById('reeditSizeSelect').value;
     if (size && size !== 'square') {
       creative.size = size;

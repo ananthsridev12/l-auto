@@ -129,6 +129,9 @@
         var layout = layoutChecked && layoutChecked.value !== 'classic' ? layoutChecked.value : null;
         var backgroundSelect = card.querySelector('.background-select');
         var background = backgroundSelect && backgroundSelect.value !== 'flat' ? backgroundSelect.value : null;
+        var bgOpacitySlider = card.querySelector('.bg-opacity-slider');
+        var bgOpacityVal = bgOpacitySlider ? parseInt(bgOpacitySlider.value, 10) : 50;
+        var bgOpacity = (background === 'image' && !isNaN(bgOpacityVal) && bgOpacityVal !== 50) ? bgOpacityVal : null;
         var sizeSelect = card.querySelector('.size-select');
         var size = sizeSelect && sizeSelect.value !== 'square' ? sizeSelect.value : null;
         var textPositionSelect = card.querySelector('.text-position-select');
@@ -163,7 +166,7 @@
           }
         }
 
-        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, series_label: seriesLabel, accent_literal: accentLiteral, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, size: size, text_position: textPosition, font_scale: fontScaleChanged ? fontScale : null, cta_style: ctaStyle });
+        postsData.push({ post_id: card.dataset.postId, title: titleInput.value, series_label: seriesLabel, accent_literal: accentLiteral, caption: captionInput.value, slides: slides, template: template, layout: layout, background: background, bg_image_opacity: bgOpacity, size: size, text_position: textPosition, font_scale: fontScaleChanged ? fontScale : null, cta_style: ctaStyle });
       });
       if (!postsData.length) {
         contentStatus.textContent = 'Select at least one post to approve.';

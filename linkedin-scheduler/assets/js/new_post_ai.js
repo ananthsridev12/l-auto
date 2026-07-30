@@ -344,6 +344,13 @@
     } else {
       delete currentCreative.background;
     }
+    var bgOpacitySlider = document.getElementById('aiBgOpacitySlider');
+    var bgOpacity = bgOpacitySlider ? parseInt(bgOpacitySlider.value, 10) : 50;
+    if (background === 'image' && !isNaN(bgOpacity) && bgOpacity !== 50) {
+      currentCreative.bg_image_opacity = bgOpacity;
+    } else {
+      delete currentCreative.bg_image_opacity;
+    }
     var textPositionSelect = document.getElementById('aiTextPositionSelect');
     var textPosition = textPositionSelect ? textPositionSelect.value : 'top';
     if (textPosition && textPosition !== 'top') {

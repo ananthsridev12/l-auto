@@ -47,6 +47,7 @@ foreach ($postsData as $p) {
         'template'   => $p['template'] ?? null,
         'layout'     => $p['layout'] ?? null,
         'background' => $p['background'] ?? null,
+        'bg_image_opacity' => $p['bg_image_opacity'] ?? null,
         'size'       => $p['size'] ?? null,
         'text_position' => $p['text_position'] ?? null,
         'font_scale' => $p['font_scale'] ?? null,

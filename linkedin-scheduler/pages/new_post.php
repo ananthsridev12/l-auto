@@ -361,6 +361,7 @@ require __DIR__ . '/../includes/layout_top.php';
             <option value="image">Image (needs a palette with a background photo uploaded)</option>
           </select>
         </label>
+        <label class="field-row">Background Image Tint <span class="muted">(only applies when Background is "Image" — 0% shows the full photo, 100% fully hides it)</span> <input type="range" id="aiBgOpacitySlider" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>50%</span></label>
         <label>Size <span class="muted">(optional)</span>
           <select id="aiSizeSelect">
             <option value="square">Square (1:1)</option>

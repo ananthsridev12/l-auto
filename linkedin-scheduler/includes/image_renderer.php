@@ -842,7 +842,15 @@ function render_draw_logo($im, ?string $logoPath, float $cx, float $y, float $mi
 // reuses the same color the user already picked for that palette (no
 // separate "overlay color" control) so text drawn afterward keeps a
 // predictable, palette-matched contrast margin regardless of the photo.
-function render_draw_background_image($im, string $path, array $bgRgb, int $canvasH = RENDER_SIZE): bool
+// $tintOpacityPct (0-100, default 50 — the original fixed value, kept as
+// the default so omitting it renders byte-identical to before this was
+// configurable) is how opaque the palette-color scrim drawn over the
+// photo is: 0 = no scrim at all (the photo shows fully, at the cost of
+// whatever contrast margin it happens to have with the text drawn over
+// it — the caller's own choice once they've checked it's readable), 100
+// = fully opaque (the photo is completely hidden, same look as a flat
+// background in that palette's bg color).
+function render_draw_background_image($im, string $path, array $bgRgb, int $canvasH = RENDER_SIZE, int $tintOpacityPct = 50): bool
 {
     $info = @getimagesize($path);
     if (!$info) {
@@ -871,18 +879,22 @@ function render_draw_background_image($im, string $path, array $bgRgb, int $canv
     imagecopy($im, $scaled, 0, 0, $cropX, $cropY, RENDER_SIZE, $canvasH);
     imagedestroy($scaled);
 
-    // 50% opacity — enough to guarantee the same contrast margin flat/
-    // gradient backgrounds already provide, while still reading as a
-    // photo rather than a fully obscured brand-color rectangle.
-    imagealphablending($im, true);
-    $overlay = imagecolorallocatealpha($im, $bgRgb[0], $bgRgb[1], $bgRgb[2], 64);
-    imagefilledrectangle($im, 0, 0, RENDER_SIZE, $canvasH, $overlay);
+    $tintOpacityPct = max(0, min(100, $tintOpacityPct));
+    if ($tintOpacityPct > 0) {
+        // GD alpha is inverted from "opacity" (0 = fully opaque, 127 =
+        // fully transparent) and 7-bit, not 8-bit/percent — convert here
+        // so every caller only ever thinks in plain 0-100 opacity.
+        $gdAlpha = (int) round((100 - $tintOpacityPct) / 100 * 127);
+        imagealphablending($im, true);
+        $overlay = imagecolorallocatealpha($im, $bgRgb[0], $bgRgb[1], $bgRgb[2], $gdAlpha);
+        imagefilledrectangle($im, 0, 0, RENDER_SIZE, $canvasH, $overlay);
+    }
     return true;
 }
 
-function render_draw_background($im, array $paletteColors, string $bgStyle, ?string $bgImagePath = null, int $canvasH = RENDER_SIZE): void
+function render_draw_background($im, array $paletteColors, string $bgStyle, ?string $bgImagePath = null, int $canvasH = RENDER_SIZE, int $bgImageTintPct = 50): void
 {
-    if ($bgStyle === 'image' && $bgImagePath && is_file($bgImagePath) && render_draw_background_image($im, $bgImagePath, $paletteColors['bg'], $canvasH)) {
+    if ($bgStyle === 'image' && $bgImagePath && is_file($bgImagePath) && render_draw_background_image($im, $bgImagePath, $paletteColors['bg'], $canvasH, $bgImageTintPct)) {
         return;
     }
     $top = $paletteColors['bg'];
@@ -2400,6 +2412,11 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     // Optional checkbox ("Use accent color literally for **bold** text")
     // — see render_markup_alt_color()'s doc comment for what this changes.
     $accentLiteral = !empty($data['accent_literal']);
+    // Optional slider for a 'image' background's palette-color scrim —
+    // see render_draw_background_image()'s doc comment. Default 50
+    // matches the fixed value this always used before it was
+    // configurable, so omitting the key renders unchanged.
+    $bgImageTintPct = is_numeric($data['bg_image_opacity'] ?? null) ? max(0, min(100, (int) $data['bg_image_opacity'])) : 50;
     $slides = $data['slides'] ?? [];
     $total = count($slides);
     if ($total === 0) {
@@ -2410,7 +2427,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $result = [];
     if ($isSingle) {
         $im = imagecreatetruecolor($canvasW, $canvasH);
-        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH);
+        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH, $bgImageTintPct);
         $p = render_allocate_palette_colors($im, $paletteColors);
         $p['_accent_literal'] = $accentLiteral;
         render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition, $ctaStyle);
@@ -2425,7 +2442,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     foreach ($slides as $slide) {
         $n = (int) $slide['slide_number'];
         $im = imagecreatetruecolor($canvasW, $canvasH);
-        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH);
+        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH, $bgImageTintPct);
         $p = render_allocate_palette_colors($im, $paletteColors);
         $p['_accent_literal'] = $accentLiteral;
 

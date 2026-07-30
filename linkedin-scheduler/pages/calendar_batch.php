@@ -127,6 +127,8 @@ require __DIR__ . '/../includes/layout_top.php';
                 <option value="image"<?= ($p['creative']['background'] ?? '') === 'image' ? ' selected' : '' ?>>Image</option>
               </select>
             </label>
+            <?php $bgOpacityVal = (int) ($p['creative']['bg_image_opacity'] ?? 50); ?>
+            <label class="field-row">Background Image Tint <span class="muted">(0% = full photo, 100% = fully hidden)</span> <input type="range" class="bg-opacity-slider" min="0" max="100" value="<?= $bgOpacityVal ?>" oninput="this.nextElementSibling.textContent = this.value + '%'"><span><?= $bgOpacityVal ?>%</span></label>
             <label class="field-row">Size
               <select class="size-select">
                 <option value="square"<?= ($p['creative']['size'] ?? 'square') === 'square' ? ' selected' : '' ?>>Square (1:1)</option>

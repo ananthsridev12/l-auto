@@ -248,6 +248,8 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <option value="image"<?= ($creative['background'] ?? '') === 'image' ? ' selected' : '' ?>>Image (needs a palette with a background photo uploaded)</option>
     </select>
   </label>
+  <?php $bgOpacityVal = (int) ($creative['bg_image_opacity'] ?? 50); ?>
+  <label class="field-row">Background Image Tint <span class="muted">(only applies when Background is "Image" — 0% shows the full photo, 100% fully hides it)</span> <input type="range" id="reeditBgOpacitySlider" min="0" max="100" value="<?= $bgOpacityVal ?>" oninput="this.nextElementSibling.textContent = this.value + '%'"><span><?= $bgOpacityVal ?>%</span></label>
   <label>Size
     <select id="reeditSizeSelect">
       <option value="square"<?= ($creative['size'] ?? 'square') === 'square' ? ' selected' : '' ?>>Square (1:1)</option>
