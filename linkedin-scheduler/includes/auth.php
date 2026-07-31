@@ -2,6 +2,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/workspace.php';
 require_once __DIR__ . '/kb_seed.php';
+require_once __DIR__ . '/organizations.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
@@ -19,7 +20,7 @@ function current_user(): ?array
     if (!$id) {
         return null;
     }
-    $stmt = db()->prepare('SELECT id, email, name, created_at FROM users WHERE id = ?');
+    $stmt = db()->prepare('SELECT id, email, name, created_at, organization_id, org_role, is_superadmin FROM users WHERE id = ?');
     $stmt->execute([$id]);
     $user = $stmt->fetch();
     return $user ?: null;
@@ -29,6 +30,19 @@ function require_login(): void
 {
     if (!current_user_id()) {
         header('Location: ' . app_path('index.php'));
+        exit;
+    }
+}
+
+// Superadmin is granted only via scripts/grant_superadmin.php, run
+// directly by the site owner — is_superadmin is never settable through
+// any user-facing form.
+function require_superadmin(): void
+{
+    require_login();
+    $user = current_user();
+    if (!$user || !$user['is_superadmin']) {
+        header('Location: ' . app_path('pages/today.php'));
         exit;
     }
 }
@@ -72,6 +86,19 @@ function register_user(string $email, string $password, string $name): array
     $stmt = db()->prepare('INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)');
     $stmt->execute([$email, password_hash($password, PASSWORD_DEFAULT), trim($name)]);
     $newUserId = (int) db()->lastInsertId();
+
+    // Every signup gets their own 1-person organization (org_role stays
+    // the default 'owner') on the Free plan — every user belongs to
+    // exactly one organization, so module/plan-limit lookups never need
+    // a "user without an org" special case. Inviting teammates later
+    // just adds more members to this same org; nothing here changes for
+    // solo users.
+    $freePlanId = (int) db()->query("SELECT id FROM plans WHERE slug = 'free' LIMIT 1")->fetchColumn();
+    $orgName = trim($name) !== '' ? trim($name) : $email;
+    db()->prepare('INSERT INTO organizations (name, plan_id) VALUES (?, ?)')->execute([$orgName, $freePlanId]);
+    $orgId = (int) db()->lastInsertId();
+    db()->prepare('UPDATE users SET organization_id = ? WHERE id = ?')->execute([$orgId, $newUserId]);
+
     // Every user gets their Personal workspace immediately; the default
     // knowledge base seeds into it (company pillars land in a company
     // workspace only once the user creates one).

@@ -6,17 +6,32 @@
 // are scoped to a workspace; the sidebar switcher (includes/layout_top.php
 // + api/switch_workspace.php) sets the active one in the session.
 
+// Owned workspaces UNION workspaces explicitly granted via
+// workspace_members (see includes/organizations.php grant_workspace_access())
+// — a teammate who's been granted a specific page sees it here exactly
+// like their own, with no other change needed anywhere else that reads
+// through these two functions (current_workspace_id(), the sidebar
+// switcher, set_current_workspace() all call one of these).
 function fetch_workspaces(int $userId): array
 {
-    $stmt = db()->prepare("SELECT * FROM workspaces WHERE user_id = ? ORDER BY type = 'personal' DESC, name");
-    $stmt->execute([$userId]);
+    $stmt = db()->prepare(
+        "SELECT w.* FROM workspaces w
+         LEFT JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = ?
+         WHERE w.user_id = ? OR wm.user_id IS NOT NULL
+         ORDER BY w.type = 'personal' DESC, w.name"
+    );
+    $stmt->execute([$userId, $userId]);
     return $stmt->fetchAll();
 }
 
 function fetch_workspace(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM workspaces WHERE user_id = ? AND id = ?');
-    $stmt->execute([$userId, $id]);
+    $stmt = db()->prepare(
+        'SELECT w.* FROM workspaces w
+         LEFT JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = ?
+         WHERE w.id = ? AND (w.user_id = ? OR wm.user_id IS NOT NULL)'
+    );
+    $stmt->execute([$userId, $id, $userId]);
     return $stmt->fetch() ?: null;
 }
 

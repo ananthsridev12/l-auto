@@ -44,3 +44,4 @@ mysql -u <user> -p <database> < migrations/0001_kb_workspace_identity_tone.sql
 | `0009_user_theme_preference.sql` | 11 | `users.theme` — light/dark preference for the app-wide theme toggle |
 | `0010_kb_documents_polish.sql` | 13 (KB Phase 8) | `knowledge_documents` — doc_type/use_case/vertical_id/service_id/is_public |
 | `0011_brand_palette_text_overrides.sql` | — | `brand_palettes` — optional body_color/accent_text_color/badge_text_color/cta_text_color overrides for the previously always-derived text colors |
+| `0012_organizations.sql` | — | New `plans`/`organizations`/`workspace_members`/`organization_invites` tables + `users.organization_id`/`org_role`/`is_superadmin` — team accounts, per-page access grants, a superadmin role, and plan/module gating. Run `scripts/migrate_organizations.php` right after to backfill a personal org for every existing user. |
