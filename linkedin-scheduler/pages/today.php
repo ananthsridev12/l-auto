@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
+require_once __DIR__ . '/../includes/linkedin_api.php';
 
 require_login();
 $userId = current_user_id();
@@ -59,22 +60,34 @@ require __DIR__ . '/../includes/layout_top.php';
     </div>
 
     <div class="editor-panel">
-      <div class="editor-label">Caption</div>
-      <?php include __DIR__ . '/_formatter_toolbar.php'; ?>
-      <textarea id="caption" class="caption-editor" spellcheck="true"><?= h($post['caption']) ?></textarea>
-
-      <?php if (!$post['linkedin_account_id']): ?>
-        <p class="badge badge-warning">No LinkedIn account assigned — <a href="<?= h(app_path('pages/post.php?id=' . $post['id'])) ?>">assign one</a> before posting.</p>
-      <?php elseif ($formatDisabled): ?>
-        <p class="badge badge-warning">"<?= h($post['format']) ?>" posting is disabled in <a href="<?= h(app_path('pages/settings.php')) ?>#account">Settings</a>.</p>
+      <?php if ($post['status'] === 'posted'): ?>
+        <div class="editor-label">Caption (published — read only)</div>
+        <textarea class="caption-editor" readonly><?= h($post['caption']) ?></textarea>
+        <p class="muted">
+          Posted <?= h($post['posted_at']) ?><?= $post['account_name'] ? ' as ' . h($post['account_name']) : '' ?>
+          <?php $postUrl = li_post_url($post['li_post_urn'] ?? null); ?>
+          <?php if ($postUrl): ?>
+             — <a href="<?= h($postUrl) ?>" target="_blank" rel="noopener noreferrer">View on LinkedIn</a>
+          <?php endif; ?>
+        </p>
       <?php else: ?>
-        <p class="muted">Posting as <?= h($post['account_name']) ?></p>
-      <?php endif; ?>
+        <div class="editor-label">Caption</div>
+        <?php include __DIR__ . '/_formatter_toolbar.php'; ?>
+        <textarea id="caption" class="caption-editor" spellcheck="true"><?= h($post['caption']) ?></textarea>
 
-      <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$post['linkedin_account_id'] || $formatDisabled) ? 'disabled' : '' ?>>
-        Post to LinkedIn
-      </button>
-      <div id="postStatus" class="post-status" style="display:none"></div>
+        <?php if (!$post['linkedin_account_id']): ?>
+          <p class="badge badge-warning">No LinkedIn account assigned — <a href="<?= h(app_path('pages/post.php?id=' . $post['id'])) ?>">assign one</a> before posting.</p>
+        <?php elseif ($formatDisabled): ?>
+          <p class="badge badge-warning">"<?= h($post['format']) ?>" posting is disabled in <a href="<?= h(app_path('pages/settings.php')) ?>#account">Settings</a>.</p>
+        <?php else: ?>
+          <p class="muted">Posting as <?= h($post['account_name']) ?></p>
+        <?php endif; ?>
+
+        <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$post['linkedin_account_id'] || $formatDisabled) ? 'disabled' : '' ?>>
+          Post to LinkedIn
+        </button>
+        <div id="postStatus" class="post-status" style="display:none"></div>
+      <?php endif; ?>
     </div>
   </div>
 </div>
