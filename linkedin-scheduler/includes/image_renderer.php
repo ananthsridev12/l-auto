@@ -662,26 +662,36 @@ function render_text($im, float $x, float $topY, string $text, int $size, bool $
 
 // ── Text utilities ───────────────────────────────────────────────────
 
+// A literal "\n" forces a line break here too (not just wordwrap-by-
+// width) — kept in agreement with render_wrap_markup()'s handling of
+// the same character, since render_fit_headline_size() measures with
+// this plain path while the actual draw uses the markup-aware one; if
+// they disagreed on line count for the same text, the font-size choice
+// here could leave the real draw overflowing $maxLines.
 function render_wrap(string $text, int $size, bool $bold, float $maxPx, string $role = 'body'): array
 {
-    $words = preg_split('/\s+/', trim((string) $text));
-    $words = array_values(array_filter($words, fn ($w) => $w !== ''));
-    if (!$words) {
-        return [''];
-    }
+    $rawLines = explode("\n", trim((string) $text, " \t"));
     $lines = [];
-    $current = [];
-    foreach ($words as $word) {
-        $test = implode(' ', array_merge($current, [$word]));
-        if ($current && render_text_width($test, $size, $bold, $role) > $maxPx) {
-            $lines[] = implode(' ', $current);
-            $current = [$word];
-        } else {
-            $current[] = $word;
+    foreach ($rawLines as $rawLine) {
+        $words = preg_split('/\s+/', trim($rawLine));
+        $words = array_values(array_filter($words, fn ($w) => $w !== ''));
+        $current = [];
+        foreach ($words as $word) {
+            $test = implode(' ', array_merge($current, [$word]));
+            if ($current && render_text_width($test, $size, $bold, $role) > $maxPx) {
+                $lines[] = implode(' ', $current);
+                $current = [$word];
+            } else {
+                $current[] = $word;
+            }
         }
-    }
-    if ($current) {
         $lines[] = implode(' ', $current);
+    }
+    // Exactly one trailing "\n" shouldn't add a phantom empty line at
+    // the very end (a second one still shows as a real blank line) —
+    // mirrors render_wrap_markup()'s same trailing-break behavior.
+    if (count($lines) > 1 && end($lines) === '') {
+        array_pop($lines);
     }
     return $lines ?: [''];
 }
@@ -979,6 +989,9 @@ function render_numbered_card_height(string $text, int $fontSize, string $layout
     if ($layout === 'divider') {
         return render_divider_point_height($text, $fontSize);
     }
+    if ($layout === 'bullet') {
+        return render_bullet_point_height($text, $fontSize);
+    }
     [, , $cw] = render_content_edges();
     $badge = rs(44); $px = rs(20); $py = rs(15);
     $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $badge - $px * 2 - rs(18), 2);
@@ -1005,6 +1018,17 @@ function render_divider_point_height(string $text, int $fontSize): float
     $aw = render_text_width('↘  ', $fontSize, true);
     $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $aw, 2);
     return count($lines) * render_lh($fontSize) + rs(28); // text height + rule + gap below
+}
+
+// Bullet-style point: a plain accent-colored dot + text, no number, no
+// card fill, no rule — the "clean list" look for when even a divider
+// icon reads as more decoration than the content needs.
+function render_bullet_point_height(string $text, int $fontSize): float
+{
+    [, , $cw] = render_content_edges();
+    $dotW = rs(10) + rs(18);
+    $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $dotW, 2);
+    return count($lines) * render_lh($fontSize) + rs(20); // text height + gap below
 }
 
 // Pure measurement, no drawing — mirrors render_cta_banner()'s height math.
@@ -1187,16 +1211,25 @@ function render_tokenize_markup_range(string $rangeText, int $rangeOffset, strin
 // previous word (tracked via $prevEnd, updated in place) contains any
 // whitespace — no whitespace in the gap (e.g. just a closing "**") means
 // this word should render glued directly against the previous one.
+// A literal "\n" typed into a headline/subheading/body/points field (see
+// the composer's textarea fields) becomes its own token here — matched
+// alongside plain words so it survives in source order — and
+// render_wrap_markup() below treats it as a forced line break instead of
+// a wrappable word.
 function render_tokenize_markup_plain_at(string $part, int $partOffset, string $text, array &$words, ?int &$prevEnd, array $styles = ['altColor' => false, 'highlight' => false, 'bold' => false, 'italic' => false]): void
 {
-    if (!preg_match_all('/\S+/', $part, $m, PREG_OFFSET_CAPTURE)) {
+    if (!preg_match_all('/\S+|\n/', $part, $m, PREG_OFFSET_CAPTURE)) {
         return;
     }
-    foreach ($m[0] as [$word, $offsetInPart]) {
+    foreach ($m[0] as [$token, $offsetInPart]) {
+        if ($token === "\n") {
+            $words[] = ['break' => true];
+            continue;
+        }
         $absOffset = $partOffset + $offsetInPart;
         $glue = $prevEnd !== null && !preg_match('/\s/', substr($text, $prevEnd, $absOffset - $prevEnd));
-        $words[] = ['text' => $word, 'glue' => $glue] + $styles;
-        $prevEnd = $absOffset + strlen($word);
+        $words[] = ['text' => $token, 'glue' => $glue] + $styles;
+        $prevEnd = $absOffset + strlen($token);
     }
 }
 
@@ -1216,6 +1249,12 @@ function render_wrap_markup(string $text, int $size, bool $baseBold, float $maxP
     $currentW = 0.0;
     $spaceW = render_text_width(' ', $size, $baseBold, $role);
     foreach ($words as $word) {
+        if (!empty($word['break'])) {
+            $lines[] = $current;
+            $current = [];
+            $currentW = 0.0;
+            continue;
+        }
         $wordW = render_text_width($word['text'], $size, $baseBold || $word['bold'], $role, $word['italic']);
         $sep = ($current && !empty($word['glue'])) ? 0.0 : $spaceW;
         $testW = $current ? $currentW + $sep + $wordW : $wordW;
@@ -1499,6 +1538,33 @@ function render_divider_point($im, int $num, string $text, float $y, array $p, i
     return $ruleY + rs(14);
 }
 
+// Bullet-style point: a plain accent-colored dot + text, no number, no
+// card fill, no rule — matches render_bullet_point_height()'s
+// measurement exactly. The "points without numbering" look.
+function render_bullet_point($im, int $num, string $text, float $y, array $p, int $fontSize): float
+{
+    [$cx, , $cw] = render_content_edges();
+    $dotR = rs(5); $gap = rs(18);
+    $dotW = $dotR * 2 + $gap;
+    $lines = render_wrap_markup_clamped($text, $fontSize, false, $cw - $dotW, 2);
+    $lh = render_lh($fontSize);
+
+    // accent, not headline/body — this dot is a decorative marker (like
+    // the bar in render_minimal_point()), never text anyone has to read,
+    // so it doesn't need guaranteed bg contrast the way the divider
+    // style's arrow glyph does.
+    $dotCy = $y + $lh / 2 - rs(2);
+    imagefilledellipse($im, (int) ($cx + $dotR), (int) $dotCy, (int) ($dotR * 2), (int) ($dotR * 2), $p['accent']);
+
+    $tx = $cx + $dotW;
+    $altColor = render_markup_alt_color($p['body'], $p);
+    foreach ($lines as $i => $line) {
+        render_text_markup($im, $tx, $y + $i * $lh, $line, $fontSize, false, $p['body'], $altColor, $p['accent_text']);
+    }
+    $textH = count($lines) * $lh;
+    return $y + $textH + rs(20);
+}
+
 function render_numbered_card($im, int $num, string $text, float $y, array $p, int $fontSize = 26, string $layout = 'classic'): float
 {
     if ($layout === 'minimal') {
@@ -1506,6 +1572,9 @@ function render_numbered_card($im, int $num, string $text, float $y, array $p, i
     }
     if ($layout === 'divider') {
         return render_divider_point($im, $num, $text, $y, $p, $fontSize);
+    }
+    if ($layout === 'bullet') {
+        return render_bullet_point($im, $num, $text, $y, $p, $fontSize);
     }
     [$cx, $rx, $cw] = render_content_edges();
     $fs = $fontSize; $badge = rs(44); $px = rs(20); $py = rs(15);
@@ -2001,6 +2070,13 @@ function render_design_templates(): array
         'outline_frame'      => ['name' => 'Outline Frame', 'legacyBase' => 'classic', 'font' => 'sans', 'decoration' => 'triangles', 'listOverride' => null, 'ctaOverride' => 'outline'],
         'halftone_editorial' => ['name' => 'Halftone Editorial', 'legacyBase' => 'minimal', 'font' => 'serif', 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
         'dotted_bold'        => ['name' => 'Dotted Bold', 'legacyBase' => 'bold', 'font' => 'sans', 'decoration' => 'halftone', 'listOverride' => null, 'ctaOverride' => null],
+
+        // listOverride 'bullet' is the "points without numbering" look —
+        // a plain accent dot instead of the 01/02/03 badge/arrow, see
+        // render_bullet_point(). One sans, one serif variant, matching
+        // how every other list style already gets both.
+        'clean_bullet'       => ['name' => 'Clean Bullet', 'legacyBase' => 'classic', 'font' => 'sans', 'decoration' => null, 'listOverride' => 'bullet', 'ctaOverride' => null],
+        'serif_bullet'       => ['name' => 'Serif Bullet', 'legacyBase' => 'minimal', 'font' => 'serif', 'decoration' => null, 'listOverride' => 'bullet', 'ctaOverride' => null],
 
         // 'stat' => true is the one flag every render_slide_*() checks for
         // before its usual headline/body/points flow — see

@@ -183,11 +183,11 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
         <?php foreach ($creative['slides'] as $si => $slide): ?>
           <fieldset class="slide-fieldset">
             <legend>Slide <?= $si + 1 ?></legend>
-            <label class="field-row">Headline
-              <input type="text" class="reedit-headline" value="<?= h($slide['headline'] ?? '') ?>">
+            <label class="field-row">Headline <span class="muted">(Enter for a line break)</span>
+              <textarea class="reedit-headline" rows="2"><?= h($slide['headline'] ?? '') ?></textarea>
             </label>
             <label class="field-row">Subheading <span class="muted">(optional)</span>
-              <input type="text" class="reedit-subheading" value="<?= h($slide['subheading'] ?? '') ?>">
+              <textarea class="reedit-subheading" rows="2"><?= h($slide['subheading'] ?? '') ?></textarea>
             </label>
             <label class="field-row">Body
               <textarea class="reedit-body" rows="2"><?= h($slide['body'] ?? '') ?></textarea>

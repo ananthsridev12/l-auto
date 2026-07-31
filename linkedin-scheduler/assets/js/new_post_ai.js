@@ -288,8 +288,8 @@
       var legend = document.createElement('legend');
       legend.textContent = 'Slide ' + (si + 1);
       fieldset.appendChild(legend);
-      fieldset.appendChild(labeledInput('Headline', 'ai-headline-input', slide.headline || ''));
-      fieldset.appendChild(labeledInput('Subheading (optional)', 'ai-subheading-input', slide.subheading || ''));
+      fieldset.appendChild(labeledTextarea('Headline (Enter for a line break)', 'ai-headline-input', slide.headline || ''));
+      fieldset.appendChild(labeledTextarea('Subheading (optional)', 'ai-subheading-input', slide.subheading || ''));
       fieldset.appendChild(labeledTextarea('Body', 'ai-body-input', slide.body || ''));
       fieldset.appendChild(labeledTextarea('Points (one per line)', 'ai-points-input', (slide.points || []).join('\n')));
       if (mode === 'manual' && currentCreative.slides.length > 1) {
@@ -307,18 +307,6 @@
       }
       reviewEl.appendChild(fieldset);
     });
-  }
-
-  function labeledInput(labelText, cls, value) {
-    var label = document.createElement('label');
-    label.className = 'field-row';
-    label.textContent = labelText;
-    var input = document.createElement('input');
-    input.type = 'text';
-    input.className = cls;
-    input.value = value;
-    label.appendChild(input);
-    return label;
   }
 
   function labeledTextarea(labelText, cls, value) {
