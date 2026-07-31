@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/post_helpers.php';
 
 require_login();
 $userId = current_user_id();
@@ -19,20 +20,20 @@ if (!csrf_check($_POST['csrf'] ?? null)) {
 }
 
 $batchId = (int) ($_POST['batch_id'] ?? 0);
-$stmt = db()->prepare('SELECT id FROM calendar_batches WHERE id = ? AND user_id = ?');
-$stmt->execute([$batchId, $userId]);
-if (!$stmt->fetch()) {
+if (!fetch_calendar_batch($batchId, $userId)) {
     json_response(['success' => false, 'error' => 'Calendar not found.'], 404);
 }
 
 $postIds = array_map('intval', $_POST['post_ids'] ?? []);
 if ($postIds) {
     $placeholders = implode(',', array_fill(0, count($postIds), '?'));
+    // $batchId already access-checked above — scoping by
+    // calendar_batch_id alone is enough for the posts within it.
     $update = db()->prepare(
         "UPDATE posts SET image_approved_at = NOW()
-         WHERE calendar_batch_id = ? AND user_id = ? AND id IN ($placeholders)"
+         WHERE calendar_batch_id = ? AND id IN ($placeholders)"
     );
-    $update->execute(array_merge([$batchId, $userId], $postIds));
+    $update->execute(array_merge([$batchId], $postIds));
 }
 
 $remainingStmt = db()->prepare(

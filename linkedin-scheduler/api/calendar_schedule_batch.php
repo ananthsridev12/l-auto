@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/post_helpers.php';
 
 require_login();
 $userId = current_user_id();
@@ -20,12 +21,15 @@ if (!csrf_check($_POST['csrf'] ?? null)) {
 $batchId = (int) ($_POST['batch_id'] ?? 0);
 $accountId = (int) ($_POST['linkedin_account_id'] ?? 0);
 
-$stmt = db()->prepare('SELECT id FROM calendar_batches WHERE id = ? AND user_id = ? AND status = "ready"');
-$stmt->execute([$batchId, $userId]);
-if (!$stmt->fetch()) {
+$batch = fetch_calendar_batch($batchId, $userId);
+if (!$batch || $batch['status'] !== 'ready') {
     json_response(['success' => false, 'error' => 'This calendar is not ready to schedule yet.'], 422);
 }
 
+// NOTE: linkedin_accounts is still strictly user_id-scoped (no
+// workspace_id) — a granted teammate can only schedule through their
+// own connected accounts here, not the page owner's. Same known
+// limitation as api/assign_account.php.
 $acctStmt = db()->prepare('SELECT id FROM linkedin_accounts WHERE id = ? AND user_id = ? AND status = "active"');
 $acctStmt->execute([$accountId, $userId]);
 if (!$acctStmt->fetch()) {
@@ -34,9 +38,9 @@ if (!$acctStmt->fetch()) {
 
 $update = db()->prepare(
     "UPDATE posts SET linkedin_account_id = ?, status = 'scheduled'
-     WHERE calendar_batch_id = ? AND user_id = ? AND content_approved_at IS NOT NULL AND image_approved_at IS NOT NULL"
+     WHERE calendar_batch_id = ? AND content_approved_at IS NOT NULL AND image_approved_at IS NOT NULL"
 );
-$update->execute([$accountId, $batchId, $userId]);
+$update->execute([$accountId, $batchId]);
 $count = $update->rowCount();
 
 db()->prepare('UPDATE calendar_batches SET status = "scheduled" WHERE id = ?')->execute([$batchId]);

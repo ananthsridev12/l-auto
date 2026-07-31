@@ -5,12 +5,11 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
+require_module('content_studio');
 $userId = current_user_id();
 
 $batchId = (int) ($_GET['id'] ?? 0);
-$stmt = db()->prepare('SELECT * FROM calendar_batches WHERE id = ? AND user_id = ?');
-$stmt->execute([$batchId, $userId]);
-$batch = $stmt->fetch();
+$batch = fetch_calendar_batch($batchId, $userId);
 if (!$batch) {
     flash('error', 'Calendar not found.');
     redirect('pages/content_calendar.php');

@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
 
 require_login();
+require_module('post_scheduling');
 $userId = current_user_id();
 $postId = (int) ($_GET['id'] ?? 0);
 
@@ -33,11 +34,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'Only a published post can be marked as unpublished.');
             redirect('pages/post.php?id=' . $postId);
         }
+        // $existing above already came from fetch_post_with_slides(),
+        // which only returns a row this user can access (owns or
+        // granted) — no need to re-check user_id here.
         $stmt = db()->prepare(
             'UPDATE posts SET status = "draft", scheduled_at = NULL, posted_at = NULL, li_post_urn = NULL, error_message = NULL
-             WHERE id = ? AND user_id = ?'
+             WHERE id = ?'
         );
-        $stmt->execute([$postId, $userId]);
+        $stmt->execute([$postId]);
         flash('success', 'Marked as not posted — this is now a draft you can edit and reschedule.');
         redirect('pages/post.php?id=' . $postId);
     }
@@ -48,8 +52,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'delete') {
-        $stmt = db()->prepare('DELETE FROM posts WHERE id = ? AND user_id = ?');
-        $stmt->execute([$postId, $userId]);
+        // $existing above already came from fetch_post_with_slides(),
+        // which only returns a row this user can access (owns or
+        // granted) — no need to re-check user_id here.
+        $stmt = db()->prepare('DELETE FROM posts WHERE id = ?');
+        $stmt->execute([$postId]);
         flash('success', 'Post deleted.');
         redirect('pages/calendar.php');
     }
@@ -71,11 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = 'scheduled';
     }
 
+    // $existing above already came from fetch_post_with_slides()
+    // (owns-or-granted access check) — no need to re-check user_id here.
     $stmt = db()->prepare(
         'UPDATE posts SET caption = ?, title = ?, linkedin_account_id = ?, scheduled_at = ?, status = ?
-         WHERE id = ? AND user_id = ?'
+         WHERE id = ?'
     );
-    $stmt->execute([$caption, $title, $accountId, $scheduledAt, $status, $postId, $userId]);
+    $stmt->execute([$caption, $title, $accountId, $scheduledAt, $status, $postId]);
 
     flash('success', $action === 'schedule' ? 'Post scheduled.' : 'Draft saved.');
     redirect('pages/post.php?id=' . $postId);

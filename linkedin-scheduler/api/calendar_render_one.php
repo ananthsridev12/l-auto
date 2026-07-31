@@ -19,10 +19,8 @@ if (!csrf_check($_POST['csrf'] ?? null)) {
 }
 
 $postId = (int) ($_POST['post_id'] ?? 0);
-$stmt = db()->prepare('SELECT * FROM posts WHERE id = ? AND user_id = ? AND calendar_batch_id IS NOT NULL');
-$stmt->execute([$postId, $userId]);
-$post = $stmt->fetch();
-if (!$post) {
+$post = fetch_post($postId, $userId);
+if (!$post || !$post['calendar_batch_id']) {
     json_response(['success' => false, 'error' => 'Post not found.'], 404);
 }
 if (!$post['content_approved_at']) {
@@ -43,6 +41,11 @@ $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your 
 $pillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
 $category = ($pillar['category'] ?? 'company') === 'personal' ? 'personal' : 'company';
 $wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
+// NOTE: brand asset resolution (footer image here, plus fonts/palettes
+// elsewhere) and the upload path below still key off the acting session
+// user ($userId), not the post's actual owner — same known gap as
+// api/post_rerender.php. Not fixed here; would need brand assets
+// resolved via the workspace owner at render time.
 $photoPath = resolve_footer_image($userId, $category, $wsId);
 
 $campaignId = $post['campaign_id'];

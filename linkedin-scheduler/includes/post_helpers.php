@@ -1,16 +1,31 @@
 <?php
+// fetch_post()/fetch_post_with_slides()/fetch_calendar_batch() below
+// depend on user_can_access_workspace() — self-required rather than
+// relying on every caller (including cron scripts) to have loaded
+// includes/organizations.php first, since a missing require here would
+// only surface as a fatal error the first time a Tier-2-shared post is
+// actually fetched, not at parse time.
+require_once __DIR__ . '/organizations.php';
 
+// Authorization: owns the post directly (user_id match — also covers
+// legacy pre-workspace posts with NULL workspace_id) OR has been
+// granted the workspace it belongs to (see includes/organizations.php
+// user_can_access_workspace()) — the same owns-OR-granted rule
+// fetch_workspace() itself uses.
 function fetch_post_with_slides(int $postId, int $userId): ?array
 {
     $stmt = db()->prepare(
         'SELECT p.*, la.display_name AS account_name, la.status AS account_status
          FROM posts p
          LEFT JOIN linkedin_accounts la ON la.id = p.linkedin_account_id
-         WHERE p.id = ? AND p.user_id = ?'
+         WHERE p.id = ?'
     );
-    $stmt->execute([$postId, $userId]);
+    $stmt->execute([$postId]);
     $post = $stmt->fetch();
     if (!$post) {
+        return null;
+    }
+    if ((int) $post['user_id'] !== $userId && !user_can_access_workspace($userId, $post['workspace_id'] ? (int) $post['workspace_id'] : null)) {
         return null;
     }
 
@@ -22,6 +37,40 @@ function fetch_post_with_slides(int $postId, int $userId): ?array
     ], $slideStmt->fetchAll());
 
     return $post;
+}
+
+// Bare posts row (no post_slides/linkedin_accounts join) — the shared
+// fetch-by-id-and-authorize primitive for the many pages/*.php and
+// api/*.php call sites that only need a column or two off the post
+// itself before acting on it. Same owns-OR-granted authorization as
+// fetch_post_with_slides().
+function fetch_post(int $postId, int $userId): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM posts WHERE id = ?');
+    $stmt->execute([$postId]);
+    $post = $stmt->fetch();
+    if (!$post) {
+        return null;
+    }
+    if ((int) $post['user_id'] !== $userId && !user_can_access_workspace($userId, $post['workspace_id'] ? (int) $post['workspace_id'] : null)) {
+        return null;
+    }
+    return $post;
+}
+
+// Same shape as fetch_post(), for calendar_batches.
+function fetch_calendar_batch(int $batchId, int $userId): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM calendar_batches WHERE id = ?');
+    $stmt->execute([$batchId]);
+    $batch = $stmt->fetch();
+    if (!$batch) {
+        return null;
+    }
+    if ((int) $batch['user_id'] !== $userId && !user_can_access_workspace($userId, $batch['workspace_id'] ? (int) $batch['workspace_id'] : null)) {
+        return null;
+    }
+    return $batch;
 }
 
 // Appends the file's own mtime as a cache-busting query param. Re-render

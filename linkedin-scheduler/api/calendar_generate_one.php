@@ -26,10 +26,8 @@ if (!csrf_check($_POST['csrf'] ?? null)) {
 }
 
 $postId = (int) ($_POST['post_id'] ?? 0);
-$stmt = db()->prepare('SELECT * FROM posts WHERE id = ? AND user_id = ? AND calendar_batch_id IS NOT NULL');
-$stmt->execute([$postId, $userId]);
-$post = $stmt->fetch();
-if (!$post) {
+$post = fetch_post($postId, $userId);
+if (!$post || !$post['calendar_batch_id']) {
     json_response(['success' => false, 'error' => 'Post not found.'], 404);
 }
 

@@ -13,10 +13,10 @@ $workspaceId = current_workspace_id();
 $stmt = db()->prepare(
     "SELECT id, campaign_id, title, format, status, DATE(scheduled_at) AS sched_date
      FROM posts
-     WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND scheduled_at IS NOT NULL
+     WHERE (workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)) AND scheduled_at IS NOT NULL
        AND YEAR(scheduled_at) = ? AND MONTH(scheduled_at) = ?"
 );
-$stmt->execute([$userId, $workspaceId, $year, $month]);
+$stmt->execute([$workspaceId, $userId, $year, $month]);
 $postsByDate = [];
 foreach ($stmt->fetchAll() as $row) {
     $postsByDate[$row['sched_date']][] = $row;

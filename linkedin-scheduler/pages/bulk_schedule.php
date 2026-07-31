@@ -21,13 +21,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/bulk_schedule.php');
     }
 
-    $placeholders = implode(',', array_fill(0, count($selectedIds), '?'));
-    $stmt = db()->prepare(
-        "SELECT * FROM posts WHERE user_id = ? AND id IN ($placeholders) AND status IN ('draft','scheduled')
-         ORDER BY COALESCE(scheduled_at, created_at) ASC, id ASC"
-    );
-    $stmt->execute(array_merge([$userId], $selectedIds));
-    $selectedPosts = $stmt->fetchAll();
+    // This page isn't workspace-scoped (it operates across every
+    // workspace the user can see at once), so there's no single
+    // current_workspace_id() to trust — each id is checked individually
+    // via fetch_post()'s owns-OR-granted authorization instead of one
+    // bulk query. $selectedIds is normally a handful of checked rows, so
+    // one query per id is not a real cost here.
+    $selectedPosts = array_values(array_filter(
+        array_map(fn ($id) => fetch_post($id, $userId), $selectedIds),
+        fn ($p) => $p && in_array($p['status'], ['draft', 'scheduled'], true)
+    ));
+    usort($selectedPosts, function ($a, $b) {
+        $cmp = strcmp($a['scheduled_at'] ?? $a['created_at'], $b['scheduled_at'] ?? $b['created_at']);
+        return $cmp !== 0 ? $cmp : ($a['id'] <=> $b['id']);
+    });
 
     $enabledFormats = get_enabled_formats($userId);
     $updateStmt = db()->prepare('UPDATE posts SET scheduled_at = ?, status = "scheduled" WHERE id = ?');
@@ -40,9 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $skippedAlreadyDraft = 0;
 
     if ($mode === 'delete') {
-        $deleteStmt = db()->prepare('DELETE FROM posts WHERE id = ? AND user_id = ?');
+        // $selectedPosts is already access-checked (fetch_post() above).
+        $deleteStmt = db()->prepare('DELETE FROM posts WHERE id = ?');
         foreach ($selectedPosts as $p) {
-            $deleteStmt->execute([$p['id'], $userId]);
+            $deleteStmt->execute([$p['id']]);
             $updated++;
         }
         flash($updated > 0 ? 'success' : 'error', "{$updated} post(s) deleted.");
@@ -117,10 +125,10 @@ $stmt = db()->prepare(
     'SELECT p.id, p.campaign_id, p.title, p.format, p.status, p.scheduled_at, p.linkedin_account_id, la.display_name AS account_name
      FROM posts p
      LEFT JOIN linkedin_accounts la ON la.id = p.linkedin_account_id
-     WHERE p.user_id = ? AND (p.workspace_id = ? OR p.workspace_id IS NULL) AND p.status IN ("draft","scheduled")
+     WHERE (p.workspace_id = ? OR (p.user_id = ? AND p.workspace_id IS NULL)) AND p.status IN ("draft","scheduled")
      ORDER BY COALESCE(p.scheduled_at, p.created_at) ASC, p.id ASC'
 );
-$stmt->execute([$userId, current_workspace_id()]);
+$stmt->execute([current_workspace_id(), $userId]);
 $posts = $stmt->fetchAll();
 
 $pageTitle  = 'Bulk Schedule';

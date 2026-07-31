@@ -14,8 +14,8 @@ $enabledFormats = get_enabled_formats($userId);
 $defaultPillarWeights = default_pillar_weights($pillars);
 $defaultFormatWeights = default_format_weights($enabledFormats);
 
-$stmt = db()->prepare('SELECT id, period_days, posts_per_week, status, created_at FROM calendar_batches WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY created_at DESC');
-$stmt->execute([$userId, $workspaceId]);
+$stmt = db()->prepare('SELECT id, period_days, posts_per_week, status, created_at FROM calendar_batches WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY created_at DESC');
+$stmt->execute([$workspaceId, $userId]);
 $batches = $stmt->fetchAll();
 
 $pageTitle  = 'Content Calendar';

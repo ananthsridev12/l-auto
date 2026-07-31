@@ -9,8 +9,11 @@ require_module('post_scheduling');
 $userId = current_user_id();
 $workspaceId = current_workspace_id();
 
-$stmt = db()->prepare('SELECT id FROM posts WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND DATE(scheduled_at) = CURDATE() ORDER BY id ASC');
-$stmt->execute([$userId, $workspaceId]);
+// Trusts workspace_id alone once resolved (current_workspace_id() is
+// already owns-OR-granted checked) — same reasoning as fetch_personas()
+// et al. in includes/post_helpers.php.
+$stmt = db()->prepare('SELECT id FROM posts WHERE (workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)) AND DATE(scheduled_at) = CURDATE() ORDER BY id ASC');
+$stmt->execute([$workspaceId, $userId]);
 $todayIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 
 // The common case (one post today) gets the full editor below. With more

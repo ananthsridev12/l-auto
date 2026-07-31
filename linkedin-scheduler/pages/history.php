@@ -11,11 +11,11 @@ $stmt = db()->prepare(
     'SELECT p.*, la.display_name AS account_name
      FROM posts p
      LEFT JOIN linkedin_accounts la ON la.id = p.linkedin_account_id
-     WHERE p.user_id = ? AND (p.workspace_id = ? OR p.workspace_id IS NULL) AND p.status IN ("posted", "failed")
+     WHERE (p.workspace_id = ? OR (p.user_id = ? AND p.workspace_id IS NULL)) AND p.status IN ("posted", "failed")
      ORDER BY COALESCE(p.posted_at, p.updated_at) DESC
      LIMIT 200'
 );
-$stmt->execute([$userId, current_workspace_id()]);
+$stmt->execute([current_workspace_id(), $userId]);
 $posts = $stmt->fetchAll();
 
 $pageTitle  = 'History';

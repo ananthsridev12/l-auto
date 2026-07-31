@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/post_helpers.php';
 
 require_login();
 $userId = current_user_id();
@@ -17,9 +18,7 @@ if (!csrf_check($_POST['csrf'] ?? null)) {
 }
 
 $batchId = (int) ($_POST['batch_id'] ?? 0);
-$stmt = db()->prepare('SELECT id FROM calendar_batches WHERE id = ? AND user_id = ?');
-$stmt->execute([$batchId, $userId]);
-if (!$stmt->fetch()) {
+if (!fetch_calendar_batch($batchId, $userId)) {
     json_response(['success' => false, 'error' => 'Calendar not found.'], 404);
 }
 
@@ -28,10 +27,13 @@ $postsData = json_decode($_POST['posts_json'] ?? '[]', true) ?: [];
 // Text Post has no image step to skip to — approving its content also
 // approves it as "image approved" immediately so it doesn't block the
 // batch waiting for a render step that will never happen.
+// $batchId is already access-checked above (fetch_calendar_batch()) —
+// scoping by calendar_batch_id = ? alone is enough, no need to also
+// require user_id = ? on each individual post row.
 $update = db()->prepare(
     "UPDATE posts SET title = ?, caption = ?, creative_json = ?, content_approved_at = NOW(),
        image_approved_at = IF(format = 'Text Post', NOW(), image_approved_at)
-     WHERE id = ? AND user_id = ? AND calendar_batch_id = ?"
+     WHERE id = ? AND calendar_batch_id = ?"
 );
 $approved = 0;
 foreach ($postsData as $p) {
@@ -59,12 +61,12 @@ foreach ($postsData as $p) {
     // series_label is now editable above (its input is pre-filled from
     // the existing value on page load), so it's part of $creative like
     // every other editable field, not preserve-only.
-    $existingStmt = db()->prepare('SELECT creative_json FROM posts WHERE id = ? AND user_id = ?');
-    $existingStmt->execute([$postId, $userId]);
+    $existingStmt = db()->prepare('SELECT creative_json FROM posts WHERE id = ? AND calendar_batch_id = ?');
+    $existingStmt->execute([$postId, $batchId]);
     $existing = json_decode((string) $existingStmt->fetchColumn(), true) ?: [];
     $merged = array_merge($existing, $creative);
 
-    $update->execute([$creative['title'], $creative['caption'], json_encode($merged), $postId, $userId, $batchId]);
+    $update->execute([$creative['title'], $creative['caption'], json_encode($merged), $postId, $batchId]);
     $approved++;
 }
 

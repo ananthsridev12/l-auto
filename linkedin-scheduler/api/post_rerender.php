@@ -29,9 +29,7 @@ if (!csrf_check($_POST['csrf'] ?? null)) {
 }
 
 $postId = (int) ($_POST['post_id'] ?? 0);
-$stmt = db()->prepare('SELECT * FROM posts WHERE id = ? AND user_id = ?');
-$stmt->execute([$postId, $userId]);
-$post = $stmt->fetch();
+$post = fetch_post($postId, $userId);
 if (!$post) {
     json_response(['success' => false, 'error' => 'Post not found.'], 404);
 }
@@ -94,6 +92,13 @@ $category = ($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'per
 $wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
 $photoPath = resolve_footer_image($userId, $category, $wsId);
 
+// NOTE: resolve_footer_image()/render_creative_to_slides() below and the
+// upload path here still resolve via the acting session user ($userId),
+// not the post's actual owner — for a granted-not-owning teammate this
+// means a shared page's brand assets (palettes/fonts) and file storage
+// path aren't correctly attributed. Fixing that needs brand asset
+// resolution to go through the workspace owner at render time, a larger
+// cross-cutting change deliberately left out of this pass.
 $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $post['campaign_id']);
 
 // The old slide files are removed before rendering — the new render may

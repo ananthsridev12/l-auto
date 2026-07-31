@@ -138,11 +138,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $draftStmt = db()->prepare(
     "SELECT p.*, (SELECT ps.filepath FROM post_slides ps WHERE ps.post_id = p.id ORDER BY ps.slide_order LIMIT 1) AS first_slide
      FROM posts p
-     WHERE p.user_id = ? AND (p.workspace_id = ? OR p.workspace_id IS NULL) AND p.status = 'draft' AND p.campaign_id LIKE 'NEWS-%'
+     WHERE (p.workspace_id = ? OR (p.user_id = ? AND p.workspace_id IS NULL)) AND p.status = 'draft' AND p.campaign_id LIKE 'NEWS-%'
      ORDER BY p.created_at DESC
      LIMIT 50"
 );
-$draftStmt->execute([$userId, $workspaceId]);
+$draftStmt->execute([$workspaceId, $userId]);
 $newsDrafts = $draftStmt->fetchAll();
 
 $itemStmt = db()->prepare(

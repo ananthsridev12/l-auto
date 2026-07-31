@@ -5,6 +5,28 @@
 // includes/workspace.php and includes/kb_seed.php to already be loaded —
 // same no-self-require convention as includes/workspace.php.
 
+// The single access-check primitive for Tier 2 (owns OR granted),
+// mirroring exactly what fetch_workspace()'s own WHERE clause already
+// checks — used at call sites in pages/*.php and api/*.php that fetch a
+// posts/calendar_batches row by id alone (no workspace_id in hand yet)
+// and need to authorize it once they see which workspace it belongs to.
+// A NULL $workspaceId (legacy pre-workspace row) is not this function's
+// job — callers fall back to a plain user_id match themselves for that
+// case, same as fetch_workspace() has no NULL-workspace concept either.
+function user_can_access_workspace(int $userId, ?int $workspaceId): bool
+{
+    if (!$workspaceId) {
+        return false;
+    }
+    $stmt = db()->prepare(
+        'SELECT 1 FROM workspaces w
+         LEFT JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = ?
+         WHERE w.id = ? AND (w.user_id = ? OR wm.user_id IS NOT NULL)'
+    );
+    $stmt->execute([$userId, $workspaceId, $userId]);
+    return (bool) $stmt->fetchColumn();
+}
+
 // Unlike includes/modules.php's current_organization_id() (session-bound,
 // request-cached — for page/nav rendering), this takes an explicit
 // $userId and always hits the DB — for call sites like
