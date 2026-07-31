@@ -116,6 +116,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'Enter a name for the company workspace.');
             redirect('pages/settings.php');
         }
+        $orgId = (int) current_user()['organization_id'];
+        if (!org_within_limit($orgId, 'workspaces')) {
+            flash('error', "Your organization's plan has reached its page limit — ask your organization owner to upgrade before adding another.");
+            redirect('pages/settings.php');
+        }
         $newId = create_workspace($userId, 'company', $name);
         seed_default_knowledge_base($userId, $newId);
         set_current_workspace($userId, $newId);

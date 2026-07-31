@@ -61,6 +61,9 @@ $__theme = $__user ? get_user_theme((int) $__user['id']) : null;
       <a href="<?= h(app_path('pages/history.php')) ?>" class="<?= ($activePage ?? '') === 'history' ? 'active' : '' ?>">History</a>
       <a href="<?= h(app_path('pages/knowledge.php')) ?>" class="<?= ($activePage ?? '') === 'knowledge' ? 'active' : '' ?>">Knowledge Base</a>
       <a href="<?= h(app_path('pages/settings.php')) ?>" class="<?= ($activePage ?? '') === 'settings' ? 'active' : '' ?>">Settings</a>
+      <?php if ($__user && !empty($__user['is_superadmin'])): ?>
+        <a href="<?= h(app_path('pages/admin.php')) ?>" class="<?= ($activePage ?? '') === 'admin' ? 'active' : '' ?>">Admin</a>
+      <?php endif; ?>
     </nav>
 
     <?php if ($__user): ?>

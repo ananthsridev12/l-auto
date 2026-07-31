@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/pdf_builder.php';
 require_once __DIR__ . '/linkedin_text.php';
+require_once __DIR__ . '/organizations.php';
 
 function li_json_headers(string $accessToken): array
 {
@@ -208,6 +209,10 @@ function publish_post_now(int $postId, int $userId): array
     }
     if (!in_array($post['format'], get_enabled_formats($userId), true)) {
         return ['success' => false, 'error' => "\"{$post['format']}\" posting is disabled in Settings.", 'status_code' => 422];
+    }
+    $orgId = user_organization_id($userId);
+    if ($orgId && !org_within_limit($orgId, 'posts')) {
+        return ['success' => false, 'error' => "Your organization's plan has reached its monthly post limit.", 'status_code' => 422];
     }
 
     $slideStmt = db()->prepare('SELECT filepath FROM post_slides WHERE post_id = ? ORDER BY slide_order ASC');

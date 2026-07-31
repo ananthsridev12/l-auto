@@ -56,6 +56,14 @@ foreach ($due as $post) {
         continue;
     }
 
+    $orgId = user_organization_id((int) $post['user_id']);
+    if ($orgId && !org_within_limit($orgId, 'posts')) {
+        $upd = $pdo->prepare('UPDATE posts SET status = "failed", error_message = ? WHERE id = ?');
+        $upd->execute(["Your organization's plan has reached its monthly post limit.", $post['id']]);
+        $failed++;
+        continue;
+    }
+
     $slideStmt = $pdo->prepare('SELECT filepath FROM post_slides WHERE post_id = ? ORDER BY slide_order ASC');
     $slideStmt->execute([$post['id']]);
     $slidePaths = array_column($slideStmt->fetchAll(), 'filepath');

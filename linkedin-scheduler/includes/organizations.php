@@ -5,6 +5,19 @@
 // includes/workspace.php and includes/kb_seed.php to already be loaded —
 // same no-self-require convention as includes/workspace.php.
 
+// Unlike includes/modules.php's current_organization_id() (session-bound,
+// request-cached — for page/nav rendering), this takes an explicit
+// $userId and always hits the DB — for call sites like
+// publish_post_now() where $userId is a passed-in parameter, not
+// necessarily the session user.
+function user_organization_id(int $userId): ?int
+{
+    $stmt = db()->prepare('SELECT organization_id FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $orgId = $stmt->fetchColumn();
+    return $orgId ? (int) $orgId : null;
+}
+
 function fetch_organization(int $orgId): ?array
 {
     $stmt = db()->prepare('SELECT * FROM organizations WHERE id = ?');
