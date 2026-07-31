@@ -38,8 +38,9 @@ $__theme = $__user ? get_user_theme((int) $__user['id']) : null;
         <input type="hidden" name="return_to" value="<?= h(ltrim($_SERVER['REQUEST_URI'] ?? '', '/')) ?>">
         <select name="workspace_id" onchange="this.form.submit()" aria-label="Workspace">
           <?php foreach ($__workspaces as $__ws): ?>
+            <?php $__granted = (int) $__ws['user_id'] !== (int) $__user['id']; ?>
             <option value="<?= (int) $__ws['id'] ?>"<?= (int) $__ws['id'] === $__activeWs ? ' selected' : '' ?>>
-              <?= h($__ws['name']) ?><?= $__ws['type'] === 'personal' ? ' (Personal)' : ' (Company)' ?>
+              <?= h($__ws['name']) ?><?= $__ws['type'] === 'personal' ? ' (Personal)' : ' (Company)' ?><?= $__granted ? ' — shared by ' . h($__ws['owner_name'] ?: $__ws['owner_email']) : '' ?>
             </option>
           <?php endforeach; ?>
         </select>

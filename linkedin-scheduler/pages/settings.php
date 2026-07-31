@@ -512,6 +512,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    // ── Organization: owner/admin-only actions ──────────────────────
+    $orgUser = current_user();
+    $userOrgId = (int) $orgUser['organization_id'];
+    $isOrgAdmin = in_array($orgUser['org_role'], ['owner', 'admin'], true);
+
+    if (($_POST['form'] ?? '') === 'org_invite') {
+        if (!$isOrgAdmin) {
+            flash('error', 'Only an owner or admin can invite teammates.');
+            redirect('pages/settings.php#organization');
+        }
+        [$ok, $err, $inviteToken] = create_invite(
+            $userOrgId,
+            $_POST['invite_email'] ?? '',
+            $_POST['invite_role'] ?? 'member',
+            $_POST['invite_workspace_ids'] ?? [],
+            $userId
+        );
+        if (!$ok) {
+            flash('error', $err);
+        } else {
+            $link = app_path('pages/accept_invite.php?token=' . $inviteToken);
+            flash('success', "Invite created — copy and send this link: {$link}");
+        }
+        redirect('pages/settings.php#organization');
+    }
+
+    if (($_POST['form'] ?? '') === 'org_invite_revoke') {
+        if ($isOrgAdmin) {
+            revoke_invite((int) ($_POST['invite_id'] ?? 0), $userOrgId);
+            flash('success', 'Invite revoked.');
+        }
+        redirect('pages/settings.php#organization');
+    }
+
+    if (($_POST['form'] ?? '') === 'org_grant') {
+        if (!$isOrgAdmin) {
+            flash('error', 'Only an owner or admin can manage page access.');
+            redirect('pages/settings.php#organization');
+        }
+        $targetUserId = (int) ($_POST['target_user_id'] ?? 0);
+        $stmt = db()->prepare('SELECT id FROM users WHERE id = ? AND organization_id = ?');
+        $stmt->execute([$targetUserId, $userOrgId]);
+        if ($stmt->fetchColumn()) {
+            sync_workspace_access($targetUserId, $_POST['grant_workspace_ids'] ?? [], $userOrgId, $userId);
+            flash('success', 'Page access updated.');
+        } else {
+            flash('error', 'That member is not in your organization.');
+        }
+        redirect('pages/settings.php#organization');
+    }
+
+    if (($_POST['form'] ?? '') === 'org_member_remove') {
+        $targetUserId = (int) ($_POST['target_user_id'] ?? 0);
+        $stmt = db()->prepare('SELECT org_role FROM users WHERE id = ? AND organization_id = ?');
+        $stmt->execute([$targetUserId, $userOrgId]);
+        $targetRole = $stmt->fetchColumn();
+        if (!$isOrgAdmin) {
+            flash('error', 'Only an owner or admin can remove a member.');
+        } elseif (!$targetRole) {
+            flash('error', 'That member is not in your organization.');
+        } elseif ($targetRole === 'owner') {
+            flash('error', "An organization's owner can't be removed.");
+        } else {
+            remove_org_member($targetUserId);
+            flash('success', 'Member removed from the organization.');
+        }
+        redirect('pages/settings.php#organization');
+    }
+
     $name = trim($_POST['name'] ?? '');
     $newPassword = $_POST['new_password'] ?? '';
 
@@ -530,6 +599,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     flash('success', 'Settings saved.');
     redirect('pages/settings.php');
 }
+
+$orgId = (int) $user['organization_id'];
+$org = fetch_organization($orgId);
+$isOrgAdmin = in_array($user['org_role'], ['owner', 'admin'], true);
+$orgMembers = fetch_org_members($orgId);
+$orgWorkspacesForGrants = fetch_org_workspaces($orgId);
+$orgInvites = $isOrgAdmin ? fetch_org_invites($orgId) : [];
+$orgPlan = db()->prepare('SELECT * FROM plans WHERE id = ?');
+$orgPlan->execute([$org['plan_id']]);
+$orgPlan = $orgPlan->fetch();
 
 $enabledFormats = get_enabled_formats($userId);
 $geminiKey = get_gemini_api_key($userId);
@@ -596,6 +675,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <button type="button" class="settings-tab-btn" data-tab-target="account">Account</button>
   <button type="button" class="settings-tab-btn" data-tab-target="brand">Brand &amp; Workspace</button>
   <button type="button" class="settings-tab-btn" data-tab-target="integrations">Integrations</button>
+  <button type="button" class="settings-tab-btn" data-tab-target="organization">Organization</button>
 </nav>
 
 <section class="card" data-tab="account">
@@ -1232,6 +1312,108 @@ require __DIR__ . '/../includes/layout_top.php';
 </section>
 <?php endif; ?>
 
+<section class="card" data-tab="organization">
+  <h2>Organization</h2>
+  <p class="muted">
+    <strong><?= h($org['name']) ?></strong> — <?= h($orgPlan['name']) ?> plan:
+    <?= org_usage_count($orgId, 'users') ?><?= $orgPlan['max_users'] !== null ? ' / ' . (int) $orgPlan['max_users'] : '' ?> users,
+    <?= org_usage_count($orgId, 'workspaces') ?><?= $orgPlan['max_workspaces'] !== null ? ' / ' . (int) $orgPlan['max_workspaces'] : '' ?> pages<?php if ($orgPlan['max_posts_per_month'] !== null): ?>,
+    <?= org_usage_count($orgId, 'posts') ?> / <?= (int) $orgPlan['max_posts_per_month'] ?> posts this month<?php endif; ?>.
+    <?php if (!$isOrgAdmin): ?>Contact your organization owner/admin to invite teammates or change page access.<?php endif; ?>
+  </p>
+
+  <h3>Members (<?= count($orgMembers) ?>)</h3>
+  <table class="preview-table">
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><?php if ($isOrgAdmin): ?><th></th><?php endif; ?></tr></thead>
+    <tbody>
+      <?php foreach ($orgMembers as $m): ?>
+        <tr>
+          <td><?= h($m['name'] ?: '—') ?></td>
+          <td><?= h($m['email']) ?></td>
+          <td><?= h(ucfirst($m['org_role'])) ?></td>
+          <?php if ($isOrgAdmin): ?>
+            <td>
+              <?php if ($m['org_role'] !== 'owner'): ?>
+                <form method="post" onsubmit="return confirm('Remove this member from the organization? They\'ll keep their account but lose access to this organization\'s pages.');" class="inline-form">
+                  <input type="hidden" name="csrf" value="<?= h($token) ?>">
+                  <input type="hidden" name="form" value="org_member_remove">
+                  <input type="hidden" name="target_user_id" value="<?= (int) $m['id'] ?>">
+                  <button type="submit" class="btn-tiny btn-danger">Remove</button>
+                </form>
+              <?php endif; ?>
+            </td>
+          <?php endif; ?>
+        </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+
+  <?php if ($isOrgAdmin): ?>
+    <?php foreach ($orgMembers as $m): ?>
+      <?php if ($m['org_role'] === 'owner') continue; ?>
+      <?php $memberGrants = fetch_user_workspace_grants((int) $m['id']); ?>
+      <details class="card" style="margin-top: var(--space-3)">
+        <summary>Manage page access — <strong><?= h($m['name'] ?: $m['email']) ?></strong></summary>
+        <form method="post" class="stacked-form" style="margin-top: var(--space-3)">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="org_grant">
+          <input type="hidden" name="target_user_id" value="<?= (int) $m['id'] ?>">
+          <?php foreach ($orgWorkspacesForGrants as $ws): ?>
+            <?php if ((int) $ws['user_id'] === (int) $m['id']) continue; ?>
+            <label class="checkbox-row">
+              <input type="checkbox" name="grant_workspace_ids[]" value="<?= (int) $ws['id'] ?>" <?= in_array((int) $ws['id'], $memberGrants, true) ? 'checked' : '' ?>>
+              <?= h($ws['name']) ?><?= $ws['type'] === 'personal' ? ' (Personal)' : ' (Company)' ?>
+            </label>
+          <?php endforeach; ?>
+          <button type="submit" class="btn-primary">Save Access</button>
+        </form>
+      </details>
+    <?php endforeach; ?>
+
+    <h3 style="margin-top: var(--space-4)">Invite a teammate</h3>
+    <p class="muted">There's no email sending yet — creating an invite gives you a link to copy and send them yourself.</p>
+    <form method="post" class="stacked-form">
+      <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <input type="hidden" name="form" value="org_invite">
+      <label>Email <input type="email" name="invite_email" required></label>
+      <label class="checkbox-row"><input type="radio" name="invite_role" value="member" checked> Member</label>
+      <label class="checkbox-row"><input type="radio" name="invite_role" value="admin"> Admin (can also invite teammates and manage page access)</label>
+      <p class="muted" style="margin-bottom:0">Which pages can they manage?</p>
+      <?php foreach ($orgWorkspacesForGrants as $ws): ?>
+        <label class="checkbox-row">
+          <input type="checkbox" name="invite_workspace_ids[]" value="<?= (int) $ws['id'] ?>">
+          <?= h($ws['name']) ?><?= $ws['type'] === 'personal' ? ' (Personal)' : ' (Company)' ?>
+        </label>
+      <?php endforeach; ?>
+      <button type="submit" class="btn-primary">Create Invite</button>
+    </form>
+
+    <?php if ($orgInvites): ?>
+      <h3 style="margin-top: var(--space-4)">Pending invites</h3>
+      <table class="preview-table">
+        <thead><tr><th>Email</th><th>Role</th><th>Link</th><th></th></tr></thead>
+        <tbody>
+          <?php foreach ($orgInvites as $inv): ?>
+            <tr>
+              <td><?= h($inv['email']) ?></td>
+              <td><?= h(ucfirst($inv['role'])) ?></td>
+              <td><input type="text" readonly value="<?= h(app_path('pages/accept_invite.php?token=' . $inv['token'])) ?>" onclick="this.select()" style="width:100%"></td>
+              <td>
+                <form method="post" class="inline-form">
+                  <input type="hidden" name="csrf" value="<?= h($token) ?>">
+                  <input type="hidden" name="form" value="org_invite_revoke">
+                  <input type="hidden" name="invite_id" value="<?= (int) $inv['id'] ?>">
+                  <button type="submit" class="btn-tiny btn-danger">Revoke</button>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php endif; ?>
+  <?php endif; ?>
+</section>
+
 <script>
 document.querySelectorAll('.auto-toggle').forEach(function (checkbox) {
   var target = document.querySelector('input[name="' + checkbox.dataset.target + '"]');
@@ -1326,7 +1508,7 @@ document.querySelectorAll('.color-field').forEach(function (field) {
 
 <script>
   (function () {
-    var VALID_TABS = ['account', 'brand', 'integrations'];
+    var VALID_TABS = ['account', 'brand', 'integrations', 'organization'];
     var tabBtns = document.querySelectorAll('#settingsTabs .settings-tab-btn');
     var panels = document.querySelectorAll('[data-tab]');
 

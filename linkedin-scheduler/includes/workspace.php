@@ -12,10 +12,14 @@
 // like their own, with no other change needed anywhere else that reads
 // through these two functions (current_workspace_id(), the sidebar
 // switcher, set_current_workspace() all call one of these).
+// owner_name/owner_email identify a granted (not owned) workspace's
+// actual owner for the sidebar switcher — see layout_top.php, which
+// only shows them when w.user_id differs from the viewing user.
 function fetch_workspaces(int $userId): array
 {
     $stmt = db()->prepare(
-        "SELECT w.* FROM workspaces w
+        "SELECT w.*, u.name AS owner_name, u.email AS owner_email FROM workspaces w
+         JOIN users u ON u.id = w.user_id
          LEFT JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = ?
          WHERE w.user_id = ? OR wm.user_id IS NOT NULL
          ORDER BY w.type = 'personal' DESC, w.name"

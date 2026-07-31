@@ -87,6 +87,42 @@ function revoke_workspace_access(int $workspaceId, int $userId): void
         ->execute([$workspaceId, $userId]);
 }
 
+// Replaces a member's whole grant set in one call — the Settings >
+// Organization "manage access" form submits the full checked list each
+// time rather than individual grant/revoke actions. $workspaceIds is
+// filtered to pages this org actually owns, same as create_invite().
+function sync_workspace_access(int $userId, array $workspaceIds, int $orgId, int $granterUserId): void
+{
+    $orgWorkspaceIds = array_column(fetch_org_workspaces($orgId), 'id');
+    $workspaceIds = array_values(array_intersect(array_map('intval', $workspaceIds), $orgWorkspaceIds));
+    db()->prepare('DELETE FROM workspace_members WHERE user_id = ?')->execute([$userId]);
+    foreach ($workspaceIds as $wsId) {
+        grant_workspace_access($wsId, $userId, $granterUserId);
+    }
+}
+
+// Cuts a member loose from the org — creates a fresh 1-person
+// organization for them (same shape as a normal signup, see
+// register_user()) rather than leaving organization_id unset, and drops
+// any page grants scoped to the org they're leaving. The caller
+// (pages/settings.php) must check org_owner_count() first — an org's
+// only owner can never be removed this way, since every org requires one.
+function remove_org_member(int $userId): void
+{
+    $stmt = db()->prepare('SELECT name, email FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+    if (!$user) {
+        return;
+    }
+    $freePlanId = (int) db()->query("SELECT id FROM plans WHERE slug = 'free' LIMIT 1")->fetchColumn();
+    $orgName = trim((string) $user['name']) !== '' ? trim((string) $user['name']) : $user['email'];
+    db()->prepare('INSERT INTO organizations (name, plan_id) VALUES (?, ?)')->execute([$orgName, $freePlanId]);
+    $newOrgId = (int) db()->lastInsertId();
+    db()->prepare("UPDATE users SET organization_id = ?, org_role = 'owner' WHERE id = ?")->execute([$newOrgId, $userId]);
+    db()->prepare('DELETE FROM workspace_members WHERE user_id = ?')->execute([$userId]);
+}
+
 // ── Plan usage/limits ───────────────────────────────────────────────
 
 function org_usage_count(int $orgId, string $metric): int
