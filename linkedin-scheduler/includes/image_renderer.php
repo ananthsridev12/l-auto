@@ -2116,12 +2116,38 @@ function render_stat_content($im, array $slide, float $cx, float $topY, float $c
     $headline = trim($slide['headline'] ?? '');
     $body = trim($slide['body'] ?? '');
 
-    $statCandidates = [rss('headline', 210), rss('headline', 180), rss('headline', 150), rss('headline', 120), rss('headline', 96)];
-    [$hs, $lh, $hLines, $fontRole] = render_resolve_headline_lines($headline, $cw, $statCandidates, 2, $preset);
-    $headlineHeight = count($hLines) * $lh;
-
     $bodyGap = $body !== '' ? rs(32) : 0;
     $bodyHeight = $body !== '' ? render_body_freestanding_height($body, $cw) : 0;
+
+    // Every other headline call site fits to a fixed maxLines (2 or 3)
+    // because there's always a points/CTA block below competing for the
+    // same space. Big Stat has none of that — headline (+ optional
+    // body) is the whole slide — so a fixed 2-line cap just truncated
+    // with "…" the moment the phrase needed a 3rd line (including a
+    // deliberate forced break typed into the headline field), even
+    // with most of the canvas sitting empty below it. Fit to the space
+    // actually available instead, the same way render_fit_font_size()
+    // sizes point cards elsewhere: shrink through candidates until the
+    // headline's natural (unclamped) line count fits above $bottomBound.
+    $statCandidates = [rss('headline', 210), rss('headline', 180), rss('headline', 150), rss('headline', 120), rss('headline', 96), rss('headline', 76), rss('headline', 60), rss('headline', 48)];
+    $fontRole = $preset['font'] === 'serif' ? 'serif' : 'heading';
+    $strippedHeadline = render_strip_markup_markers($headline);
+    $headlineCeiling = $bottomBound - $bodyGap - $bodyHeight;
+    $hs = render_fit_font_size(
+        [$strippedHeadline],
+        $topY,
+        $headlineCeiling,
+        $statCandidates,
+        fn ($text, $size) => count(render_wrap($text, $size, true, $cw, $fontRole)) * render_lh($size)
+    );
+    $lh = render_lh($hs);
+
+    // Best-effort clamp for the rare case where even the smallest
+    // candidate's natural line count still overflows $bottomBound —
+    // however many lines actually fit, not a number picked in advance.
+    $maxLines = max(1, (int) floor(($headlineCeiling - $topY) / $lh));
+    $hLines = render_wrap_markup_clamped($headline, $hs, true, $cw, $maxLines, $fontRole);
+    $headlineHeight = count($hLines) * $lh;
 
     $totalContentHeight = $headlineHeight + $bodyGap + $bodyHeight;
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
