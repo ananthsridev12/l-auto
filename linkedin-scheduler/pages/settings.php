@@ -639,6 +639,9 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card" data-tab="integrations">
   <h2>AI Provider</h2>
+  <?php if (!module_enabled('ai_generation')): ?>
+    <p class="muted">AI generation is not enabled for your organization — contact your organization admin.</p>
+  <?php else: ?>
   <p class="muted">Used by <a href="<?= h(app_path('pages/content_studio.php')) ?>">Content Studio</a> and New Post's "Generate with AI" to write captions and slide copy when you haven't written them yourself. Pick which provider to use and paste your key for it — only the selected provider's key matters. Gemini has a free tier (get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>); Claude and OpenAI are paid per-call unless this site has a shared key configured for them, in which case leaving your own key blank will use that instead.</p>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -657,8 +660,10 @@ require __DIR__ . '/../includes/layout_top.php';
     </label>
     <button type="submit" class="btn-primary">Save AI Provider</button>
   </form>
+  <?php endif; ?>
 </section>
 
+<?php if (module_enabled('news_studio')): ?>
 <section class="card" data-tab="integrations">
   <h2>Reddit (News Studio trend source)</h2>
   <p class="muted">Lets News Studio pull trending discussion from subreddits you add below, alongside Google News. Create a free "script" app at <a href="https://www.reddit.com/prefs/apps" target="_blank" rel="noopener">reddit.com/prefs/apps</a> (no approval wait) and paste its Client ID/Secret here — this app never posts to Reddit or touches your Reddit account, it only reads public subreddit listings.</p>
@@ -674,6 +679,7 @@ require __DIR__ . '/../includes/layout_top.php';
     <button type="submit" class="btn-secondary">Save Reddit Credentials</button>
   </form>
 </section>
+<?php endif; ?>
 
 <section class="card" data-tab="brand">
   <h2>Workspaces</h2>
@@ -705,6 +711,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
+<?php if (module_enabled('blog_studio')): ?>
 <section class="card" data-tab="integrations">
   <h2>WordPress — <?= h($workspace['name']) ?></h2>
   <p class="muted">Connect a WordPress site to publish <a href="<?= h(app_path('pages/blog_studio.php')) ?>">Blog Studio</a> posts to directly. Use an <strong>Application Password</strong> (WordPress admin &gt; Users &gt; Profile &gt; Application Passwords), not your account password — it's scoped and revocable independently.</p>
@@ -791,6 +798,7 @@ require __DIR__ . '/../includes/layout_top.php';
     </form>
   <?php endif; ?>
 </section>
+<?php endif; ?>
 
 <section class="card" data-tab="brand">
   <h2>Brand Palettes</h2>
@@ -1137,6 +1145,7 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
+<?php if (module_enabled('news_studio')): ?>
 <section class="card" data-tab="integrations">
   <h2>News Auto-Content</h2>
   <p class="muted">The <a href="<?= h(app_path('pages/news_studio.php')) ?>">News Studio</a> searches Google News for every <a href="<?= h(app_path('pages/knowledge.php')) ?>#pillars">Content Pillar</a> name, plus the extra keywords below, and turns trending headlines into draft posts written in your voice. With auto-drafting on, the daily cron generates drafts each morning for you to review — nothing is ever posted without your approval.</p>
@@ -1221,6 +1230,7 @@ require __DIR__ . '/../includes/layout_top.php';
     <button type="submit" class="btn-secondary">Add Trusted Source</button>
   </form>
 </section>
+<?php endif; ?>
 
 <script>
 document.querySelectorAll('.auto-toggle').forEach(function (checkbox) {

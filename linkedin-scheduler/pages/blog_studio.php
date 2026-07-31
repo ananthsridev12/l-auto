@@ -21,6 +21,7 @@ require_once __DIR__ . '/../includes/jekyll_api.php';
 require_once __DIR__ . '/../includes/grav_api.php';
 
 require_login();
+require_module('blog_studio');
 $userId = current_user_id();
 $workspaceId = current_workspace_id();
 $workspace = current_workspace();

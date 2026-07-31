@@ -11,6 +11,11 @@ require_once __DIR__ . '/../includes/content_memory.php';
 
 require_login();
 $userId = current_user_id();
+
+if (!module_enabled('ai_generation')) {
+    json_response(['success' => false, 'error' => 'AI generation is not enabled for your organization.'], 403);
+}
+
 $workspaceId = current_workspace_id();
 $workspace = current_workspace();
 $aiConfig = resolve_ai_config($userId);

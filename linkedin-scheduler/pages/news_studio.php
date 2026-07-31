@@ -18,6 +18,7 @@ require_once __DIR__ . '/../includes/blog_posts.php';
 require_once __DIR__ . '/../includes/blog_generate.php';
 
 require_login();
+require_module('news_studio');
 $userId = current_user_id();
 $workspaceId = current_workspace_id();
 $workspace = current_workspace();

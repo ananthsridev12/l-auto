@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/embeddings.php';
 require_once __DIR__ . '/../includes/content_memory.php';
 
 require_login();
+require_module('post_scheduling');
 $userId = current_user_id();
 $workspaceId = current_workspace_id();
 $workspace = current_workspace();
@@ -255,12 +256,15 @@ require __DIR__ . '/../includes/layout_top.php';
         </label>
       </div>
 
+      <?php $aiModuleOff = !module_enabled('ai_generation'); ?>
       <div style="width:100%; margin-top:12px;" id="creativeToggleRow">
         <label class="checkbox-row">
-          <input type="checkbox" id="aiGenerateToggle" <?= ai_configured($aiConfig) ? '' : 'disabled' ?>>
+          <input type="checkbox" id="aiGenerateToggle" <?= (ai_configured($aiConfig) && !$aiModuleOff) ? '' : 'disabled' ?>>
           Generate with AI instead
         </label>
-        <?php if (!ai_configured($aiConfig)): ?>
+        <?php if ($aiModuleOff): ?>
+          <p class="muted">AI generation is not enabled for your organization. Contact your organization admin.</p>
+        <?php elseif (!ai_configured($aiConfig)): ?>
           <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to use this.</p>
         <?php endif; ?>
         <label class="checkbox-row" id="manualToggleLabel">

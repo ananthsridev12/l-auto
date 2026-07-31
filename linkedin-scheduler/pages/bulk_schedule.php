@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 
 require_login();
+require_module('post_scheduling');
 $userId = current_user_id();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

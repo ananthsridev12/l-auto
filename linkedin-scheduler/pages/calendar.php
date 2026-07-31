@@ -3,6 +3,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
 require_login();
+require_module('post_scheduling');
 $userId = current_user_id();
 
 $year  = (int) ($_GET['year'] ?? date('Y'));

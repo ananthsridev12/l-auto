@@ -47,18 +47,30 @@ $__theme = $__user ? get_user_theme((int) $__user['id']) : null;
     <?php endif; ?>
 
     <nav>
-      <a href="<?= h(app_path('pages/new_post.php')) ?>" class="<?= ($activePage ?? '') === 'new_post' ? 'active' : '' ?>">New Post</a>
-      <a href="<?= h(app_path('pages/today.php')) ?>" class="<?= ($activePage ?? '') === 'today' ? 'active' : '' ?>">Today</a>
-      <a href="<?= h(app_path('pages/calendar.php')) ?>" class="<?= ($activePage ?? '') === 'calendar' ? 'active' : '' ?>">Calendar</a>
-      <a href="<?= h(app_path('pages/drafts.php')) ?>" class="<?= ($activePage ?? '') === 'drafts' ? 'active' : '' ?>">Drafts</a>
-      <a href="<?= h(app_path('pages/bulk_schedule.php')) ?>" class="<?= ($activePage ?? '') === 'bulk_schedule' ? 'active' : '' ?>">Bulk Schedule</a>
-      <a href="<?= h(app_path('pages/content_calendar.php')) ?>" class="<?= ($activePage ?? '') === 'content_calendar' ? 'active' : '' ?>">Content Calendar</a>
-      <a href="<?= h(app_path('pages/content_studio.php')) ?>" class="<?= ($activePage ?? '') === 'content_studio' ? 'active' : '' ?>">Content Studio</a>
-      <a href="<?= h(app_path('pages/news_studio.php')) ?>" class="<?= ($activePage ?? '') === 'news_studio' ? 'active' : '' ?>">News Studio</a>
-      <a href="<?= h(app_path('pages/blog_studio.php')) ?>" class="<?= ($activePage ?? '') === 'blog_studio' ? 'active' : '' ?>">Blog Studio</a>
-      <a href="<?= h(app_path('pages/import.php')) ?>" class="<?= ($activePage ?? '') === 'import' ? 'active' : '' ?>">Import</a>
+      <?php if (module_enabled('post_scheduling')): ?>
+        <a href="<?= h(app_path('pages/new_post.php')) ?>" class="<?= ($activePage ?? '') === 'new_post' ? 'active' : '' ?>">New Post</a>
+        <a href="<?= h(app_path('pages/today.php')) ?>" class="<?= ($activePage ?? '') === 'today' ? 'active' : '' ?>">Today</a>
+        <a href="<?= h(app_path('pages/calendar.php')) ?>" class="<?= ($activePage ?? '') === 'calendar' ? 'active' : '' ?>">Calendar</a>
+        <a href="<?= h(app_path('pages/drafts.php')) ?>" class="<?= ($activePage ?? '') === 'drafts' ? 'active' : '' ?>">Drafts</a>
+        <a href="<?= h(app_path('pages/bulk_schedule.php')) ?>" class="<?= ($activePage ?? '') === 'bulk_schedule' ? 'active' : '' ?>">Bulk Schedule</a>
+      <?php endif; ?>
+      <?php if (module_enabled('content_studio')): ?>
+        <a href="<?= h(app_path('pages/content_calendar.php')) ?>" class="<?= ($activePage ?? '') === 'content_calendar' ? 'active' : '' ?>">Content Calendar</a>
+        <a href="<?= h(app_path('pages/content_studio.php')) ?>" class="<?= ($activePage ?? '') === 'content_studio' ? 'active' : '' ?>">Content Studio</a>
+      <?php endif; ?>
+      <?php if (module_enabled('news_studio')): ?>
+        <a href="<?= h(app_path('pages/news_studio.php')) ?>" class="<?= ($activePage ?? '') === 'news_studio' ? 'active' : '' ?>">News Studio</a>
+      <?php endif; ?>
+      <?php if (module_enabled('blog_studio')): ?>
+        <a href="<?= h(app_path('pages/blog_studio.php')) ?>" class="<?= ($activePage ?? '') === 'blog_studio' ? 'active' : '' ?>">Blog Studio</a>
+      <?php endif; ?>
+      <?php if (module_enabled('post_scheduling')): ?>
+        <a href="<?= h(app_path('pages/import.php')) ?>" class="<?= ($activePage ?? '') === 'import' ? 'active' : '' ?>">Import</a>
+      <?php endif; ?>
       <a href="<?= h(app_path('pages/accounts.php')) ?>" class="<?= ($activePage ?? '') === 'accounts' ? 'active' : '' ?>">Accounts</a>
-      <a href="<?= h(app_path('pages/history.php')) ?>" class="<?= ($activePage ?? '') === 'history' ? 'active' : '' ?>">History</a>
+      <?php if (module_enabled('post_scheduling')): ?>
+        <a href="<?= h(app_path('pages/history.php')) ?>" class="<?= ($activePage ?? '') === 'history' ? 'active' : '' ?>">History</a>
+      <?php endif; ?>
       <a href="<?= h(app_path('pages/knowledge.php')) ?>" class="<?= ($activePage ?? '') === 'knowledge' ? 'active' : '' ?>">Knowledge Base</a>
       <a href="<?= h(app_path('pages/settings.php')) ?>" class="<?= ($activePage ?? '') === 'settings' ? 'active' : '' ?>">Settings</a>
       <?php if ($__user && !empty($__user['is_superadmin'])): ?>

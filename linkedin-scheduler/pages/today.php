@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
 
 require_login();
+require_module('post_scheduling');
 $userId = current_user_id();
 $workspaceId = current_workspace_id();
 

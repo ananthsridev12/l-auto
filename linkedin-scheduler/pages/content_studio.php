@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 
 require_login();
+require_module('content_studio');
 
 $pageTitle   = 'Content Studio';
 $activePage  = 'content_studio';
