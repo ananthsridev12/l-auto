@@ -86,22 +86,44 @@ function fetch_mention_picker_list(int $userId): array
 // Phase 2's enrichment columns (docs/KNOWLEDGE_BASE.md) come along for
 // free — every existing caller only reads name/description, so this
 // is forward-compatible, not a behavior change for them.
+// $userId is kept in the signature for every caller's convenience (and
+// still used for the no-workspace legacy fallback below, which has
+// nothing else to scope by), but the $workspaceId branch trusts
+// workspace_id alone rather than ANDing it with user_id — access to the
+// workspace itself is already gated once upstream via
+// current_workspace_id()/require_module(), and a granted (not owned)
+// teammate must see the same rows the owner does, same reasoning as the
+// already-workspace_id-only senders/verticals/services tables above.
 function fetch_personas(int $userId, ?int $workspaceId = null): array
 {
     if ($workspaceId === null) {
         $stmt = db()->prepare('SELECT * FROM personas WHERE user_id = ? ORDER BY name');
         $stmt->execute([$userId]);
     } else {
-        $stmt = db()->prepare('SELECT * FROM personas WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY name');
-        $stmt->execute([$userId, $workspaceId]);
+        $stmt = db()->prepare('SELECT * FROM personas WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY name');
+        $stmt->execute([$workspaceId, $userId]);
     }
     return $stmt->fetchAll();
 }
 
+// Signature unchanged (still just $userId + $id — callers pull the id
+// from a form field with no workspace context in hand) — authorization
+// is "do I have ANY access (own or granted) to the workspace this row
+// belongs to," checked via the same owns-OR-granted join
+// fetch_workspace() uses, rather than requiring a workspace_id param.
 function fetch_persona(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM personas WHERE user_id = ? AND id = ?');
-    $stmt->execute([$userId, $id]);
+    $stmt = db()->prepare(
+        'SELECT p.* FROM personas p
+         LEFT JOIN workspaces w ON w.id = p.workspace_id
+         LEFT JOIN workspace_members wm ON wm.workspace_id = p.workspace_id AND wm.user_id = ?
+         WHERE p.id = ? AND (
+             (p.workspace_id IS NULL AND p.user_id = ?)
+             OR w.user_id = ?
+             OR wm.user_id IS NOT NULL
+         )'
+    );
+    $stmt->execute([$userId, $id, $userId, $userId]);
     return $stmt->fetch() ?: null;
 }
 
@@ -367,16 +389,31 @@ function fetch_content_pillars(int $userId, ?int $workspaceId = null): array
         $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? ORDER BY name');
         $stmt->execute([$userId]);
     } else {
-        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY name');
-        $stmt->execute([$userId, $workspaceId]);
+        // Trusts workspace_id alone (not ANDed with user_id) once a
+        // workspace is given — access to it is already gated upstream,
+        // and a granted teammate must see the same pillars the owner
+        // does. See fetch_personas()'s comment for the full reasoning.
+        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY name');
+        $stmt->execute([$workspaceId, $userId]);
     }
     return $stmt->fetchAll();
 }
 
+// Signature unchanged, same owns-OR-granted authorization join as
+// fetch_persona() — see that function's comment.
 function fetch_content_pillar(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? AND id = ?');
-    $stmt->execute([$userId, $id]);
+    $stmt = db()->prepare(
+        'SELECT cp.id, cp.name, cp.description, cp.category, cp.default_layout, cp.default_palette FROM content_pillars cp
+         LEFT JOIN workspaces w ON w.id = cp.workspace_id
+         LEFT JOIN workspace_members wm ON wm.workspace_id = cp.workspace_id AND wm.user_id = ?
+         WHERE cp.id = ? AND (
+             (cp.workspace_id IS NULL AND cp.user_id = ?)
+             OR w.user_id = ?
+             OR wm.user_id IS NOT NULL
+         )'
+    );
+    $stmt->execute([$userId, $id, $userId, $userId]);
     return $stmt->fetch() ?: null;
 }
 
@@ -452,16 +489,29 @@ function fetch_cta_library(int $userId, ?int $workspaceId = null): array
         $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE user_id = ? ORDER BY funnel_stage, text');
         $stmt->execute([$userId]);
     } else {
-        $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY funnel_stage, text');
-        $stmt->execute([$userId, $workspaceId]);
+        // Same reasoning as fetch_personas()/fetch_content_pillars() —
+        // once a workspace is given, trust workspace_id alone.
+        $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY funnel_stage, text');
+        $stmt->execute([$workspaceId, $userId]);
     }
     return $stmt->fetchAll();
 }
 
+// Signature unchanged, same owns-OR-granted authorization join as
+// fetch_persona()/fetch_content_pillar().
 function fetch_cta(int $userId, int $id): ?array
 {
-    $stmt = db()->prepare('SELECT id, text, funnel_stage FROM cta_library WHERE user_id = ? AND id = ?');
-    $stmt->execute([$userId, $id]);
+    $stmt = db()->prepare(
+        'SELECT c.id, c.text, c.funnel_stage FROM cta_library c
+         LEFT JOIN workspaces w ON w.id = c.workspace_id
+         LEFT JOIN workspace_members wm ON wm.workspace_id = c.workspace_id AND wm.user_id = ?
+         WHERE c.id = ? AND (
+             (c.workspace_id IS NULL AND c.user_id = ?)
+             OR w.user_id = ?
+             OR wm.user_id IS NOT NULL
+         )'
+    );
+    $stmt->execute([$userId, $id, $userId, $userId]);
     return $stmt->fetch() ?: null;
 }
 

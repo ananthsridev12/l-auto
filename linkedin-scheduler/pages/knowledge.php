@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
              goals = ?, content_rules = ?, website = ?,
              tagline = ?, founded_year = ?, company_size = ?, hq_location = ?, mission = ?, vision = ?, story = ?,
              credibility_statement = ?, notable_clients = ?, awards = ?
-             WHERE id = ? AND user_id = ?'
+             WHERE id = ?'
         )->execute([
             $name, $accountId,
             trim($_POST['ws_about'] ?? '') ?: null,
@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             trim($_POST['ws_credibility_statement'] ?? '') ?: null,
             trim($_POST['ws_notable_clients'] ?? '') ?: null,
             trim($_POST['ws_awards'] ?? '') ?: null,
-            $workspaceId, $userId,
+            $workspaceId,
         ]);
         flash('success', 'Company profile saved.');
         redirect('pages/knowledge.php#company');
@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'UPDATE workspaces SET tone_of_voice = ?, tone_descriptors = ?, anti_tone = ?, words_always = ?, words_never = ?,
              post_opening_style = ?, hook_style = ?, hashtag_strategy = ?, post_frequency = ?, cta_linkedin = ?,
              paragraph_style = ?, good_example = ?, bad_example = ?, custom_instructions = ?
-             WHERE id = ? AND user_id = ?'
+             WHERE id = ?'
         )->execute([
             trim($_POST['ws_tone_of_voice'] ?? '') ?: null,
             trim($_POST['ws_tone_descriptors'] ?? '') ?: null,
@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             trim($_POST['ws_good_example'] ?? '') ?: null,
             trim($_POST['ws_bad_example'] ?? '') ?: null,
             trim($_POST['ws_custom_instructions'] ?? '') ?: null,
-            $workspaceId, $userId,
+            $workspaceId,
         ]);
         flash('success', 'Tone & Voice saved.');
         redirect('pages/knowledge.php#tone');
@@ -260,8 +260,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'persona_delete') {
-        $stmt = db()->prepare('DELETE FROM personas WHERE id = ? AND user_id = ?');
-        $stmt->execute([(int) ($_POST['persona_id'] ?? 0), $userId]);
+        // workspace_id = current workspace (already owns-OR-granted
+        // resolved by current_workspace_id()), OR the legacy no-workspace
+        // rows still scoped by user_id — matches fetch_personas()'s read
+        // side so a granted teammate can manage what they can see.
+        $stmt = db()->prepare('DELETE FROM personas WHERE id = ? AND (workspace_id = ? OR (user_id = ? AND workspace_id IS NULL))');
+        $stmt->execute([(int) ($_POST['persona_id'] ?? 0), $workspaceId, $userId]);
         flash('success', 'Persona removed.');
         redirect('pages/knowledge.php');
     }
@@ -744,8 +748,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'pillar_delete') {
-        $stmt = db()->prepare('DELETE FROM content_pillars WHERE id = ? AND user_id = ?');
-        $stmt->execute([(int) ($_POST['pillar_id'] ?? 0), $userId]);
+        $stmt = db()->prepare('DELETE FROM content_pillars WHERE id = ? AND (workspace_id = ? OR (user_id = ? AND workspace_id IS NULL))');
+        $stmt->execute([(int) ($_POST['pillar_id'] ?? 0), $workspaceId, $userId]);
         flash('success', 'Content pillar removed.');
         redirect('pages/knowledge.php');
     }
@@ -765,8 +769,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'cta_delete') {
-        $stmt = db()->prepare('DELETE FROM cta_library WHERE id = ? AND user_id = ?');
-        $stmt->execute([(int) ($_POST['cta_id'] ?? 0), $userId]);
+        $stmt = db()->prepare('DELETE FROM cta_library WHERE id = ? AND (workspace_id = ? OR (user_id = ? AND workspace_id IS NULL))');
+        $stmt->execute([(int) ($_POST['cta_id'] ?? 0), $workspaceId, $userId]);
         flash('success', 'CTA removed.');
         redirect('pages/knowledge.php');
     }

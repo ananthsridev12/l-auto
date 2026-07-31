@@ -45,12 +45,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'wordpress_settings') {
-        db()->prepare('UPDATE workspaces SET wordpress_url = ?, wordpress_username = ?, wordpress_app_password = ? WHERE id = ? AND user_id = ?')
+        // $workspaceId is current_workspace_id() — already resolved and
+        // access-checked (owns OR granted) for this session, so no extra
+        // user_id condition is needed here; a granted teammate configuring
+        // this page's publishing connection is exactly "managing the page."
+        db()->prepare('UPDATE workspaces SET wordpress_url = ?, wordpress_username = ?, wordpress_app_password = ? WHERE id = ?')
             ->execute([
                 rtrim(trim($_POST['wordpress_url'] ?? ''), '/') ?: null,
                 trim($_POST['wordpress_username'] ?? '') ?: null,
                 trim($_POST['wordpress_app_password'] ?? '') ?: null,
-                $workspaceId, $userId,
+                $workspaceId,
             ]);
         flash('success', 'WordPress connection saved.');
         redirect('pages/settings.php');
@@ -66,14 +70,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'jekyll_settings') {
-        db()->prepare('UPDATE workspaces SET jekyll_repo = ?, jekyll_branch = ?, jekyll_token = ?, jekyll_posts_path = ?, jekyll_site_url = ? WHERE id = ? AND user_id = ?')
+        db()->prepare('UPDATE workspaces SET jekyll_repo = ?, jekyll_branch = ?, jekyll_token = ?, jekyll_posts_path = ?, jekyll_site_url = ? WHERE id = ?')
             ->execute([
                 trim($_POST['jekyll_repo'] ?? '') ?: null,
                 trim($_POST['jekyll_branch'] ?? '') ?: null,
                 trim($_POST['jekyll_token'] ?? '') ?: null,
                 trim($_POST['jekyll_posts_path'] ?? '', '/') ?: null,
                 rtrim(trim($_POST['jekyll_site_url'] ?? ''), '/') ?: null,
-                $workspaceId, $userId,
+                $workspaceId,
             ]);
         flash('success', 'Jekyll connection saved.');
         redirect('pages/settings.php');
@@ -89,13 +93,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'grav_settings') {
-        db()->prepare('UPDATE workspaces SET grav_site_url = ?, grav_api_key = ?, grav_route_prefix = ?, grav_template = ? WHERE id = ? AND user_id = ?')
+        db()->prepare('UPDATE workspaces SET grav_site_url = ?, grav_api_key = ?, grav_route_prefix = ?, grav_template = ? WHERE id = ?')
             ->execute([
                 rtrim(trim($_POST['grav_site_url'] ?? ''), '/') ?: null,
                 trim($_POST['grav_api_key'] ?? '') ?: null,
                 trim($_POST['grav_route_prefix'] ?? '', '/') ?: null,
                 trim($_POST['grav_template'] ?? '') ?: null,
-                $workspaceId, $userId,
+                $workspaceId,
             ]);
         flash('success', 'Grav connection saved.');
         redirect('pages/settings.php');
@@ -132,8 +136,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // become visible in every workspace) rather than destroyed.
     if (($_POST['form'] ?? '') === 'workspace_delete') {
         $wsDel = fetch_workspace($userId, (int) ($_POST['workspace_id'] ?? 0));
+        // fetch_workspace() also returns workspaces granted (not owned) via
+        // workspace_members — deleting a page is owner-only, distinct from
+        // "can manage its content," so that access alone isn't enough here.
         if (!$wsDel || $wsDel['type'] === 'personal') {
             flash('error', 'The Personal workspace can\'t be deleted.');
+            redirect('pages/settings.php');
+        }
+        if ((int) $wsDel['user_id'] !== $userId) {
+            flash('error', 'Only this page\'s owner can delete it.');
             redirect('pages/settings.php');
         }
         foreach (['content_pillars', 'personas', 'cta_library', 'news_topics', 'news_items', 'news_trusted_sources', 'calendar_batches', 'posts'] as $tbl) {
@@ -149,13 +160,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $single = $_POST['design_template_single'] ?? '';
         $carousel = $_POST['design_template_carousel'] ?? '';
         db()->prepare(
-            'UPDATE workspaces SET default_layout_single = ?, default_layout_carousel = ?, default_palette_single = ?, default_palette_carousel = ? WHERE id = ? AND user_id = ?'
+            'UPDATE workspaces SET default_layout_single = ?, default_layout_carousel = ?, default_palette_single = ?, default_palette_carousel = ? WHERE id = ?'
         )->execute([
             array_key_exists($single, $templates) ? $single : null,
             array_key_exists($carousel, $templates) ? $carousel : null,
             validate_palette_select_value($userId, trim($_POST['default_palette_single'] ?? '')),
             validate_palette_select_value($userId, trim($_POST['default_palette_carousel'] ?? '')),
-            $workspaceId, $userId,
+            $workspaceId,
         ]);
         flash('success', 'Default Design Templates updated.');
         redirect('pages/settings.php');
@@ -164,8 +175,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'news_settings') {
         $enabled = !empty($_POST['news_auto_enabled']) ? 1 : 0;
         $perDay = max(1, min(5, (int) ($_POST['news_drafts_per_day'] ?? 2)));
-        db()->prepare('UPDATE workspaces SET news_auto_enabled = ?, news_drafts_per_day = ? WHERE id = ? AND user_id = ?')
-            ->execute([$enabled, $perDay, $workspaceId, $userId]);
+        db()->prepare('UPDATE workspaces SET news_auto_enabled = ?, news_drafts_per_day = ? WHERE id = ?')
+            ->execute([$enabled, $perDay, $workspaceId]);
         flash('success', 'News auto-content settings saved.');
         redirect('pages/settings.php');
     }
