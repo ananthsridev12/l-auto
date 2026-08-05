@@ -64,6 +64,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $caption    = $_POST['caption'] ?? '';
     $title      = trim($_POST['title'] ?? '');
     $accountId  = $_POST['linkedin_account_id'] !== '' ? (int) $_POST['linkedin_account_id'] : null;
+    $existingWorkspaceId = $existing['workspace_id'] ? (int) $existing['workspace_id'] : null;
+    if ($accountId !== null && !account_usable_in_workspace($accountId, $userId, $existingWorkspaceId)) {
+        $accountId = null;
+    }
     $schedDate  = trim($_POST['scheduled_date'] ?? '');
     $schedTime  = trim($_POST['scheduled_time'] ?? '09:00');
 
@@ -95,7 +99,8 @@ if (!$post) {
     flash('error', 'Post not found.');
     redirect('pages/calendar.php');
 }
-$accounts = fetch_user_accounts($userId);
+$postWorkspaceId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
+$accounts = fetch_user_accounts($userId, $postWorkspaceId);
 $formatDisabled = !in_array($post['format'], get_enabled_formats($userId), true);
 
 // Posts whose image was generated from creative JSON (AI or "write
@@ -106,7 +111,7 @@ $creative = json_decode((string) ($post['creative_json'] ?? ''), true);
 $canReedit = $post['status'] !== 'posted'
     && in_array($post['format'], ['Single Image', 'Carousel'], true)
     && is_array($creative) && !empty($creative['slides']);
-$brandPalettes = $canReedit ? fetch_brand_palettes($userId) : [];
+$brandPalettes = $canReedit ? fetch_brand_palettes(workspace_brand_user_id($userId, $postWorkspaceId)) : [];
 
 $pageTitle   = $post['campaign_id'] ?: 'Edit Post';
 $activePage  = 'calendar';

@@ -39,6 +39,39 @@ function fetch_workspace(int $userId, int $id): ?array
     return $stmt->fetch() ?: null;
 }
 
+// Bare owner lookup, no access check — every call site already reached
+// $workspaceId through an authorized path (current_workspace_id(),
+// fetch_post(), etc.), so this is just "whose page is it" for resolving
+// brand identity (fonts/palettes/footer images — see
+// workspace_brand_user_id() below), not an authorization decision.
+function workspace_owner_id(int $workspaceId): ?int
+{
+    $stmt = db()->prepare('SELECT user_id FROM workspaces WHERE id = ?');
+    $stmt->execute([$workspaceId]);
+    $ownerId = $stmt->fetchColumn();
+    return $ownerId ? (int) $ownerId : null;
+}
+
+// Brand identity (fonts, palettes, footer image/logo, footer name size)
+// belongs to the page, not whoever happens to be posting — a granted
+// teammate acting on a shared workspace should render with the page
+// owner's brand settings, not their own personal ones. Every render/
+// resolve call site that used to pass the acting user's id straight
+// through now resolves it via this first. Falls back to the acting user
+// when there's no workspace context (a bare personal post) or the
+// workspace lookup comes back empty (shouldn't happen for an already-
+// authorized $workspaceId, but fails safe rather than fatal).
+function workspace_brand_user_id(int $actingUserId, ?int $workspaceId): int
+{
+    if ($workspaceId) {
+        $ownerId = workspace_owner_id($workspaceId);
+        if ($ownerId) {
+            return $ownerId;
+        }
+    }
+    return $actingUserId;
+}
+
 function create_workspace(int $userId, string $type, string $name, ?int $linkedinAccountId = null): int
 {
     $type = $type === 'personal' ? 'personal' : 'company';

@@ -41,15 +41,13 @@ $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your 
 $pillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
 $category = ($pillar['category'] ?? 'company') === 'personal' ? 'personal' : 'company';
 $wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
-// NOTE: brand asset resolution (footer image here, plus fonts/palettes
-// elsewhere) and the upload path below still key off the acting session
-// user ($userId), not the post's actual owner — same known gap as
-// api/post_rerender.php. Not fixed here; would need brand assets
-// resolved via the workspace owner at render time.
-$photoPath = resolve_footer_image($userId, $category, $wsId);
+// Brand identity and file storage key off the workspace owner, not
+// whoever's generating this slot — see api/post_rerender.php.
+$brandUserId = workspace_brand_user_id($userId, $wsId);
+$photoPath = resolve_footer_image($brandUserId, $category, $wsId);
 
 $campaignId = $post['campaign_id'];
-$destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+$destDir = UPLOAD_DIR . '/' . $brandUserId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
 
 try {
     $slides = render_creative_to_slides($creative, $destDir, $footerName, $photoPath, $userId, $wsId);

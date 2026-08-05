@@ -21,6 +21,13 @@ if (!function_exists('imagettftext')) {
 // is expressed as rs($px) relative to the original 1080 design so they
 // scale together; changing RENDER_SIZE alone would just add empty
 // margin, not sharpen anything (see rs() below).
+// Self-required rather than relying on every caller to have loaded it —
+// render_creative_to_slides() below calls workspace_brand_user_id() to
+// resolve brand identity via a shared workspace's owner, and not every
+// caller (e.g. cron/news_daily.php) loads includes/auth.php (which is
+// where includes/workspace.php normally comes from).
+require_once __DIR__ . '/workspace.php';
+
 const RENDER_SIZE = 1350;
 const RENDER_SCALE = RENDER_SIZE / 1080.0;
 const RENDER_PAD  = 100; // rs(80)
@@ -2462,21 +2469,30 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         throw new RuntimeException("Could not create output directory: {$outDir}");
     }
 
-    $headingFont = $userId ? fetch_heading_font($userId) : null;
-    $bodyFont = $userId ? fetch_body_font($userId) : null;
+    // Brand identity (fonts, palettes, logo) belongs to the page, not
+    // whoever's acting — a granted teammate rendering into a shared
+    // workspace gets the page owner's brand kit, same as they'd see if
+    // the owner had rendered it themselves. brand_fonts/brand_palettes
+    // and the users.heading_font_id/body_font_id/footer_* columns have
+    // no workspace_id of their own to trust directly (see
+    // includes/workspace.php workspace_brand_user_id()).
+    $brandUserId = $userId ? workspace_brand_user_id($userId, $workspaceId) : $userId;
+
+    $headingFont = $brandUserId ? fetch_heading_font($brandUserId) : null;
+    $bodyFont = $brandUserId ? fetch_body_font($brandUserId) : null;
     render_font_override_role('heading', $headingFont ? ['regular' => $headingFont['regular_path'], 'bold' => $headingFont['bold_path']] : null, true);
     render_font_override_role('body', $bodyFont ? ['regular' => $bodyFont['regular_path'], 'bold' => $bodyFont['bold_path']] : null, true);
 
     // An independent "Signature" font (fetch_footer_font()) takes priority
     // over the Heading/Body toggle (get_footer_font_role()) when the user
     // has assigned one — see includes/post_helpers.php fetch_footer_font().
-    $footerFontRole = $userId ? get_footer_font_role($userId) : 'body';
-    $footerFont = $userId ? fetch_footer_font($userId) : null;
+    $footerFontRole = $brandUserId ? get_footer_font_role($brandUserId) : 'body';
+    $footerFont = $brandUserId ? fetch_footer_font($brandUserId) : null;
     if ($footerFont) {
         render_font_override_role('footer', ['regular' => $footerFont['regular_path'], 'bold' => $footerFont['bold_path']], true);
         $footerFontRole = 'footer';
     }
-    $footerNameSizeOverride = $userId ? get_footer_name_size($userId) : null;
+    $footerNameSizeOverride = $brandUserId ? get_footer_name_size($brandUserId) : null;
 
     // "Text Size" sliders (Headline/Subheading/Body/Points) — an optional
     // per-role percentage (50-200, 100 = default) in the creative JSON,
@@ -2491,7 +2507,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
         render_font_scale_role($role, $pct / 100, true);
     }
 
-    $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $userId, $data['series_label'] ?? null);
+    $paletteColors = render_resolve_palette_colors($data['template'] ?? null, $brandUserId, $data['series_label'] ?? null);
     // Signature color is a per-palette override (see pages/settings.php
     // Brand Palettes' Signature field), not a global one — it only comes
     // through here if the resolved palette actually set it, so it
@@ -2500,8 +2516,8 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $footerNameColorRgb = $paletteColors['signature'] ?? null;
     $layout = array_key_exists($data['layout'] ?? '', render_design_templates()) ? $data['layout'] : 'classic';
     $bgStyle = in_array($data['background'] ?? '', ['gradient', 'image'], true) ? $data['background'] : 'flat';
-    $bgImagePath = ($bgStyle === 'image' && $userId) ? render_resolve_palette_background_image($data['template'] ?? null, $userId) : null;
-    $logoPath = $userId ? resolve_brand_logo($userId, $workspaceId) : null;
+    $bgImagePath = ($bgStyle === 'image' && $brandUserId) ? render_resolve_palette_background_image($data['template'] ?? null, $brandUserId) : null;
+    $logoPath = $brandUserId ? resolve_brand_logo($brandUserId, $workspaceId) : null;
     $size = array_key_exists($data['size'] ?? '', RENDER_SIZES) ? $data['size'] : 'square';
     [$canvasW, $canvasH] = RENDER_SIZES[$size];
     $textPosition = in_array($data['text_position'] ?? '', ['center', 'bottom'], true) ? $data['text_position'] : 'top';

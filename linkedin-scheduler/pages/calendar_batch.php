@@ -34,8 +34,9 @@ foreach ($posts as &$post) {
 }
 unset($post);
 
-$accounts = fetch_user_accounts($userId);
-$brandPalettes = fetch_brand_palettes($userId);
+$batchWorkspaceId = $batch['workspace_id'] ? (int) $batch['workspace_id'] : null;
+$accounts = fetch_user_accounts($userId, $batchWorkspaceId);
+$brandPalettes = fetch_brand_palettes(workspace_brand_user_id($userId, $batchWorkspaceId));
 
 $pageTitle  = 'Calendar Batch';
 $activePage = 'content_calendar';

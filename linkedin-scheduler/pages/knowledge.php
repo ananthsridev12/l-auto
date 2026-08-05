@@ -790,7 +790,7 @@ $contentPillars = fetch_content_pillars($userId, $workspaceId);
 $knowledgeDocuments = fetch_knowledge_documents($workspaceId);
 $ctaLibrary = fetch_cta_library($userId, $workspaceId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
-$brandPalettes = fetch_brand_palettes($userId);
+$brandPalettes = fetch_brand_palettes(workspace_brand_user_id($userId, $workspaceId));
 $kbCompleteness = kb_completeness($userId, $workspace);
 
 $pageTitle  = 'Knowledge Base';

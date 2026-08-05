@@ -16,11 +16,11 @@ $workspaceId = current_workspace_id();
 $workspace = current_workspace();
 
 $availableFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel'], get_enabled_formats($userId)));
-$accounts = fetch_user_accounts($userId);
+$accounts = fetch_user_accounts($userId, $workspaceId);
 $aiConfig = resolve_ai_config($userId);
 $personas = fetch_personas($userId, $workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
-$brandPalettes = fetch_brand_palettes($userId);
+$brandPalettes = fetch_brand_palettes(workspace_brand_user_id($userId, $workspaceId));
 $services = fetch_services($workspaceId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -72,6 +72,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $caption    = $_POST['caption'] ?? '';
     $title      = trim($_POST['title'] ?? '');
     $accountId  = $_POST['linkedin_account_id'] !== '' ? (int) $_POST['linkedin_account_id'] : null;
+    if ($accountId !== null && !account_usable_in_workspace($accountId, $userId, $workspaceId)) {
+        $accountId = null;
+    }
     $campaignId = trim($_POST['campaign_id'] ?? '');
     // A duplicate campaign_id used to fail the INSERT below and redirect
     // back to a blank form, losing everything the user typed/uploaded —
@@ -130,8 +133,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($aiCreative !== null && in_array($format, ['Single Image', 'Carousel'], true)) {
         $user = current_user();
         $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
-        $photoPath = resolve_footer_image($userId, 'personal', $workspaceId);
-        $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+        // New post's files land under the workspace owner's directory
+        // (not whoever's composing it), so a later re-render by anyone
+        // else granted this page resolves the same location — see
+        // api/post_rerender.php.
+        $brandUserId = workspace_brand_user_id($userId, $workspaceId);
+        $photoPath = resolve_footer_image($brandUserId, 'personal', $workspaceId);
+        $destDir = UPLOAD_DIR . '/' . $brandUserId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         try {
             $slides = render_creative_to_slides($aiCreative, $destDir, $footerName, $photoPath, $userId, $workspaceId);
         } catch (Throwable $e) {

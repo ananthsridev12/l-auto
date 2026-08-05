@@ -87,11 +87,55 @@ function slide_public_url(string $filepath): string
     return $mtime !== false ? $url . '?v=' . $mtime : $url;
 }
 
-function fetch_user_accounts(int $userId): array
+function fetch_user_accounts(int $userId, ?int $workspaceId = null): array
 {
     $stmt = db()->prepare('SELECT id, display_name, account_type FROM linkedin_accounts WHERE user_id = ? AND status = "active" ORDER BY display_name');
     $stmt->execute([$userId]);
-    return $stmt->fetchAll();
+    $accounts = $stmt->fetchAll();
+
+    if ($workspaceId) {
+        // A granted (not owning) teammate should also be able to post
+        // through the page's own designated account, not just accounts
+        // they personally connected — resolved via the workspace's own
+        // linkedin_account_id (set when the page was connected), not the
+        // acting user. Skipped if already in the list (the owner sees no
+        // duplicate).
+        $wsStmt = db()->prepare(
+            "SELECT la.id, la.display_name, la.account_type
+             FROM workspaces w JOIN linkedin_accounts la ON la.id = w.linkedin_account_id
+             WHERE w.id = ? AND la.status = 'active'"
+        );
+        $wsStmt->execute([$workspaceId]);
+        $wsAccount = $wsStmt->fetch();
+        if ($wsAccount && !in_array((int) $wsAccount['id'], array_column($accounts, 'id'), true)) {
+            array_unshift($accounts, $wsAccount);
+        }
+    }
+
+    return $accounts;
+}
+
+// Whether $userId may assign/use $accountId when acting on a post/batch
+// belonging to $workspaceId — either they connected the account
+// themselves, or it's the workspace's own designated account, so a
+// granted teammate can post through the page owner's account the same
+// way user_can_access_workspace() lets them see/edit the page's content.
+function account_usable_in_workspace(int $accountId, int $userId, ?int $workspaceId): bool
+{
+    $stmt = db()->prepare('SELECT 1 FROM linkedin_accounts WHERE id = ? AND user_id = ? AND status = "active"');
+    $stmt->execute([$accountId, $userId]);
+    if ($stmt->fetchColumn()) {
+        return true;
+    }
+    if (!$workspaceId) {
+        return false;
+    }
+    $wsStmt = db()->prepare(
+        "SELECT 1 FROM workspaces w JOIN linkedin_accounts la ON la.id = w.linkedin_account_id
+         WHERE w.id = ? AND la.id = ? AND la.status = 'active'"
+    );
+    $wsStmt->execute([$workspaceId, $accountId]);
+    return (bool) $wsStmt->fetchColumn();
 }
 
 function fetch_tag_directory(int $userId): array
@@ -479,16 +523,27 @@ function fetch_content_pillar(int $userId, int $id): ?array
 function resolve_default_layout(int $userId, string $format, ?string $pillarName = null, ?int $workspaceId = null): string
 {
     if ($pillarName) {
-        $stmt = db()->prepare('SELECT default_layout FROM content_pillars WHERE user_id = ? AND name = ? LIMIT 1');
-        $stmt->execute([$userId, $pillarName]);
+        // Same workspace-trusting rule as fetch_content_pillars() — once
+        // $workspaceId is given, match by name within it rather than by
+        // user_id, so a granted teammate resolves the page's own pillar.
+        if ($workspaceId !== null) {
+            $stmt = db()->prepare('SELECT default_layout FROM content_pillars WHERE (workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)) AND name = ? LIMIT 1');
+            $stmt->execute([$workspaceId, $userId, $pillarName]);
+        } else {
+            $stmt = db()->prepare('SELECT default_layout FROM content_pillars WHERE user_id = ? AND name = ? LIMIT 1');
+            $stmt->execute([$userId, $pillarName]);
+        }
         $pillarLayout = $stmt->fetchColumn();
         if ($pillarLayout) {
             return $pillarLayout;
         }
     }
     if ($workspaceId !== null) {
-        $stmt = db()->prepare('SELECT default_layout_single, default_layout_carousel FROM workspaces WHERE id = ? AND user_id = ?');
-        $stmt->execute([$workspaceId, $userId]);
+        // $workspaceId is already access-checked by the caller (owns or
+        // granted) — these two columns live on the workspace row itself,
+        // not per-user, so trust it alone, same as fetch_personas() et al.
+        $stmt = db()->prepare('SELECT default_layout_single, default_layout_carousel FROM workspaces WHERE id = ?');
+        $stmt->execute([$workspaceId]);
     } else {
         $stmt = db()->prepare('SELECT default_layout_single, default_layout_carousel FROM users WHERE id = ?');
         $stmt->execute([$userId]);
@@ -513,16 +568,23 @@ function resolve_default_layout(int $userId, string $format, ?string $pillarName
 function resolve_default_palette(int $userId, string $format, ?string $pillarName = null, ?int $workspaceId = null): ?string
 {
     if ($pillarName) {
-        $stmt = db()->prepare('SELECT default_palette FROM content_pillars WHERE user_id = ? AND name = ? LIMIT 1');
-        $stmt->execute([$userId, $pillarName]);
+        if ($workspaceId !== null) {
+            $stmt = db()->prepare('SELECT default_palette FROM content_pillars WHERE (workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)) AND name = ? LIMIT 1');
+            $stmt->execute([$workspaceId, $userId, $pillarName]);
+        } else {
+            $stmt = db()->prepare('SELECT default_palette FROM content_pillars WHERE user_id = ? AND name = ? LIMIT 1');
+            $stmt->execute([$userId, $pillarName]);
+        }
         $pillarPalette = $stmt->fetchColumn();
         if ($pillarPalette) {
             return $pillarPalette;
         }
     }
     if ($workspaceId !== null) {
-        $stmt = db()->prepare('SELECT default_palette_single, default_palette_carousel FROM workspaces WHERE id = ? AND user_id = ?');
-        $stmt->execute([$workspaceId, $userId]);
+        // Same reasoning as resolve_default_layout() — these columns
+        // live on the workspace row itself, trust $workspaceId alone.
+        $stmt = db()->prepare('SELECT default_palette_single, default_palette_carousel FROM workspaces WHERE id = ?');
+        $stmt->execute([$workspaceId]);
     } else {
         $stmt = db()->prepare('SELECT default_palette_single, default_palette_carousel FROM users WHERE id = ?');
         $stmt->execute([$userId]);

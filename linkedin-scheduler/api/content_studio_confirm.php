@@ -37,7 +37,10 @@ $ownedAccountIds = array_map('intval', array_column($stmt->fetchAll(), 'id'));
 
 $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
-$photoPath = resolve_footer_image($userId, 'personal', $workspaceId);
+// Brand identity and file storage key off the workspace owner, not
+// whoever's importing — see api/post_rerender.php.
+$brandUserId = workspace_brand_user_id($userId, $workspaceId);
+$photoPath = resolve_footer_image($brandUserId, 'personal', $workspaceId);
 
 $pdo = db();
 $pdo->beginTransaction();
@@ -124,7 +127,7 @@ foreach ($rows as $row) {
     }
 
     $safeCampaign = preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
-    $outDir = UPLOAD_DIR . '/' . $userId . '/' . $safeCampaign;
+    $outDir = UPLOAD_DIR . '/' . $brandUserId . '/' . $safeCampaign;
 
     try {
         $slides = render_creative_to_slides($creative, $outDir, $footerName, $photoPath, $userId, $workspaceId);

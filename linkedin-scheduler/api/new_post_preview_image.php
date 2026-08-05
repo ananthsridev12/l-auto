@@ -30,7 +30,7 @@ $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
 // No pillar/category context at preview time (same as the actual save
 // path for New Post) — defaults to the personal footer image slot.
-$photoPath = resolve_footer_image($userId, 'personal', $workspaceId);
+$photoPath = resolve_footer_image(workspace_brand_user_id($userId, $workspaceId), 'personal', $workspaceId);
 
 // Fixed, per-user scratch path — cleared on every preview rather than
 // accumulating files (e.g. switching Carousel -> Single Image would

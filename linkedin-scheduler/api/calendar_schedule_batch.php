@@ -26,13 +26,8 @@ if (!$batch || $batch['status'] !== 'ready') {
     json_response(['success' => false, 'error' => 'This calendar is not ready to schedule yet.'], 422);
 }
 
-// NOTE: linkedin_accounts is still strictly user_id-scoped (no
-// workspace_id) — a granted teammate can only schedule through their
-// own connected accounts here, not the page owner's. Same known
-// limitation as api/assign_account.php.
-$acctStmt = db()->prepare('SELECT id FROM linkedin_accounts WHERE id = ? AND user_id = ? AND status = "active"');
-$acctStmt->execute([$accountId, $userId]);
-if (!$acctStmt->fetch()) {
+$batchWorkspaceId = $batch['workspace_id'] ? (int) $batch['workspace_id'] : null;
+if (!account_usable_in_workspace($accountId, $userId, $batchWorkspaceId)) {
     json_response(['success' => false, 'error' => 'Choose a valid, active LinkedIn account.'], 422);
 }
 

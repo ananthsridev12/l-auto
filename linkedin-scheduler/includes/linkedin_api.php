@@ -186,17 +186,14 @@ function li_publish_post(string $accessToken, string $actingUrn, string $format,
 // action — both need identical validation and the same publish/record
 // logic, so it lives in one place. Callers must have already loaded
 // db.php, helpers.php (get_enabled_formats) and post_helpers.php
-// (get_mention_candidates), same as everywhere else in this codebase.
+// (fetch_post(), get_mention_candidates), same as everywhere else in
+// this codebase.
 function publish_post_now(int $postId, int $userId): array
 {
-    $stmt = db()->prepare(
-        'SELECT p.*, la.access_token, la.target_urn, la.status AS account_status
-         FROM posts p
-         LEFT JOIN linkedin_accounts la ON la.id = p.linkedin_account_id
-         WHERE p.id = ? AND p.user_id = ?'
-    );
-    $stmt->execute([$postId, $userId]);
-    $post = $stmt->fetch();
+    // fetch_post() applies the same owns-OR-granted access check as
+    // everywhere else a shared workspace's posts are read — a teammate
+    // granted this page can Post Now the same as its owner.
+    $post = fetch_post($postId, $userId);
 
     if (!$post) {
         return ['success' => false, 'error' => 'Post not found', 'status_code' => 404];
@@ -204,7 +201,16 @@ function publish_post_now(int $postId, int $userId): array
     if (!$post['linkedin_account_id']) {
         return ['success' => false, 'error' => 'Assign a LinkedIn account to this post before posting.', 'status_code' => 422];
     }
-    if ($post['account_status'] !== 'active') {
+    // No ownership re-check here: linkedin_account_id is only ever set
+    // through account_usable_in_workspace()-validated writes (New Post,
+    // Post edit, Bulk Schedule's account assignment), so by the time a
+    // post reaches here the assignment is already legitimate — same
+    // trust-at-use-time pattern cron/auto_post.php relies on.
+    $acctStmt = db()->prepare('SELECT access_token, target_urn, status AS account_status FROM linkedin_accounts WHERE id = ?');
+    $acctStmt->execute([$post['linkedin_account_id']]);
+    $account = $acctStmt->fetch();
+    $post = array_merge($post, $account ?: ['access_token' => null, 'target_urn' => null, 'account_status' => null]);
+    if (!$account || $post['account_status'] !== 'active') {
         return ['success' => false, 'error' => 'The connected LinkedIn account needs to be reconnected.', 'status_code' => 422];
     }
     if (!in_array($post['format'], get_enabled_formats($userId), true)) {

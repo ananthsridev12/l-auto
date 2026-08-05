@@ -90,16 +90,14 @@ $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your 
 $pillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
 $category = ($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal';
 $wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
-$photoPath = resolve_footer_image($userId, $category, $wsId);
-
-// NOTE: resolve_footer_image()/render_creative_to_slides() below and the
-// upload path here still resolve via the acting session user ($userId),
-// not the post's actual owner — for a granted-not-owning teammate this
-// means a shared page's brand assets (palettes/fonts) and file storage
-// path aren't correctly attributed. Fixing that needs brand asset
-// resolution to go through the workspace owner at render time, a larger
-// cross-cutting change deliberately left out of this pass.
-$destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $post['campaign_id']);
+// Brand identity AND file storage both key off the workspace owner, not
+// whoever's re-rendering — a granted teammate re-editing a shared page's
+// post should produce the same look the owner would get, and land in
+// the same directory the post's other slides already live in (which was
+// created under the owner's id when the post was first rendered).
+$brandUserId = workspace_brand_user_id($userId, $wsId);
+$photoPath = resolve_footer_image($brandUserId, $category, $wsId);
+$destDir = UPLOAD_DIR . '/' . $brandUserId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $post['campaign_id']);
 
 // The old slide files are removed before rendering — the new render may
 // produce fewer slides (or the same names), and stale extras would

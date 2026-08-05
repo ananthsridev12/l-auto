@@ -13,7 +13,7 @@ $pageScripts = ['content_studio.js'];
 $csrf = csrf_token();
 $previewUrl = app_path('api/content_studio_preview.php');
 $confirmUrl = app_path('api/content_studio_confirm.php');
-$brandPalettes = fetch_brand_palettes(current_user_id());
+$brandPalettes = fetch_brand_palettes(workspace_brand_user_id(current_user_id(), current_workspace_id()));
 require __DIR__ . '/../includes/layout_top.php';
 ?>
 <div class="page-header">

@@ -24,15 +24,9 @@ if ($post['status'] === 'posted') {
     json_response(['success' => false, 'error' => 'This post has already been published.'], 422);
 }
 
-// NOTE: linkedin_accounts has no workspace_id — still strictly
-// user_id-scoped, so a granted (not owning) teammate can only assign
-// their own connected accounts here, not the page owner's. Sharing
-// LinkedIn account access across an org is a separate, larger change
-// than this post-access fix.
 if ($accountId !== null) {
-    $check = db()->prepare('SELECT id FROM linkedin_accounts WHERE id = ? AND user_id = ? AND status = "active"');
-    $check->execute([$accountId, $userId]);
-    if (!$check->fetch()) {
+    $wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
+    if (!account_usable_in_workspace($accountId, $userId, $wsId)) {
         json_response(['success' => false, 'error' => 'Invalid LinkedIn account'], 422);
     }
 }

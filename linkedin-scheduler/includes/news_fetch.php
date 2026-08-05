@@ -494,8 +494,14 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         $footerName = trim($u['name'] ?? '') ?: explode('@', $u['email'] ?? 'Your Name')[0];
         $category = $workspace ? ($workspace['type'] === 'company' ? 'company' : 'personal')
             : (($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal');
-        $photoPath = resolve_footer_image($userId, $category, $wsId);
-        $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+        // $userId here is the workspace's owner when called from the daily
+        // cron (iterates workspaces directly), but news_studio.php's
+        // "Create Now" button calls this with the acting session user,
+        // which can be a granted-not-owning teammate — resolve brand
+        // identity/storage via the workspace owner either way.
+        $brandUserId = workspace_brand_user_id($userId, $wsId);
+        $photoPath = resolve_footer_image($brandUserId, $category, $wsId);
+        $destDir = UPLOAD_DIR . '/' . $brandUserId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         try {
             $slides = render_creative_to_slides($creative, $destDir, $footerName, $photoPath, $userId, $wsId);
         } catch (Throwable $e) {

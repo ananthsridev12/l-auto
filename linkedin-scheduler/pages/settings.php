@@ -16,6 +16,13 @@ $userId = current_user_id();
 $user = current_user();
 $workspaceId = current_workspace_id();
 $workspace = current_workspace();
+// Per-workspace branding (footer logo/photo, brand logo) is stored and
+// read under the page owner's directory, not whoever's acting — so a
+// granted teammate uploading for a shared page updates the same file
+// everyone (including render_creative_to_slides()) resolves, and sees
+// the owner's existing upload rather than "nothing set yet". See
+// includes/workspace.php workspace_brand_user_id().
+$brandUserId = workspace_brand_user_id($userId, $workspaceId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
@@ -321,7 +328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/settings.php');
         }
         $ext = $mime === 'image/png' ? 'png' : 'jpg';
-        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding";
+        $dir = UPLOAD_DIR . "/{$brandUserId}/workspace_{$workspaceId}/branding";
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
@@ -335,7 +342,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['form'] ?? '') === 'footer_image_remove') {
         $slot = ($_POST['image_slot'] ?? '') === 'logo' ? 'logo' : 'photo';
-        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding";
+        $dir = UPLOAD_DIR . "/{$brandUserId}/workspace_{$workspaceId}/branding";
         foreach (['png', 'jpg', 'jpeg'] as $ext) {
             @unlink("{$dir}/{$slot}.{$ext}");
         }
@@ -355,7 +362,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/settings.php');
         }
         $ext = $mime === 'image/png' ? 'png' : 'jpg';
-        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding";
+        $dir = UPLOAD_DIR . "/{$brandUserId}/workspace_{$workspaceId}/branding";
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
@@ -368,7 +375,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'brand_logo_remove') {
-        $dir = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding";
+        $dir = UPLOAD_DIR . "/{$brandUserId}/workspace_{$workspaceId}/branding";
         foreach (['png', 'jpg', 'jpeg'] as $ext) {
             @unlink("{$dir}/brand_logo.{$ext}");
         }
@@ -654,7 +661,7 @@ $footerImages = [];
 foreach (['logo', 'photo'] as $slot) {
     $footerImages[$slot] = null;
     foreach (['png', 'jpg', 'jpeg'] as $ext) {
-        $path = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding/{$slot}.{$ext}";
+        $path = UPLOAD_DIR . "/{$brandUserId}/workspace_{$workspaceId}/branding/{$slot}.{$ext}";
         if (is_file($path)) {
             $footerImages[$slot] = slide_public_url($path);
             break;
@@ -665,7 +672,7 @@ foreach (['logo', 'photo'] as $slot) {
 $brandLogoUrl = null;
 $brandLogoPath = null;
 foreach (['png', 'jpg', 'jpeg'] as $ext) {
-    $path = UPLOAD_DIR . "/{$userId}/workspace_{$workspaceId}/branding/brand_logo.{$ext}";
+    $path = UPLOAD_DIR . "/{$brandUserId}/workspace_{$workspaceId}/branding/brand_logo.{$ext}";
     if (is_file($path)) {
         $brandLogoPath = $path;
         break;
