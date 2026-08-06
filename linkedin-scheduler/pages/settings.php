@@ -906,7 +906,7 @@ require __DIR__ . '/../includes/layout_top.php';
       <div class="account-row">
         <div class="account-info">
           <?php if ($bp['background_image_path']): ?>
-            <img src="<?= h(slide_public_url($bp['background_image_path'])) ?>" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #0002;">
+            <img src="<?= h(slide_public_url($bp['background_image_path'])) ?>" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid var(--gray-200);">
           <?php endif; ?>
           <span><?= h($bp['name']) ?></span>
           <?php if ($bp['is_default']): ?><span class="badge badge-active">Default</span><?php endif; ?>

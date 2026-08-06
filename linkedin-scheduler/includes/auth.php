@@ -30,7 +30,7 @@ function current_user(): ?array
 function require_login(): void
 {
     if (!current_user_id()) {
-        header('Location: ' . app_path('index.php'));
+        header('Location: ' . app_path('login.php'));
         exit;
     }
 }

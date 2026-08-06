@@ -1,13 +1,52 @@
+/* ── Self-hosted webfont ─────────────────────────────────────────────
+   Inter (OFL-licensed), 4 static weights, downloaded once rather than
+   loaded from Google's CDN — matches the rest of this app's zero
+   third-party-request policy. Falls back to the system-font stack
+   below if a file ever fails to load. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/web/Inter-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../fonts/web/Inter-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../fonts/web/Inter-SemiBold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../fonts/web/Inter-Bold.woff2') format('woff2');
+}
+
 /* ── Design tokens ──────────────────────────────────────────────────
    Single source of truth for color/spacing/radius/shadow, replacing
    what used to be ~15 ad hoc grays, 3 competing blues, and 4 shadow
    opacities scattered across this file. Every rule below should
    reference these instead of a literal hex/px value. */
 :root {
-  --color-brand: #0A66C2;
-  --color-brand-hover: #004182;
-  --color-brand-tint: #EAF1FC;
-  --color-brand-light: #B7C6F7;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  --color-brand: #5B4FE8;
+  --color-brand-hover: #4438C7;
+  --color-brand-tint: #EFECFE;
+  --color-brand-light: #C9C2FA;
+
+  --color-accent: #FF6B57;
+  --color-accent-hover: #E5503C;
 
   --gray-900: #171717;
   --gray-700: #3A3A3A;
@@ -57,7 +96,7 @@
   --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
   --shadow-lg: 0 4px 24px rgba(0,0,0,0.14);
 
-  --focus-ring: 0 0 0 3px rgba(10,102,194,0.25);
+  --focus-ring: 0 0 0 3px rgba(91,79,232,0.25);
 }
 
 /* ── Dark theme ──────────────────────────────────────────────────────
@@ -69,8 +108,13 @@
    (no preference saved yet) the prefers-color-scheme block mirrors
    the same values so a first visit still respects the OS setting. */
 :root[data-theme="dark"] {
-  --color-brand-tint: rgba(10,102,194,0.18);
-  --color-brand-light: #5B8FD1;
+  --color-brand: #8B7FFF;
+  --color-brand-hover: #A79BFF;
+  --color-brand-tint: rgba(91,79,232,0.18);
+  --color-brand-light: #B3A8FA;
+
+  --color-accent: #FF8A78;
+  --color-accent-hover: #FFA697;
 
   --gray-900: #E8EAF0;
   --gray-700: #C7CAD3;
@@ -89,7 +133,7 @@
   --color-danger-text: #F87171;
   --color-danger-border: rgba(239,68,68,0.35);
   --color-info-bg: var(--color-brand-tint);
-  --color-info-text: #6EA8E0;
+  --color-info-text: #A79BFF;
   --color-neutral-bg: rgba(255,255,255,0.06);
   --color-neutral-text: var(--gray-600);
   --color-purple-bg: rgba(168,85,247,0.15);
@@ -100,8 +144,13 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --color-brand-tint: rgba(10,102,194,0.18);
-    --color-brand-light: #5B8FD1;
+    --color-brand: #8B7FFF;
+    --color-brand-hover: #A79BFF;
+    --color-brand-tint: rgba(91,79,232,0.18);
+    --color-brand-light: #B3A8FA;
+
+    --color-accent: #FF8A78;
+    --color-accent-hover: #FFA697;
 
     --gray-900: #E8EAF0;
     --gray-700: #C7CAD3;
@@ -120,7 +169,7 @@
     --color-danger-text: #F87171;
     --color-danger-border: rgba(239,68,68,0.35);
     --color-info-bg: var(--color-brand-tint);
-    --color-info-text: #6EA8E0;
+    --color-info-text: #A79BFF;
     --color-neutral-bg: rgba(255,255,255,0.06);
     --color-neutral-text: var(--gray-600);
     --color-purple-bg: rgba(168,85,247,0.15);
@@ -134,7 +183,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   background: var(--gray-50);
   color: var(--gray-900);
   font-size: 15px;
@@ -560,8 +609,8 @@ body.centered-page {
 .hint { font-size: 12px; color: var(--gray-500); margin-top: 4px; }
 
 .redirect-notice {
-  background: #FFF8E1;
-  border: 1px solid #FFE082;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-text);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   font-size: 13px;
@@ -572,8 +621,8 @@ body.centered-page {
 }
 .redirect-notice code {
   display: block;
-  background: white;
-  border: 1px solid #FFE082;
+  background: var(--color-surface);
+  border: 1px solid var(--color-warning-text);
   border-radius: var(--radius-sm);
   padding: 4px 8px;
   margin-top: 6px;
@@ -612,7 +661,7 @@ body.centered-page {
 .post-btn:hover:not(:disabled) { background: var(--color-brand-hover); }
 .post-btn:disabled { background: var(--gray-400); cursor: not-allowed; }
 
-.link-muted { color: var(--gray-500); font-size: 13px; text-decoration: none; }
+.link-muted { color: var(--gray-500); font-size: 13px; text-decoration: none; white-space: nowrap; }
 .link-muted:hover { color: var(--gray-600); }
 
 /* ── Flash messages, cards, forms, accounts, import wizard ── */
@@ -754,6 +803,7 @@ body.centered-page {
   cursor: pointer;
   text-decoration: none;
   display: inline-block;
+  white-space: nowrap;
 }
 .btn-secondary:hover { background: var(--color-brand-tint); }
 
@@ -1151,3 +1201,102 @@ input[type="range"]::-moz-range-thumb {
 input[type="range"]::-moz-range-thumb:hover,
 input[type="range"]::-moz-range-thumb:active { transform: scale(1.15); }
 input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: var(--focus-ring); }
+
+/* ── Public marketing site (Home/Pricing/About/Terms/Privacy) ───────
+   Separate shell from the logged-in .app sidebar layout and the
+   single-card .auth-card — a full-width header/footer site chrome. */
+body.public { background: var(--gray-50); }
+
+/* .btn-primary defaults to width:100% for its usual form-submit-button
+   role — override back to auto wherever it's used as an inline pill
+   link instead (header/hero CTAs). */
+.public-actions .btn-primary,
+.hero-actions .btn-primary,
+.hero-actions .btn-secondary { width: auto; white-space: nowrap; }
+
+.public-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-7);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--gray-200);
+}
+.public-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--gray-900);
+}
+.public-nav { display: flex; gap: var(--space-5); flex: 1; }
+.public-nav a { color: var(--gray-600); text-decoration: none; font-size: 14px; font-weight: 500; }
+.public-nav a:hover { color: var(--color-brand); }
+.public-actions { display: flex; align-items: center; gap: var(--space-4); }
+
+.public-main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-7);
+}
+
+.public-footer {
+  display: flex;
+  gap: var(--space-8);
+  padding: var(--space-7);
+  border-top: 1px solid var(--gray-200);
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.public-footer-col { display: flex; flex-direction: column; gap: var(--space-2); font-size: 13px; }
+.public-footer-col strong { color: var(--gray-900); margin-bottom: var(--space-1); }
+.public-footer-col a { color: var(--gray-500); text-decoration: none; }
+.public-footer-col a:hover { color: var(--color-brand); }
+.public-footer-copyright { margin-left: auto; align-self: flex-end; color: var(--gray-400); font-size: 12px; }
+
+.hero { text-align: center; padding: var(--space-8) 0 var(--space-7); }
+.hero h1 { font-size: 36px; font-weight: 700; line-height: 1.2; max-width: 760px; margin: 0 auto var(--space-4); }
+.hero-subtitle { font-size: 17px; color: var(--gray-600); max-width: 600px; margin: 0 auto var(--space-6); line-height: 1.6; }
+.hero-actions { display: flex; justify-content: center; gap: var(--space-3); }
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-5);
+  margin: var(--space-7) 0;
+}
+.feature-card { transition: box-shadow 0.15s; }
+.feature-card:hover { box-shadow: var(--shadow-md); }
+.feature-card h3 { font-size: 16px; font-weight: 700; margin-bottom: var(--space-2); }
+
+.cta-band {
+  text-align: center;
+  background: var(--color-brand-tint);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7);
+  margin-top: var(--space-7);
+}
+.cta-band h2 { font-size: 22px; font-weight: 700; margin-bottom: var(--space-5); }
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-5);
+  margin-top: var(--space-6);
+}
+.pricing-card { text-align: center; transition: box-shadow 0.15s; }
+.pricing-card:hover { box-shadow: var(--shadow-md); }
+.pricing-card h3 { font-size: 18px; font-weight: 700; margin-bottom: var(--space-4); }
+.pricing-limits { list-style: none; margin-bottom: var(--space-5); color: var(--gray-600); font-size: 14px; }
+.pricing-limits li { padding: var(--space-1) 0; }
+
+@media (max-width: 768px) {
+  .public-header { flex-wrap: wrap; padding: var(--space-3) var(--space-4); }
+  .public-nav { order: 3; width: 100%; justify-content: center; }
+  .public-main { padding: var(--space-6) var(--space-4); }
+  .hero h1 { font-size: 26px; }
+  .public-footer { flex-direction: column; gap: var(--space-4); }
+  .public-footer-copyright { margin-left: 0; align-self: flex-start; }
+}

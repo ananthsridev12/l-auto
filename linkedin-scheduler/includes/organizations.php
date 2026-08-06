@@ -47,6 +47,14 @@ function fetch_organization(int $orgId): ?array
     return $stmt->fetch() ?: null;
 }
 
+// Public-facing plan list for pricing.php — active plans only, no auth
+// required. Kept separate from any admin-only plan-management fetch
+// since it's read by a pre-auth page.
+function fetch_public_plans(): array
+{
+    return db()->query('SELECT * FROM plans WHERE is_active = 1 ORDER BY id')->fetchAll();
+}
+
 // Every member of the org (owner/admin/member) — the roster shown in
 // Settings > Organization and the superadmin panel.
 function fetch_org_members(int $orgId): array

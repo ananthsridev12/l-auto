@@ -80,6 +80,25 @@ function create_workspace(int $userId, string $type, string $name, ?int $linkedi
     return (int) db()->lastInsertId();
 }
 
+// Used by the post-signup onboarding steps (signup_company.php/
+// signup_goals.php) — no ownership check here, the caller resolves
+// $workspaceId via personal_workspace_id(current_user_id()) in the same
+// request, already authorized.
+function set_workspace_name(int $workspaceId, string $name): void
+{
+    $name = trim($name);
+    if ($name === '') {
+        return;
+    }
+    db()->prepare('UPDATE workspaces SET name = ? WHERE id = ?')->execute([$name, $workspaceId]);
+}
+
+function set_workspace_goals(int $workspaceId, string $goals): void
+{
+    $goals = trim($goals);
+    db()->prepare('UPDATE workspaces SET goals = ? WHERE id = ?')->execute([$goals !== '' ? $goals : null, $workspaceId]);
+}
+
 // The one personal workspace — created on first touch so existing
 // sessions/users never hit a "no workspace" state even before the
 // migration script has run.

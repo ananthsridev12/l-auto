@@ -6,73 +6,49 @@ if (current_user_id()) {
     redirect('dashboard.php');
 }
 
-$mode = ($_GET['mode'] ?? '') === 'register' ? 'register' : 'login';
-$error = null;
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!csrf_check($_POST['csrf'] ?? null)) {
-        $error = 'Your session expired, please try again.';
-    } elseif (($_POST['mode'] ?? '') === 'register') {
-        [$ok, $err] = register_user($_POST['email'] ?? '', $_POST['password'] ?? '', $_POST['name'] ?? '');
-        if ($ok) {
-            [$ok2, $err2] = attempt_login($_POST['email'], $_POST['password']);
-            redirect('dashboard.php');
-        }
-        $mode = 'register';
-        $error = $err;
-    } else {
-        [$ok, $err] = attempt_login($_POST['email'] ?? '', $_POST['password'] ?? '');
-        if ($ok) {
-            redirect('dashboard.php');
-        }
-        $mode = 'login';
-        $error = $err;
-    }
-}
-
-$token = csrf_token();
+$pageTitle = 'Easi7 PostPilot — Schedule and generate LinkedIn content';
+require __DIR__ . '/includes/public_layout_top.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LinkedIn Scheduler</title>
-  <link rel="stylesheet" href="assets/css/style.css">
-</head>
-<body class="centered-page">
-<div class="auth-card">
-  <div class="auth-logo">
-    <svg viewBox="0 0 24 24" fill="#0A66C2" width="40" height="40"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+<section class="hero">
+  <h1>Plan, generate, and post LinkedIn content — without the daily scramble</h1>
+  <p class="hero-subtitle">Easi7 PostPilot schedules your posts, writes drafts with AI in your own
+    voice, and keeps every page your team manages organized in one place.</p>
+  <div class="hero-actions">
+    <a href="<?= h(app_path('signup.php')) ?>" class="btn-primary">Get started free</a>
+    <a href="<?= h(app_path('login.php')) ?>" class="btn-secondary">Log in</a>
   </div>
+</section>
 
-  <h1><?= $mode === 'register' ? 'Create your account' : 'Sign in' ?></h1>
-  <p class="subtitle">Schedule and post LinkedIn content across all your profiles and pages.</p>
+<section class="feature-grid">
+  <div class="card feature-card">
+    <h3>Schedule with confidence</h3>
+    <p class="muted">Plan posts on a calendar, queue drafts, and let auto-posting publish them on
+      time — text, single image, or carousel.</p>
+  </div>
+  <div class="card feature-card">
+    <h3>AI-generated content</h3>
+    <p class="muted">Generate on-brand captions and images from a topic or a full content brief,
+      powered by your choice of AI provider.</p>
+  </div>
+  <div class="card feature-card">
+    <h3>Content Calendar</h3>
+    <p class="muted">Plan a whole batch of posts at once, mixed across your content pillars, then
+      review and approve before anything goes out.</p>
+  </div>
+  <div class="card feature-card">
+    <h3>One page or many</h3>
+    <p class="muted">Keep a personal profile and every company page you manage in its own
+      workspace, each with its own brand voice and knowledge base.</p>
+  </div>
+  <div class="card feature-card">
+    <h3>Built for teams</h3>
+    <p class="muted">Invite teammates and grant access to specific pages — everyone works from the
+      same content, nobody sees pages they shouldn't.</p>
+  </div>
+</section>
 
-  <?php if ($error): ?><div class="flash flash-error"><?= h($error) ?></div><?php endif; ?>
-
-  <form method="post" class="stacked-form">
-    <input type="hidden" name="csrf" value="<?= h($token) ?>">
-    <input type="hidden" name="mode" value="<?= h($mode) ?>">
-    <?php if ($mode === 'register'): ?>
-      <label>Name
-        <input type="text" name="name" required>
-      </label>
-    <?php endif; ?>
-    <label>Email
-      <input type="email" name="email" required>
-    </label>
-    <label>Password
-      <input type="password" name="password" required minlength="8">
-    </label>
-    <button type="submit" class="btn-primary"><?= $mode === 'register' ? 'Create account' : 'Sign in' ?></button>
-  </form>
-
-  <?php if ($mode === 'register'): ?>
-    <a href="?mode=login" class="link-muted" style="display:block;text-align:center;margin-top:20px;">Already have an account? Sign in</a>
-  <?php else: ?>
-    <a href="?mode=register" class="link-muted" style="display:block;text-align:center;margin-top:20px;">New here? Create an account</a>
-  <?php endif; ?>
-</div>
-</body>
-</html>
+<section class="cta-band">
+  <h2>Ready to plan your next month of content?</h2>
+  <a href="<?= h(app_path('signup.php')) ?>" class="btn-primary">Get started free</a>
+</section>
+<?php require __DIR__ . '/includes/public_layout_bottom.php'; ?>
