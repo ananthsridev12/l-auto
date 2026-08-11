@@ -69,3 +69,11 @@ define('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small');
 
 define('CLAUDE_API_KEY_DEFAULT', '');
 define('OPENAI_API_KEY_DEFAULT', '');
+
+// Shared secret for the "family app" integration (api/family_wish.php)
+// — a separate app calls in here to generate birthday/anniversary card
+// images and gets a URL back; it authenticates with this key (header
+// "X-Api-Key", or "api_key" in the JSON body) instead of a session,
+// since there's no logged-in PostPilot user on that side of the call.
+// Leave blank to keep the endpoint disabled (it fails closed).
+define('FAMILY_APP_API_KEY', '');
