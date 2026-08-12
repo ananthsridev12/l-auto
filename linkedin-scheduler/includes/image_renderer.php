@@ -2112,57 +2112,72 @@ function render_resolve_design_preset(string $id): array
 
 // "Big Stat" template content — a single oversized number/short phrase
 // (the slide's own headline field, reused rather than adding a new one)
-// dominating the frame, left-aligned, with an optional supporting body
-// paragraph below. Modeled on the "stat card" pattern common in
-// data-driven carousels/single-images (e.g. "70% of X do Y"). No rule,
-// no box, no points in this mode — chrome (logo, counter, bar,
-// decoration, footer including CTA) is drawn by the caller exactly like
-// any other template; this only replaces the headline/body content block.
+// dominating the frame, left-aligned, with an optional supporting
+// subheading and body paragraph below. Modeled on the "stat card"
+// pattern common in data-driven carousels/single-images (e.g. "70% of X
+// do Y"). No rule, no box, no points in this mode (deliberate — a
+// single dominant number/phrase, not a list) — chrome (logo, counter,
+// bar, decoration, footer including CTA) is drawn by the caller exactly
+// like any other template; this only replaces the headline/subheading/
+// body content block. Every field here is independently optional —
+// headline missing just skips the big-number fit/draw step entirely and
+// starts the block at whatever subheading/body remain, same as every
+// other render_slide_*() content block.
 function render_stat_content($im, array $slide, float $cx, float $topY, float $cw, array $p, array $preset, string $textPosition, float $bottomBound): void
 {
     $headline = trim($slide['headline'] ?? '');
+    $subheading = trim($slide['subheading'] ?? '');
     $body = trim($slide['body'] ?? '');
 
     $bodyGap = $body !== '' ? rs(32) : 0;
     $bodyHeight = $body !== '' ? render_body_freestanding_height($body, $cw) : 0;
+    $subheadingHeight = render_subheading_height($subheading, $cw);
 
-    // Every other headline call site fits to a fixed maxLines (2 or 3)
-    // because there's always a points/CTA block below competing for the
-    // same space. Big Stat has none of that — headline (+ optional
-    // body) is the whole slide — so a fixed 2-line cap just truncated
-    // with "…" the moment the phrase needed a 3rd line (including a
-    // deliberate forced break typed into the headline field), even
-    // with most of the canvas sitting empty below it. Fit to the space
-    // actually available instead, the same way render_fit_font_size()
-    // sizes point cards elsewhere: shrink through candidates until the
-    // headline's natural (unclamped) line count fits above $bottomBound.
-    $statCandidates = [rss('headline', 210), rss('headline', 180), rss('headline', 150), rss('headline', 120), rss('headline', 96), rss('headline', 76), rss('headline', 60), rss('headline', 48)];
     $fontRole = $preset['font'] === 'serif' ? 'serif' : 'heading';
-    $strippedHeadline = render_strip_markup_markers($headline);
-    $headlineCeiling = $bottomBound - $bodyGap - $bodyHeight;
-    $hs = render_fit_font_size(
-        [$strippedHeadline],
-        $topY,
-        $headlineCeiling,
-        $statCandidates,
-        fn ($text, $size) => count(render_wrap($text, $size, true, $cw, $fontRole)) * render_lh($size)
-    );
-    $lh = render_lh($hs);
+    $hLines = [];
+    $hs = 0;
+    $lh = 0;
+    $headlineHeight = 0;
+    if ($headline !== '') {
+        // Every other headline call site fits to a fixed maxLines (2 or 3)
+        // because there's always a points/CTA block below competing for the
+        // same space. Big Stat has none of that — headline (+ optional
+        // subheading/body) is the whole slide — so a fixed 2-line cap just
+        // truncated with "…" the moment the phrase needed a 3rd line
+        // (including a deliberate forced break typed into the headline
+        // field), even with most of the canvas sitting empty below it. Fit
+        // to the space actually available instead, the same way
+        // render_fit_font_size() sizes point cards elsewhere: shrink
+        // through candidates until the headline's natural (unclamped) line
+        // count fits above $bottomBound.
+        $statCandidates = [rss('headline', 210), rss('headline', 180), rss('headline', 150), rss('headline', 120), rss('headline', 96), rss('headline', 76), rss('headline', 60), rss('headline', 48)];
+        $strippedHeadline = render_strip_markup_markers($headline);
+        $headlineCeiling = $bottomBound - $subheadingHeight - $bodyGap - $bodyHeight;
+        $hs = render_fit_font_size(
+            [$strippedHeadline],
+            $topY,
+            $headlineCeiling,
+            $statCandidates,
+            fn ($text, $size) => count(render_wrap($text, $size, true, $cw, $fontRole)) * render_lh($size)
+        );
+        $lh = render_lh($hs);
 
-    // Best-effort clamp for the rare case where even the smallest
-    // candidate's natural line count still overflows $bottomBound —
-    // however many lines actually fit, not a number picked in advance.
-    $maxLines = max(1, (int) floor(($headlineCeiling - $topY) / $lh));
-    $hLines = render_wrap_markup_clamped($headline, $hs, true, $cw, $maxLines, $fontRole);
-    $headlineHeight = count($hLines) * $lh;
+        // Best-effort clamp for the rare case where even the smallest
+        // candidate's natural line count still overflows $bottomBound —
+        // however many lines actually fit, not a number picked in advance.
+        $maxLines = max(1, (int) floor(($headlineCeiling - $topY) / $lh));
+        $hLines = render_wrap_markup_clamped($headline, $hs, true, $cw, $maxLines, $fontRole);
+        $headlineHeight = count($hLines) * $lh;
+    }
 
-    $totalContentHeight = $headlineHeight + $bodyGap + $bodyHeight;
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $bodyGap + $bodyHeight;
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
     foreach ($hLines as $line) {
         render_draw_headline_line($im, $line, $cx, $y, $hs, $p, $preset, $fontRole);
         $y += $lh;
     }
+    $y = render_draw_subheading($im, $subheading, $cx, $y, $cw, $p);
     if ($body !== '') {
         $y += $bodyGap;
         render_body_freestanding($im, $body, $y, $p, $cx, $cw);
