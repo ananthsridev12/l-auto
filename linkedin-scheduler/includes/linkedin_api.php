@@ -29,6 +29,19 @@ function li_post_url(?string $urn): ?string
     return 'https://www.linkedin.com/feed/update/' . rawurlencode($urn) . '/';
 }
 
+// LinkedIn's public "Embed this post" iframe — works for any public
+// post with no API call/auth needed at all (same mechanism as a
+// YouTube/Twitter embed), so this has nothing to do with scope/product
+// access. Same validity guard as li_post_url().
+function li_embed_url(?string $urn): ?string
+{
+    $urn = trim((string) $urn);
+    if ($urn === '' || $urn === 'unknown' || !str_starts_with($urn, 'urn:li:')) {
+        return null;
+    }
+    return 'https://www.linkedin.com/embed/feed/update/' . rawurlencode($urn);
+}
+
 function li_upload_image(string $accessToken, string $actingUrn, string $imagePath): string
 {
     $ch = curl_init(LI_API_BASE . '/rest/images?action=initializeUpload');
@@ -140,20 +153,81 @@ function li_create_post(string $accessToken, string $actingUrn, string $commenta
     return 'unknown';
 }
 
-// Social Actions API — "Like" a post/share/ugcPost this app didn't
-// author (see includes/engagement.php). $actorUrn is the acting
-// linkedin_accounts.target_urn (person or organization), $targetUrn is
-// the target_posts.target_urn being liked. Liking something already
-// liked by this actor is not an error on LinkedIn's side, but this app
-// doesn't dedupe here — the caller (engagement_like()) checks its own
-// log first so a repeat click doesn't burn a quota slot pointlessly.
+// Reposts a target post (optionally "with your thoughts") by creating a
+// new post with reshareContext.parent set to it — the exact same Posts
+// API used everywhere else in this file, just with one extra field, so
+// it needs no product access this app doesn't already have. An empty
+// $commentary omits the field entirely for a plain repost (no visible
+// text of the reposter's own); a non-empty one adds it as "repost with
+// thoughts" the same way li_create_post() already adds 'content' only
+// when given. Same x-restli-id-header return convention as
+// li_create_post(). See li_like_post()'s doc comment for the
+// LI_ENGAGEMENT_API_OVERRIDE test seam — added here too since, unlike
+// li_create_post(), this is new/unverified-against-real-LinkedIn code.
+function li_create_repost(string $accessToken, string $actingUrn, string $targetUrn, string $commentary = '', array $mentionCandidates = []): string
+{
+    if (defined('LI_ENGAGEMENT_API_OVERRIDE')) {
+        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake_fail') {
+            throw new RuntimeException('Repost failed 422: simulated failure');
+        }
+        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake') {
+            return 'urn:li:share:(fake,' . bin2hex(random_bytes(4)) . ')';
+        }
+    }
+
+    $body = [
+        'author'         => $actingUrn,
+        'visibility'     => 'PUBLIC',
+        'distribution'   => ['feedDistribution' => 'MAIN_FEED'],
+        'lifecycleState' => 'PUBLISHED',
+        'reshareContext' => ['parent' => $targetUrn],
+    ];
+    if (trim($commentary) !== '') {
+        $body['commentary'] = li_build_commentary($commentary, $mentionCandidates);
+    }
+
+    $ch = curl_init(LI_API_BASE . '/rest/posts');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => li_json_headers($accessToken),
+        CURLOPT_POSTFIELDS     => json_encode($body),
+        CURLOPT_HEADER         => true,
+    ]);
+    $response = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    curl_close($ch);
+
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("Repost failed {$status}: " . substr($response, $headerSize));
+    }
+
+    $headerText = substr($response, 0, $headerSize);
+    if (preg_match('/^x-restli-id:\s*(.+)$/mi', $headerText, $m)) {
+        return trim($m[1]);
+    }
+    return 'unknown';
+}
+
+// ── Dormant — not called by includes/engagement.php's current flow ──
+// These hit LinkedIn's Social Actions API (/rest/socialActions), which
+// turned out to require Community Management API partner approval —
+// a separate, reviewed product, not covered by the self-serve
+// w_member_social scope this app already has for publishing (confirmed
+// via a live 403 ACCESS_DENIED / partnerApiSocialActions.CREATE — see
+// the engagement feature's build history for the full investigation).
+// engagement_like()/engagement_comment() in includes/engagement.php
+// instead redirect the member to the post on LinkedIn and self-report
+// the action, which needs no LinkedIn approval at all. Kept here,
+// untouched and still correct, in case Community Management API access
+// is granted later and a "verified" mode gets wired back in.
 //
 // LI_ENGAGEMENT_API_OVERRIDE (define in config.php, never committed) —
 // same seam as includes/pdf_builder.php's PDF_ENGINE_OVERRIDE — lets
-// local/test runs exercise the full auth/rate-limit/DB-logging flow
-// without ever calling api.linkedin.com. 'fake' pretends LinkedIn
-// accepted the call; 'fake_fail' throws the same exception shape a
-// real failure would, to exercise the failure-logging path.
+// local/test runs exercise these without ever calling api.linkedin.com.
+// 'fake' pretends LinkedIn accepted the call; 'fake_fail' throws the
+// same exception shape a real failure would.
 function li_like_post(string $accessToken, string $actorUrn, string $targetUrn): void
 {
     if (defined('LI_ENGAGEMENT_API_OVERRIDE')) {

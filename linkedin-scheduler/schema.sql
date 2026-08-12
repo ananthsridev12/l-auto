@@ -925,3 +925,15 @@ CREATE TABLE IF NOT EXISTS `engagement_actions` (
   INDEX `idx_user_created` (`user_id`, `created_at`),
   INDEX `idx_target` (`target_post_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Engagement v2 — LinkedIn's socialActions (Like/Comment) endpoints
+-- require Community Management API partner approval, not covered by
+-- the self-serve w_member_social scope this app has, so Like/Comment
+-- became a "redirect to LinkedIn + self-report on click" flow instead
+-- (unverifiable). Repost is different: it's just creating a post with
+-- reshareContext set — the same already-working Posts API — so it
+-- stays a real, verified, in-app action. 'verification' records which
+-- kind a given row is.
+ALTER TABLE `engagement_actions`
+  MODIFY COLUMN `action_type` ENUM('like','comment','repost') NOT NULL,
+  ADD COLUMN `verification` ENUM('self_reported','api') NOT NULL DEFAULT 'self_reported' AFTER `action_type`;
