@@ -866,3 +866,62 @@ CREATE TABLE IF NOT EXISTS `family_wish_requests` (
   `image_path`      VARCHAR(500) NOT NULL,
   `created_at`      DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Engagement (Like & Comment) — see includes/engagement.php,
+-- pages/engagement.php. target_posts is an admin-curated list of
+-- external LinkedIn posts a workspace's members are encouraged to
+-- engage with (e.g. "Company Page's latest post"); engagement_actions
+-- logs every Like/Comment fired through this app (success or failure —
+-- a failed attempt still consumed part of the day's LinkedIn quota),
+-- which is both the source of truth for the per-account daily
+-- rate-limit guardrail and the data a future points feature will read
+-- from without needing any schema change.
+CREATE TABLE IF NOT EXISTS `target_posts` (
+  `id`           INT AUTO_INCREMENT PRIMARY KEY,
+  `workspace_id` INT NOT NULL,
+  `post_url`     VARCHAR(1000) NOT NULL,
+  `target_urn`   VARCHAR(255) NOT NULL,
+  `label`        VARCHAR(255) NULL,
+  `added_by`     INT NOT NULL,
+  `status`       ENUM('active','archived') NOT NULL DEFAULT 'active',
+  `created_at`   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`added_by`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  INDEX `idx_workspace_status` (`workspace_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- includes/modules.php's org_enabled_modules() falls back to
+-- plans.default_modules (a DB column, not the DEFAULT_ENABLED_MODULES
+-- PHP constant) for any org that already resolves a plan row. This
+-- backfills the 'engagement' module into any plans row seeded before it
+-- existed; FIND_IN_SET(...) = 0 also matches an empty string, so it's
+-- safe to re-run and a no-op on a genuinely fresh install (plans is
+-- empty until scripts/migrate_organizations.php or
+-- migrations/0013_organizations_seed_and_backfill.sql seeds it).
+UPDATE `plans`
+SET `default_modules` = CASE WHEN `default_modules` = '' THEN 'engagement' ELSE CONCAT(`default_modules`, ',engagement') END
+WHERE FIND_IN_SET('engagement', `default_modules`) = 0;
+
+CREATE TABLE IF NOT EXISTS `engagement_actions` (
+  `id`                  INT AUTO_INCREMENT PRIMARY KEY,
+  `workspace_id`        INT NOT NULL,
+  `target_post_id`      INT NULL,
+  `target_urn`          VARCHAR(255) NOT NULL,
+  `user_id`             INT NOT NULL,
+  `linkedin_account_id` INT NOT NULL,
+  `action_type`         ENUM('like','comment') NOT NULL,
+  `comment_text`        TEXT NULL,
+  `li_response_status`  INT NULL,
+  `li_response_id`      VARCHAR(255) NULL,
+  `success`             TINYINT(1) NOT NULL DEFAULT 0,
+  `error_message`       TEXT NULL,
+  `created_at`          DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`target_post_id`) REFERENCES `target_posts`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`linkedin_account_id`) REFERENCES `linkedin_accounts`(`id`) ON DELETE CASCADE,
+  INDEX `idx_account_created` (`linkedin_account_id`, `created_at`),
+  INDEX `idx_user_created` (`user_id`, `created_at`),
+  INDEX `idx_target` (`target_post_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

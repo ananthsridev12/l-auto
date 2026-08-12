@@ -1,0 +1,244 @@
+<?php
+// Engagement (Like & Comment) — lets a connected LinkedIn account like/
+// comment on an admin-curated external post from inside this app,
+// instead of opening LinkedIn. LinkedIn's r_member_social ("who
+// engaged") permission isn't self-serve, so this app can't read back
+// who liked/commented on LinkedIn's own side — instead, since *this
+// app* is the one making the API call, every action it takes is logged
+// to engagement_actions the moment the call is made. That table is the
+// full engagement record for anything done through this app, and the
+// data source a future points feature will read from.
+//
+// Requires includes/organizations.php (user_can_access_workspace()) and
+// includes/linkedin_api.php (li_like_post()/li_create_comment()) to
+// already be loaded — same no-self-require convention as
+// includes/post_helpers.php.
+
+// Accepts a raw urn:li:{activity|share|ugcPost}:{id}, LinkedIn's "Copy
+// link to post" feed permalink
+// (https://www.linkedin.com/feed/update/urn:li:activity:.../), or the
+// public post URL LinkedIn's own UI links to
+// (https://www.linkedin.com/posts/{slug}-activity-{id}-{suffix}/).
+// Returns null if none of these patterns match — the caller shows a
+// friendly "paste the full post URL" error rather than guessing.
+function li_parse_post_urn(string $input): ?string
+{
+    $input = trim($input);
+    if ($input === '') {
+        return null;
+    }
+    if (preg_match('#urn:li:(activity|share|ugcPost):(\d+)#', $input, $m)) {
+        return "urn:li:{$m[1]}:{$m[2]}";
+    }
+    if (preg_match('#-activity-(\d+)(-|$)#', $input, $m)) {
+        return "urn:li:activity:{$m[1]}";
+    }
+    return null;
+}
+
+function fetch_target_posts(int $workspaceId, bool $includeArchived = false): array
+{
+    $sql = 'SELECT * FROM target_posts WHERE workspace_id = ?' . ($includeArchived ? '' : " AND status = 'active'") . ' ORDER BY created_at DESC';
+    $stmt = db()->prepare($sql);
+    $stmt->execute([$workspaceId]);
+    return $stmt->fetchAll();
+}
+
+// Same owns-OR-granted read authorization every other workspace-scoped
+// row uses (fetch_post()/fetch_persona() pattern in post_helpers.php).
+function fetch_target_post(int $id, int $userId): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM target_posts WHERE id = ?');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        return null;
+    }
+    if (!user_can_access_workspace($userId, (int) $row['workspace_id'])) {
+        return null;
+    }
+    return $row;
+}
+
+// Curation gate: the workspace's own owner, OR an owner/admin of the
+// organization. There's no separate "workspace admin" role in this
+// app's data model (workspace_members is a flat grant, no role column)
+// — org_role is the only existing admin/owner concept, reused as-is
+// rather than introducing a new role just for this feature.
+function user_can_manage_target_posts(int $userId, int $workspaceId): bool
+{
+    $stmt = db()->prepare('SELECT user_id FROM workspaces WHERE id = ?');
+    $stmt->execute([$workspaceId]);
+    $ownerId = $stmt->fetchColumn();
+    if ($ownerId !== false && (int) $ownerId === $userId) {
+        return true;
+    }
+    if (!user_can_access_workspace($userId, $workspaceId)) {
+        return false;
+    }
+    $stmt = db()->prepare('SELECT org_role FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    return in_array($stmt->fetchColumn(), ['owner', 'admin'], true);
+}
+
+// $rawUrl is whatever the admin pasted (a full post URL or a bare
+// urn:li:...). Returns [success, error, id].
+function add_target_post(int $workspaceId, int $userId, string $rawUrl, ?string $label): array
+{
+    $urn = li_parse_post_urn($rawUrl);
+    if (!$urn) {
+        return [false, "Couldn't find a LinkedIn post ID in that link. Paste the full post URL (e.g. linkedin.com/posts/... or linkedin.com/feed/update/urn:li:activity:...) or the raw urn:li:activity:... value.", null];
+    }
+    $dupe = db()->prepare("SELECT id FROM target_posts WHERE workspace_id = ? AND target_urn = ? AND status = 'active'");
+    $dupe->execute([$workspaceId, $urn]);
+    if ($dupe->fetchColumn()) {
+        return [false, 'This post is already on your list.', null];
+    }
+    $stmt = db()->prepare(
+        'INSERT INTO target_posts (workspace_id, post_url, target_urn, label, added_by) VALUES (?, ?, ?, ?, ?)'
+    );
+    $stmt->execute([$workspaceId, trim($rawUrl), $urn, trim((string) $label) !== '' ? trim($label) : null, $userId]);
+    return [true, null, (int) db()->lastInsertId()];
+}
+
+function archive_target_post(int $id, int $workspaceId): void
+{
+    db()->prepare("UPDATE target_posts SET status = 'archived' WHERE id = ? AND workspace_id = ?")->execute([$id, $workspaceId]);
+}
+
+function unarchive_target_post(int $id, int $workspaceId): void
+{
+    db()->prepare("UPDATE target_posts SET status = 'active' WHERE id = ? AND workspace_id = ?")->execute([$id, $workspaceId]);
+}
+
+// Soft rate-limit guardrail: LinkedIn caps each member at roughly 100
+// API calls/day across everything (including this app's own posting),
+// so 80 leaves headroom for the account's regular publishing activity
+// on the same day, rather than a member's engagement clicks alone
+// eating the whole budget.
+const ENGAGEMENT_DAILY_CAP = 80;
+
+function engagement_actions_today_count(int $accountId): int
+{
+    $stmt = db()->prepare(
+        'SELECT COUNT(*) FROM engagement_actions WHERE linkedin_account_id = ? AND created_at >= CURDATE()'
+    );
+    $stmt->execute([$accountId]);
+    return (int) $stmt->fetchColumn();
+}
+
+function engagement_actions_remaining_today(int $accountId): int
+{
+    return max(0, ENGAGEMENT_DAILY_CAP - engagement_actions_today_count($accountId));
+}
+
+function has_liked_target_post(int $targetPostId, int $userId): bool
+{
+    $stmt = db()->prepare(
+        "SELECT 1 FROM engagement_actions WHERE target_post_id = ? AND user_id = ? AND action_type = 'like' AND success = 1 LIMIT 1"
+    );
+    $stmt->execute([$targetPostId, $userId]);
+    return (bool) $stmt->fetchColumn();
+}
+
+// Shared INSERT for both action types — any $row key not present
+// defaults to NULL/the column default.
+function engagement_log(array $row): void
+{
+    $cols = ['workspace_id', 'target_post_id', 'target_urn', 'user_id', 'linkedin_account_id', 'action_type', 'comment_text', 'li_response_status', 'li_response_id', 'success', 'error_message'];
+    $stmt = db()->prepare('INSERT INTO engagement_actions (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')');
+    $stmt->execute(array_map(fn ($c) => $row[$c] ?? null, $cols));
+}
+
+// li_like_post()/li_create_comment() bake the HTTP status into the
+// exception message ("Like failed 429: ...") rather than as a
+// structured property, same convention every other li_* function uses
+// (RuntimeException, no custom exception class) — this regexes it back
+// out for the log's li_response_status column. Best-effort only: null
+// if the message doesn't match (e.g. a network error before any HTTP
+// response came back).
+function engagement_extract_status(Throwable $e): ?int
+{
+    return preg_match('/\b(\d{3})\b/', $e->getMessage(), $m) ? (int) $m[1] : null;
+}
+
+// Looks up the acting LinkedIn account and confirms it's usable in this
+// target post's workspace and still active — shared by
+// engagement_like()/engagement_comment() below. Returns
+// [account-or-null, error-response-or-null].
+function engagement_resolve_account(array $target, int $userId, int $accountId): array
+{
+    if (!account_usable_in_workspace($accountId, $userId, (int) $target['workspace_id'])) {
+        return [null, ['success' => false, 'error' => 'Invalid LinkedIn account for this workspace.', 'status_code' => 422]];
+    }
+    $acctStmt = db()->prepare('SELECT access_token, target_urn, status FROM linkedin_accounts WHERE id = ?');
+    $acctStmt->execute([$accountId]);
+    $account = $acctStmt->fetch();
+    if (!$account || $account['status'] !== 'active') {
+        return [null, ['success' => false, 'error' => 'The connected LinkedIn account needs to be reconnected.', 'status_code' => 422]];
+    }
+    if (engagement_actions_remaining_today($accountId) <= 0) {
+        return [null, ['success' => false, 'error' => "You've reached today's engagement action limit for this account. Try again tomorrow.", 'status_code' => 429]];
+    }
+    return [$account, null];
+}
+
+function engagement_like(int $targetPostId, int $userId, int $accountId): array
+{
+    $target = fetch_target_post($targetPostId, $userId);
+    if (!$target) {
+        return ['success' => false, 'error' => 'Target post not found.', 'status_code' => 404];
+    }
+    if ($target['status'] !== 'active') {
+        return ['success' => false, 'error' => 'This post has been archived.', 'status_code' => 422];
+    }
+    [$account, $error] = engagement_resolve_account($target, $userId, $accountId);
+    if ($error) {
+        return $error;
+    }
+
+    $log = [
+        'workspace_id' => $target['workspace_id'], 'target_post_id' => $targetPostId, 'target_urn' => $target['target_urn'],
+        'user_id' => $userId, 'linkedin_account_id' => $accountId, 'action_type' => 'like',
+    ];
+    try {
+        li_like_post($account['access_token'], $account['target_urn'], $target['target_urn']);
+        engagement_log($log + ['success' => 1, 'li_response_status' => 201]);
+        return ['success' => true];
+    } catch (Throwable $e) {
+        engagement_log($log + ['success' => 0, 'error_message' => $e->getMessage(), 'li_response_status' => engagement_extract_status($e)]);
+        return ['success' => false, 'error' => $e->getMessage(), 'status_code' => 500];
+    }
+}
+
+function engagement_comment(int $targetPostId, int $userId, int $accountId, string $commentText): array
+{
+    $commentText = trim($commentText);
+    if ($commentText === '') {
+        return ['success' => false, 'error' => 'Enter a comment.', 'status_code' => 422];
+    }
+    if (mb_strlen($commentText) > 1250) { // LinkedIn's documented comment length ceiling
+        return ['success' => false, 'error' => 'Comment is too long (max 1250 characters).', 'status_code' => 422];
+    }
+    $target = fetch_target_post($targetPostId, $userId);
+    if (!$target || $target['status'] !== 'active') {
+        return ['success' => false, 'error' => 'Target post not found or archived.', 'status_code' => 404];
+    }
+    [$account, $error] = engagement_resolve_account($target, $userId, $accountId);
+    if ($error) {
+        return $error;
+    }
+
+    $log = [
+        'workspace_id' => $target['workspace_id'], 'target_post_id' => $targetPostId, 'target_urn' => $target['target_urn'],
+        'user_id' => $userId, 'linkedin_account_id' => $accountId, 'action_type' => 'comment', 'comment_text' => $commentText,
+    ];
+    try {
+        $commentUrn = li_create_comment($account['access_token'], $account['target_urn'], $target['target_urn'], $commentText);
+        engagement_log($log + ['success' => 1, 'li_response_status' => 201, 'li_response_id' => $commentUrn]);
+        return ['success' => true, 'comment_urn' => $commentUrn];
+    } catch (Throwable $e) {
+        engagement_log($log + ['success' => 0, 'error_message' => $e->getMessage(), 'li_response_status' => engagement_extract_status($e)]);
+        return ['success' => false, 'error' => $e->getMessage(), 'status_code' => 500];
+    }
+}

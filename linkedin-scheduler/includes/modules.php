@@ -8,7 +8,7 @@
 // to already be loaded — same no-self-require convention as
 // includes/workspace.php.
 
-const MODULE_KEYS = ['post_scheduling', 'ai_generation', 'content_studio', 'blog_studio', 'news_studio'];
+const MODULE_KEYS = ['post_scheduling', 'ai_generation', 'content_studio', 'blog_studio', 'news_studio', 'engagement'];
 
 const MODULE_LABELS = [
     'post_scheduling' => 'Post Scheduling',
@@ -16,12 +16,13 @@ const MODULE_LABELS = [
     'content_studio'  => 'Content Studio & Calendar',
     'blog_studio'     => 'Blog Studio',
     'news_studio'     => 'News Studio',
+    'engagement'      => 'Engagement (Like & Comment)',
 ];
 
 // A plan/org row that predates a MODULE_KEYS addition should behave as
 // "everything on" rather than silently losing a module nobody
 // explicitly disabled — same reasoning as DEFAULT_ENABLED_FORMATS.
-const DEFAULT_ENABLED_MODULES = ['post_scheduling', 'ai_generation', 'content_studio', 'blog_studio', 'news_studio'];
+const DEFAULT_ENABLED_MODULES = ['post_scheduling', 'ai_generation', 'content_studio', 'blog_studio', 'news_studio', 'engagement'];
 
 // The current session user's organization, cached per-request. Every
 // user is expected to have one (see register_user() and

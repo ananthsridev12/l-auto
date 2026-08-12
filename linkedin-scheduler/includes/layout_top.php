@@ -65,6 +65,9 @@ $__theme = $__user ? get_user_theme((int) $__user['id']) : null;
       <?php if (module_enabled('blog_studio')): ?>
         <a href="<?= h(app_path('pages/blog_studio.php')) ?>" class="<?= ($activePage ?? '') === 'blog_studio' ? 'active' : '' ?>">Blog Studio</a>
       <?php endif; ?>
+      <?php if (module_enabled('engagement')): ?>
+        <a href="<?= h(app_path('pages/engagement.php')) ?>" class="<?= ($activePage ?? '') === 'engagement' ? 'active' : '' ?>">Engagement</a>
+      <?php endif; ?>
       <?php if (module_enabled('post_scheduling')): ?>
         <a href="<?= h(app_path('pages/import.php')) ?>" class="<?= ($activePage ?? '') === 'import' ? 'active' : '' ?>">Import</a>
       <?php endif; ?>

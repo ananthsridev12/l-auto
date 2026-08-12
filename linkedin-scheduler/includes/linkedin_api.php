@@ -140,6 +140,90 @@ function li_create_post(string $accessToken, string $actingUrn, string $commenta
     return 'unknown';
 }
 
+// Social Actions API — "Like" a post/share/ugcPost this app didn't
+// author (see includes/engagement.php). $actorUrn is the acting
+// linkedin_accounts.target_urn (person or organization), $targetUrn is
+// the target_posts.target_urn being liked. Liking something already
+// liked by this actor is not an error on LinkedIn's side, but this app
+// doesn't dedupe here — the caller (engagement_like()) checks its own
+// log first so a repeat click doesn't burn a quota slot pointlessly.
+//
+// LI_ENGAGEMENT_API_OVERRIDE (define in config.php, never committed) —
+// same seam as includes/pdf_builder.php's PDF_ENGINE_OVERRIDE — lets
+// local/test runs exercise the full auth/rate-limit/DB-logging flow
+// without ever calling api.linkedin.com. 'fake' pretends LinkedIn
+// accepted the call; 'fake_fail' throws the same exception shape a
+// real failure would, to exercise the failure-logging path.
+function li_like_post(string $accessToken, string $actorUrn, string $targetUrn): void
+{
+    if (defined('LI_ENGAGEMENT_API_OVERRIDE')) {
+        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake_fail') {
+            throw new RuntimeException('Like failed 429: rate limited (simulated)');
+        }
+        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake') {
+            return;
+        }
+    }
+
+    $ch = curl_init(LI_API_BASE . '/rest/socialActions/' . rawurlencode($targetUrn) . '/likes');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => li_json_headers($accessToken),
+        CURLOPT_POSTFIELDS     => json_encode(['actor' => $actorUrn]),
+    ]);
+    $body = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("Like failed {$status}: {$body}");
+    }
+}
+
+// Social Actions API — post a comment on a target post/share/ugcPost.
+// Returns the created comment's URN from the x-restli-id response
+// header, same header-parsing convention li_create_post() uses; falls
+// back to 'unknown' if LinkedIn omits it. See li_like_post() above for
+// the LI_ENGAGEMENT_API_OVERRIDE test seam.
+function li_create_comment(string $accessToken, string $actorUrn, string $targetUrn, string $commentText): string
+{
+    if (defined('LI_ENGAGEMENT_API_OVERRIDE')) {
+        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake_fail') {
+            throw new RuntimeException('Comment failed 429: rate limited (simulated)');
+        }
+        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake') {
+            return 'urn:li:comment:(fake,' . bin2hex(random_bytes(4)) . ')';
+        }
+    }
+
+    $ch = curl_init(LI_API_BASE . '/rest/socialActions/' . rawurlencode($targetUrn) . '/comments');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => li_json_headers($accessToken),
+        CURLOPT_POSTFIELDS     => json_encode([
+            'actor'   => $actorUrn,
+            'message' => ['text' => $commentText],
+        ]),
+        CURLOPT_HEADER         => true,
+    ]);
+    $response = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    curl_close($ch);
+
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("Comment failed {$status}: " . substr($response, $headerSize));
+    }
+
+    $headerText = substr($response, 0, $headerSize);
+    if (preg_match('/^x-restli-id:\s*(.+)$/mi', $headerText, $m)) {
+        return trim($m[1]);
+    }
+    return 'unknown';
+}
+
 // Orchestrates the image/document/text branching used by both the
 // "Post Now" endpoint and the scheduled cron sweep, so the two never
 // drift out of sync on posting behavior.
