@@ -71,6 +71,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $schedDate  = trim($_POST['scheduled_date'] ?? '');
     $schedTime  = trim($_POST['scheduled_time'] ?? '09:00');
 
+    // Same auto-suffix-on-duplicate pattern as new_post.php's create flow —
+    // campaign_id has a UNIQUE (user_id, campaign_id) constraint, so a save
+    // that collides with another post's id would otherwise fail the UPDATE
+    // and redirect back to the (unsaved) old data, losing whatever else was
+    // just edited in this same form. Blank input keeps the existing id
+    // rather than forcing a new one, since this is an edit, not a create.
+    $campaignId = trim($_POST['campaign_id'] ?? '');
+    $campaignIdRenamed = false;
+    $originalCampaignId = $campaignId;
+    if ($campaignId === '') {
+        $campaignId = $existing['campaign_id'];
+    } elseif ($campaignId !== $existing['campaign_id']) {
+        $dupStmt = db()->prepare('SELECT 1 FROM posts WHERE user_id = ? AND campaign_id = ? AND id != ?');
+        $dupStmt->execute([$userId, $campaignId, $postId]);
+        if ($dupStmt->fetchColumn()) {
+            $campaignId .= '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
+            $campaignIdRenamed = true;
+        }
+    }
+
     $scheduledAt = null;
     $status = 'draft';
     if ($action === 'schedule' && $schedDate !== '') {
@@ -85,12 +105,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // $existing above already came from fetch_post_with_slides()
     // (owns-or-granted access check) — no need to re-check user_id here.
     $stmt = db()->prepare(
-        'UPDATE posts SET caption = ?, title = ?, linkedin_account_id = ?, scheduled_at = ?, status = ?
+        'UPDATE posts SET caption = ?, title = ?, campaign_id = ?, linkedin_account_id = ?, scheduled_at = ?, status = ?
          WHERE id = ?'
     );
-    $stmt->execute([$caption, $title, $accountId, $scheduledAt, $status, $postId]);
+    try {
+        $stmt->execute([$caption, $title, $campaignId, $accountId, $scheduledAt, $status, $postId]);
+    } catch (PDOException $e) {
+        if ((string) $e->getCode() === '23000') {
+            // Genuine race (two saves with the same typed id landing at
+            // once) — the pre-check above already handles the common case.
+            $campaignId .= '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
+            $campaignIdRenamed = true;
+            $stmt->execute([$caption, $title, $campaignId, $accountId, $scheduledAt, $status, $postId]);
+        } else {
+            throw $e;
+        }
+    }
 
-    flash('success', $action === 'schedule' ? 'Post scheduled.' : 'Draft saved.');
+    $renameNotice = $campaignIdRenamed
+        ? "Campaign ID \"{$originalCampaignId}\" was already in use — saved as \"{$campaignId}\" instead. "
+        : '';
+    flash('success', $renameNotice . ($action === 'schedule' ? 'Post scheduled.' : 'Draft saved.'));
     redirect('pages/post.php?id=' . $postId);
 }
 
@@ -190,6 +225,10 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
 
       <label>Title
         <input type="text" name="title" value="<?= h($post['title']) ?>" form="postForm">
+      </label>
+
+      <label>Campaign ID
+        <input type="text" name="campaign_id" value="<?= h($post['campaign_id']) ?>" form="postForm">
       </label>
 
       <p class="muted">This image was generated from the slide content below — edit it and re-render to replace the image.</p>
@@ -319,6 +358,10 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
 
           <label>Title
             <input type="text" name="title" value="<?= h($post['title']) ?>">
+          </label>
+
+          <label>Campaign ID
+            <input type="text" name="campaign_id" value="<?= h($post['campaign_id']) ?>">
           </label>
 
           <label>LinkedIn Account
