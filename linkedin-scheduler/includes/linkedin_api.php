@@ -232,12 +232,20 @@ function li_create_repost(string $accessToken, string $actingUrn, string $target
 
         $responseBody = substr($response, $headerSize);
         $lastError = "Repost failed {$status}: {$responseBody}";
-        // Only worth trying the next candidate type for this exact
-        // "wrong URN type" rejection — any other error (auth, rate
-        // limit, a genuinely bad request) would fail identically on the
-        // next candidate too, so retrying would just waste the call.
+        // Worth trying the next candidate type for the explicit "wrong
+        // URN type" rejection (422, named field/message), AND for a
+        // bare 403 — LinkedIn's generic "Accessing the resource is
+        // forbidden" gives no field-level detail, so it's genuinely
+        // ambiguous whether that means "this specific type+id doesn't
+        // resolve to a real object" (the other candidate might) or "no
+        // permission to reshare this content at all" (both candidates
+        // will fail identically) — trying the second guess is cheap and
+        // resolves that ambiguity; anything else (auth, rate limit, a
+        // genuinely bad request) would fail identically on the next
+        // candidate too, so isn't retried.
         $isWrongUrnType = $status === 422 && str_contains($responseBody, 'reshareContext/parent') && str_contains($responseBody, 'Allowed URN types');
-        if (!$isWrongUrnType || $i === count($candidates) - 1) {
+        $isAmbiguousForbidden = $status === 403;
+        if ((!$isWrongUrnType && !$isAmbiguousForbidden) || $i === count($candidates) - 1) {
             throw new RuntimeException($lastError);
         }
     }
