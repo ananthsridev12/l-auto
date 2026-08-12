@@ -16,7 +16,7 @@ const MODULE_LABELS = [
     'content_studio'  => 'Content Studio & Calendar',
     'blog_studio'     => 'Blog Studio',
     'news_studio'     => 'News Studio',
-    'engagement'      => 'Engagement (Like, Comment & Repost)',
+    'engagement'      => 'Engagement (Like & Comment)',
 ];
 
 // A plan/org row that predates a MODULE_KEYS addition should behave as

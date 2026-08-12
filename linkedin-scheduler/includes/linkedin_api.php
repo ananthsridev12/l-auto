@@ -153,106 +153,6 @@ function li_create_post(string $accessToken, string $actingUrn, string $commenta
     return 'unknown';
 }
 
-// reshareContext.parent rejects "activity" URNs outright ("Allowed URN
-// types are groupPost, share, ugcPost") even though every public post
-// URL/permalink — and li_parse_post_urn()'s output for one — is an
-// activity URN regardless of what the post's real underlying type is.
-// The numeric ID is shared across all of these; only the type prefix
-// differs. There's no reliable way to know which of the two ordinary-
-// post types (share vs ugcPost) a given activity ID really is without
-// an extra read call this app may not have permission for either, so
-// this tries both against the same numeric ID, in the order they're
-// most commonly the right one, rather than guess once and fail.
-// Anything already share/ugcPost/groupPost (an admin can paste those
-// directly, and li_parse_post_urn() preserves them as-is) needs no
-// conversion — just itself, once.
-function li_reshare_parent_candidates(string $urn): array
-{
-    if (preg_match('#^urn:li:activity:(\d+)$#', $urn, $m)) {
-        return ["urn:li:share:{$m[1]}", "urn:li:ugcPost:{$m[1]}"];
-    }
-    return [$urn];
-}
-
-// Reposts a target post (optionally "with your thoughts") by creating a
-// new post with reshareContext.parent set to it — the exact same Posts
-// API used everywhere else in this file, just with two extra fields, so
-// it needs no product access this app doesn't already have. LinkedIn
-// requires 'commentary' on every post (even a plain repost with nothing
-// added) — omitting it entirely 422s with "field is required but not
-// found" — so an empty $commentary sends an empty string rather than
-// skipping the key, unlike li_create_post()'s optional 'content'. Same
-// x-restli-id-header return convention as li_create_post(). See
-// li_like_post()'s doc comment for the LI_ENGAGEMENT_API_OVERRIDE test
-// seam — added here too since, unlike li_create_post(), this is new/
-// unverified-against-real-LinkedIn code.
-function li_create_repost(string $accessToken, string $actingUrn, string $targetUrn, string $commentary = '', array $mentionCandidates = []): string
-{
-    if (defined('LI_ENGAGEMENT_API_OVERRIDE')) {
-        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake_fail') {
-            throw new RuntimeException('Repost failed 422: simulated failure');
-        }
-        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake') {
-            return 'urn:li:share:(fake,' . bin2hex(random_bytes(4)) . ')';
-        }
-    }
-
-    $candidates = li_reshare_parent_candidates($targetUrn);
-    $lastError = null;
-    foreach ($candidates as $i => $parentUrn) {
-        $body = [
-            'author'         => $actingUrn,
-            'commentary'     => li_build_commentary($commentary, $mentionCandidates),
-            'visibility'     => 'PUBLIC',
-            'distribution'   => ['feedDistribution' => 'MAIN_FEED'],
-            'lifecycleState' => 'PUBLISHED',
-            'reshareContext' => ['parent' => $parentUrn],
-        ];
-
-        $ch = curl_init(LI_API_BASE . '/rest/posts');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_HTTPHEADER     => li_json_headers($accessToken),
-            CURLOPT_POSTFIELDS     => json_encode($body),
-            CURLOPT_HEADER         => true,
-        ]);
-        $response = curl_exec($ch);
-        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-        curl_close($ch);
-
-        if ($status >= 200 && $status < 300) {
-            $headerText = substr($response, 0, $headerSize);
-            if (preg_match('/^x-restli-id:\s*(.+)$/mi', $headerText, $m)) {
-                return trim($m[1]);
-            }
-            return 'unknown';
-        }
-
-        $responseBody = substr($response, $headerSize);
-        $lastError = "Repost failed {$status}: {$responseBody}";
-        // Worth trying the next candidate type for the explicit "wrong
-        // URN type" rejection (422, named field/message), AND for a
-        // bare 403 — LinkedIn's generic "Accessing the resource is
-        // forbidden" gives no field-level detail, so it's genuinely
-        // ambiguous whether that means "this specific type+id doesn't
-        // resolve to a real object" (the other candidate might) or "no
-        // permission to reshare this content at all" (both candidates
-        // will fail identically) — trying the second guess is cheap and
-        // resolves that ambiguity; anything else (auth, rate limit, a
-        // genuinely bad request) would fail identically on the next
-        // candidate too, so isn't retried.
-        $isWrongUrnType = $status === 422 && str_contains($responseBody, 'reshareContext/parent') && str_contains($responseBody, 'Allowed URN types');
-        $isAmbiguousForbidden = $status === 403;
-        if ((!$isWrongUrnType && !$isAmbiguousForbidden) || $i === count($candidates) - 1) {
-            throw new RuntimeException($lastError);
-        }
-    }
-
-    throw new RuntimeException($lastError ?? 'Repost failed: no candidate URN types available.');
-}
-
 // ── Dormant — not called by includes/engagement.php's current flow ──
 // These hit LinkedIn's Social Actions API (/rest/socialActions), which
 // turned out to require Community Management API partner approval —
@@ -265,6 +165,20 @@ function li_create_repost(string $accessToken, string $actingUrn, string $target
 // the action, which needs no LinkedIn approval at all. Kept here,
 // untouched and still correct, in case Community Management API access
 // is granted later and a "verified" mode gets wired back in.
+//
+// li_create_repost() (below li_create_comment()) was tried as a
+// different angle — reposting is just creating a post with
+// reshareContext set, the same already-approved Posts API used
+// elsewhere in this file, so it seemed like it should sidestep the
+// Community Management API wall entirely. In live testing it hit the
+// same wall anyway: a generic 403 "Accessing the resource is
+// forbidden", confirmed across both plausible reshareContext.parent
+// URN-type guesses (share and ugcPost, same numeric ID) — so
+// reshareContext of content the connected account didn't author
+// appears to need the same approval Like/Comment do. Not pursued
+// further per an explicit decision to drop Repost rather than chase a
+// workaround (e.g. publishing a new post with a link to the target
+// instead of a true reshare).
 //
 // LI_ENGAGEMENT_API_OVERRIDE (define in config.php, never committed) —
 // same seam as includes/pdf_builder.php's PDF_ENGINE_OVERRIDE — lets
@@ -339,6 +253,105 @@ function li_create_comment(string $accessToken, string $actorUrn, string $target
         return trim($m[1]);
     }
     return 'unknown';
+}
+
+// reshareContext.parent rejects "activity" URNs outright ("Allowed URN
+// types are groupPost, share, ugcPost") even though every public post
+// URL/permalink — and li_parse_post_urn()'s output for one — is an
+// activity URN regardless of what the post's real underlying type is.
+// The numeric ID is shared across all of these; only the type prefix
+// differs. There's no reliable way to know which of the two ordinary-
+// post types (share vs ugcPost) a given activity ID really is without
+// an extra read call this app may not have permission for either, so
+// this tries both against the same numeric ID, in the order they're
+// most commonly the right one, rather than guess once and fail.
+// Anything already share/ugcPost/groupPost (an admin can paste those
+// directly, and li_parse_post_urn() preserves them as-is) needs no
+// conversion — just itself, once.
+function li_reshare_parent_candidates(string $urn): array
+{
+    if (preg_match('#^urn:li:activity:(\d+)$#', $urn, $m)) {
+        return ["urn:li:share:{$m[1]}", "urn:li:ugcPost:{$m[1]}"];
+    }
+    return [$urn];
+}
+
+// Reposts a target post (optionally "with your thoughts") by creating a
+// new post with reshareContext.parent set to it. See the "Dormant"
+// block comment above for why this isn't actually called anywhere —
+// reshareContext of another author's content 403'd in live testing the
+// same way Like/Comment did. LinkedIn requires 'commentary' on every
+// post, including a plain repost with nothing added — omitting it
+// entirely 422s with "field is required but not found" — so an empty
+// $commentary sends an empty string rather than skipping the key,
+// unlike li_create_post()'s optional 'content'. Same x-restli-id-header
+// return convention as li_create_post(). See li_like_post()'s doc
+// comment for the LI_ENGAGEMENT_API_OVERRIDE test seam.
+function li_create_repost(string $accessToken, string $actingUrn, string $targetUrn, string $commentary = '', array $mentionCandidates = []): string
+{
+    if (defined('LI_ENGAGEMENT_API_OVERRIDE')) {
+        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake_fail') {
+            throw new RuntimeException('Repost failed 422: simulated failure');
+        }
+        if (LI_ENGAGEMENT_API_OVERRIDE === 'fake') {
+            return 'urn:li:share:(fake,' . bin2hex(random_bytes(4)) . ')';
+        }
+    }
+
+    $candidates = li_reshare_parent_candidates($targetUrn);
+    $lastError = null;
+    foreach ($candidates as $i => $parentUrn) {
+        $body = [
+            'author'         => $actingUrn,
+            'commentary'     => li_build_commentary($commentary, $mentionCandidates),
+            'visibility'     => 'PUBLIC',
+            'distribution'   => ['feedDistribution' => 'MAIN_FEED'],
+            'lifecycleState' => 'PUBLISHED',
+            'reshareContext' => ['parent' => $parentUrn],
+        ];
+
+        $ch = curl_init(LI_API_BASE . '/rest/posts');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => li_json_headers($accessToken),
+            CURLOPT_POSTFIELDS     => json_encode($body),
+            CURLOPT_HEADER         => true,
+        ]);
+        $response = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        curl_close($ch);
+
+        if ($status >= 200 && $status < 300) {
+            $headerText = substr($response, 0, $headerSize);
+            if (preg_match('/^x-restli-id:\s*(.+)$/mi', $headerText, $m)) {
+                return trim($m[1]);
+            }
+            return 'unknown';
+        }
+
+        $responseBody = substr($response, $headerSize);
+        $lastError = "Repost failed {$status}: {$responseBody}";
+        // Worth trying the next candidate type for the explicit "wrong
+        // URN type" rejection (422, named field/message), AND for a
+        // bare 403 — LinkedIn's generic "Accessing the resource is
+        // forbidden" gives no field-level detail, so it's genuinely
+        // ambiguous whether that means "this specific type+id doesn't
+        // resolve to a real object" (the other candidate might) or "no
+        // permission to reshare this content at all" (both candidates
+        // will fail identically) — trying the second guess is cheap and
+        // resolves that ambiguity; anything else (auth, rate limit, a
+        // genuinely bad request) would fail identically on the next
+        // candidate too, so isn't retried.
+        $isWrongUrnType = $status === 422 && str_contains($responseBody, 'reshareContext/parent') && str_contains($responseBody, 'Allowed URN types');
+        $isAmbiguousForbidden = $status === 403;
+        if ((!$isWrongUrnType && !$isAmbiguousForbidden) || $i === count($candidates) - 1) {
+            throw new RuntimeException($lastError);
+        }
+    }
+
+    throw new RuntimeException($lastError ?? 'Repost failed: no candidate URN types available.');
 }
 
 // Orchestrates the image/document/text branching used by both the

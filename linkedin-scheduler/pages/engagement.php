@@ -1,17 +1,15 @@
 <?php
-// Engagement (Like, Comment & Repost) — see includes/engagement.php for
-// the full design rationale. Admins/owners curate a short list of
-// external LinkedIn posts (target_posts), embedded here via LinkedIn's
-// public "Embed this post" iframe (no API/auth needed). Any member with
-// an active connected LinkedIn account can:
-// - Like/Comment: opens the real post on LinkedIn in a new tab AND
-//   immediately logs the action as done — self-reported, not verified
-//   (LinkedIn's socialActions API needs partner approval this app
-//   doesn't have; see includes/engagement.php).
-// - Repost: publishes for real, in-app, via the same Posts API used for
-//   scheduled posting — no redirect, and actually verified.
-// Every action is logged to engagement_actions the moment it happens —
-// the data source a future points feature will read from.
+// Engagement (Like & Comment) — see includes/engagement.php for the
+// full design rationale. Admins/owners curate a short list of external
+// LinkedIn posts (target_posts), embedded here via LinkedIn's public
+// "Embed this post" iframe (no API/auth needed). Any member with an
+// active connected LinkedIn account can Like/Comment: it opens the real
+// post on LinkedIn in a new tab AND immediately logs the action as
+// done — self-reported, not verified (LinkedIn's socialActions API
+// needs partner approval this app doesn't have; see
+// includes/engagement.php). Every action is logged to
+// engagement_actions the moment it happens — the data source a future
+// points feature will read from.
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
@@ -89,14 +87,13 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card">
   <div class="card-header"><h2>Posts to engage with</h2></div>
-  <p class="muted">Like/Comment open the real post on LinkedIn in a new tab — please actually like/comment there, since that's what makes the engagement real. Repost publishes immediately from your connected account, right here, no need to leave the page.</p>
+  <p class="muted">Like/Comment open the real post on LinkedIn in a new tab — please actually like/comment there, since that's what makes the engagement real.</p>
   <?php if ($targetPosts): ?>
     <?php foreach ($targetPosts as $t): ?>
       <?php
         $permalink = li_post_url($t['target_urn']) ?? $t['post_url'];
         $embedUrl = li_embed_url($t['target_urn']);
         $alreadyLiked = $accounts && has_action_on_target('like', (int) $t['id'], $userId);
-        $alreadyReposted = $accounts && has_action_on_target('repost', (int) $t['id'], $userId);
         $disabled = !$accounts || $outOfQuota;
       ?>
       <div class="account-row" style="align-items:flex-start; flex-wrap:wrap;">
@@ -121,14 +118,6 @@ require __DIR__ . '/../includes/layout_top.php';
           </div>
           <div id="comment-status-<?= (int) $t['id'] ?>" class="post-status" style="display:none;"></div>
 
-          <textarea id="repost-text-<?= (int) $t['id'] ?>" rows="2" placeholder="Add your thoughts (optional) — leave blank for a plain repost" <?= ($disabled || $alreadyReposted) ? 'disabled' : '' ?> style="width:100%;"></textarea>
-          <div>
-            <button id="repost-btn-<?= (int) $t['id'] ?>" class="btn-tiny" <?= ($disabled || $alreadyReposted) ? 'disabled' : '' ?> onclick="engagementRepost(<?= (int) $t['id'] ?>, <?= $defaultAccountId ?>)">
-              <?= $alreadyReposted ? 'Reposted ✓' : 'Repost' ?>
-            </button>
-          </div>
-          <div id="repost-status-<?= (int) $t['id'] ?>" class="post-status" style="display:none;"></div>
-
           <?php if ($canManage): ?>
             <form method="post" onsubmit="return confirm('Archive this post? It will stop showing here, but past engagement stays on record.');">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -148,7 +137,7 @@ require __DIR__ . '/../includes/layout_top.php';
 <?php if ($canManage): ?>
 <section class="card">
   <div class="card-header"><h2>Add a post to engage with</h2></div>
-  <p class="muted">Paste a LinkedIn post URL (e.g. the Company Page's latest post) — members will see it embedded in the list above and can Like/Comment/Repost it from here.</p>
+  <p class="muted">Paste a LinkedIn post URL (e.g. the Company Page's latest post) — members will see it embedded in the list above and can Like/Comment on it from here.</p>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="target_add">
@@ -186,7 +175,6 @@ require __DIR__ . '/../includes/layout_top.php';
 <script>
   window.ENGAGEMENT_LIKE_URL = <?= json_encode(app_path('api/engagement_like.php')) ?>;
   window.ENGAGEMENT_COMMENT_URL = <?= json_encode(app_path('api/engagement_comment.php')) ?>;
-  window.ENGAGEMENT_REPOST_URL = <?= json_encode(app_path('api/engagement_repost.php')) ?>;
 </script>
 
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>

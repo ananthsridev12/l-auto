@@ -1,16 +1,13 @@
-// Like/Comment/Repost buttons on pages/engagement.php — mirrors
-// postNow()'s fetch/toggle-button pattern in app.js, but id-parameterized
-// since this page renders a list of target posts rather than a single
-// one.
+// Like/Comment buttons on pages/engagement.php — mirrors postNow()'s
+// fetch/toggle-button pattern in app.js, but id-parameterized since this
+// page renders a list of target posts rather than a single one.
 //
-// Like/Comment are self-reported (see includes/engagement.php): the
-// click opens the real post on LinkedIn in a new tab AND logs the
-// action as done in the same gesture — window.open() is called
-// synchronously, first thing, before any await, so browsers don't treat
-// it as a blocked popup (that only happens for window.open() calls made
-// outside the direct click handler, e.g. after an awaited fetch).
-// Repost is different — it's a real, verified, in-app action, so no tab
-// opens at all.
+// Self-reported (see includes/engagement.php): the click opens the real
+// post on LinkedIn in a new tab AND logs the action as done in the same
+// gesture — window.open() is called synchronously, first thing, before
+// any await, so browsers don't treat it as a blocked popup (that only
+// happens for window.open() calls made outside the direct click
+// handler, e.g. after an awaited fetch).
 
 async function engagementLike(targetPostId, accountId, permalinkUrl) {
   const btn = document.getElementById(`like-btn-${targetPostId}`);
@@ -93,41 +90,5 @@ async function engagementComment(targetPostId, accountId, permalinkUrl) {
     btn.textContent = originalText;
   }
   btn.disabled = false;
-  status.style.display = 'block';
-}
-
-async function engagementRepost(targetPostId, accountId) {
-  const textarea = document.getElementById(`repost-text-${targetPostId}`);
-  const btn = document.getElementById(`repost-btn-${targetPostId}`);
-  const status = document.getElementById(`repost-status-${targetPostId}`);
-  if (!btn || !status) return;
-
-  const commentary = textarea ? textarea.value.trim() : '';
-
-  btn.disabled = true;
-  btn.textContent = 'Reposting…';
-  status.style.display = 'none';
-
-  try {
-    const r = await fetch(window.ENGAGEMENT_REPOST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target_post_id: targetPostId, linkedin_account_id: accountId, commentary }),
-    });
-    const d = await r.json();
-    if (d.success) {
-      status.className = 'post-status success';
-      status.textContent = 'Reposted to LinkedIn.';
-      btn.textContent = 'Reposted ✓';
-      if (textarea) textarea.disabled = true;
-    } else {
-      throw new Error(d.error || 'Unknown error');
-    }
-  } catch (e) {
-    status.className = 'post-status error';
-    status.textContent = e.message;
-    btn.disabled = false;
-    btn.textContent = 'Repost';
-  }
   status.style.display = 'block';
 }
