@@ -288,6 +288,8 @@ if ($postId) {
     $scheduled = fetch_blog_posts($userId, $workspaceId, 'scheduled');
     $published = fetch_blog_posts($userId, $workspaceId, 'published');
     $failed = fetch_blog_posts($userId, $workspaceId, 'failed');
+    $pillarNameById = array_column($contentPillars, 'name', 'id');
+    $platformLabelsList = ['wordpress' => 'WordPress', 'jekyll' => 'Jekyll', 'grav' => 'Grav'];
     ?>
     <div class="page-header"><h1>Blog Studio</h1><span class="badge badge-campaign"><?= h($workspace['name']) ?></span></div>
 
@@ -300,23 +302,27 @@ if ($postId) {
         <label>Topic
           <input type="text" name="topic" placeholder="e.g. Why predictive maintenance is going mainstream in 2026" required>
         </label>
-        <label>Length
-          <select name="length">
-            <?php foreach (BLOG_LENGTH_PRESETS as $key => $preset): ?>
-              <option value="<?= h($key) ?>"<?= $key === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($preset['label']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </label>
-        <?php if ($contentPillars): ?>
-        <label>Content Pillar <span class="muted">(optional — routes to that pillar's own Grav route prefix/template if it has one)</span>
-          <select name="content_pillar_id">
-            <option value="">— None —</option>
-            <?php foreach ($contentPillars as $cp): ?>
-              <option value="<?= (int) $cp['id'] ?>"><?= h($cp['name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </label>
-        <?php endif; ?>
+        <div class="control-strip">
+          <div class="control-field">
+            <label for="blogGenLength">Length</label>
+            <select name="length" id="blogGenLength">
+              <?php foreach (BLOG_LENGTH_PRESETS as $key => $preset): ?>
+                <option value="<?= h($key) ?>"<?= $key === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($preset['label']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <?php if ($contentPillars): ?>
+          <div class="control-field">
+            <label for="blogGenPillar">Content Pillar</label>
+            <select name="content_pillar_id" id="blogGenPillar" title="Optional — routes to that pillar's own Grav route prefix/template if it has one">
+              <option value="">— None —</option>
+              <?php foreach ($contentPillars as $cp): ?>
+                <option value="<?= (int) $cp['id'] ?>"><?= h($cp['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <?php endif; ?>
+        </div>
         <button type="submit" class="btn-primary" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Generate</button>
       </form>
     </section>
@@ -337,7 +343,15 @@ if ($postId) {
         <div class="account-row">
           <div class="account-info">
             <div>
-              <div><strong><?= h($p['title']) ?></strong></div>
+              <div>
+                <strong><?= h($p['title']) ?></strong>
+                <?php if ($p['content_pillar_id'] && isset($pillarNameById[$p['content_pillar_id']])): ?>
+                  <span class="badge badge-format"><?= h($pillarNameById[$p['content_pillar_id']]) ?></span>
+                <?php endif; ?>
+                <?php if ($p['publish_target'] && isset($platformLabelsList[$p['publish_target']])): ?>
+                  <span class="badge badge-campaign"><?= h($platformLabelsList[$p['publish_target']]) ?></span>
+                <?php endif; ?>
+              </div>
               <div class="muted">
                 <?= h(date('j M Y', strtotime($p['updated_at']))) ?>
                 <?php if ($p['status'] === 'scheduled' && $p['scheduled_at']): ?> · scheduled for <?= h(date('j M Y, g:i a', strtotime($p['scheduled_at']))) ?><?php endif; ?>

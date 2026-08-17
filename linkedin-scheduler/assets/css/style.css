@@ -831,6 +831,59 @@ body.centered-page {
 .account-info { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .inline-form { display: inline-flex; align-items: center; gap: 6px; }
 
+/* ── Content-row list pattern ──────────────────────────────────────
+   A less congested alternative to .account-row for rows that need
+   several small generation controls (format/length/slide-count) next
+   to their action button — News Studio's headline list, Blog Studio's
+   generator form. Content on its own line, controls in a labeled
+   strip below rather than everything crammed onto one flex line. */
+.content-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--gray-200);
+}
+.content-row:first-of-type { border-top: none; }
+.content-row-title { font-weight: 600; color: var(--gray-900); text-decoration: none; }
+.content-row-title:hover { color: var(--color-brand); }
+.content-row-meta { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
+
+.control-strip {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.control-strip.control-strip-secondary {
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--gray-200);
+}
+.control-field { display: flex; flex-direction: column; gap: 4px; }
+.control-field label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gray-500);
+}
+.control-field select {
+  padding: 7px 28px 7px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  background: var(--color-surface);
+  color: var(--gray-900);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23697386' stroke-width='2'%3E%3Cpath d='M5 8l5 5 5-5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px;
+}
+.control-field select:focus { border-color: var(--color-brand); box-shadow: var(--focus-ring); outline: none; }
+.control-strip form { display: flex; align-items: flex-end; gap: var(--space-3); flex-wrap: wrap; }
+
 .badge-warning { background: var(--color-warning-bg); color: var(--color-warning-text); }
 .badge-active  { background: var(--color-success-bg); color: var(--color-success-text); }
 .badge-draft     { background: var(--color-neutral-bg); color: var(--color-neutral-text); }

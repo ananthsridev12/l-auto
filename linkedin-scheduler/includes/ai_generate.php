@@ -202,7 +202,7 @@ RULES;
 // constraints (what keeps a slide from overflowing), not brand content,
 // so they still apply even when nothing else about the prompt is
 // KB-informed. Text Post has no slide content, so no rules to return.
-function build_slide_rules_bullets(string $format): string
+function build_slide_rules_bullets(string $format, int $slideCount = 5): string
 {
     if ($format === 'Single Image') {
         return <<<RULES
@@ -217,15 +217,28 @@ IMAGE TEXT RULES (strict — the renderer truncates anything over these limits w
 RULES;
     }
     if ($format === 'Carousel') {
+        // Slide count is caller-configurable (News Studio's "Create
+        // Draft" slide-count picker; every other caller keeps the
+        // original fixed-5 default) — position rules generate for
+        // whatever count was asked for: slide 1 is always the hook,
+        // the last slide is always the CTA, everything between is a
+        // 3-point content slide.
+        $last = max(2, $slideCount);
+        $positions = ["- Slide 1 (Hook): Headline + Body only — NO points"];
+        if ($last === 3) {
+            $positions[] = "- Slide 2 (Content): Headline + Body + EXACTLY 3 points";
+        } elseif ($last > 3) {
+            $positions[] = "- Slides 2-" . ($last - 1) . " (Content): Headline + Body + EXACTLY 3 points";
+        }
+        $positions[] = "- Slide {$last} (CTA): Headline + Body + exactly 1 point, which is the CTA line";
+        $positionRules = implode("\n", $positions);
         return <<<RULES
 SLIDE RULES (strict — the renderer truncates anything over these limits with an ellipsis, so staying within them is what keeps every slide looking clean):
-- Slide 1 (Hook): Headline + Body only — NO points
-- Slides 2-4 (Content): Headline + Body + EXACTLY 3 points
-- Slide 5 (CTA): Headline + Body + exactly 1 point, which is the CTA line
+{$positionRules}
 - Headline: max 8 words, one line of thought, no trailing punctuation
 - Body: exactly 1 sentence, max 25 words
 - Points: max 10 words each
-- Within one Content slide, all 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — save that for slide 5.
+- Within one Content slide, all 3 points must be the same kind of thing — three parallel facts, problems, or benefits at the same level. Never mix in a 4th idea, a solution/pivot, a brand or company name, or a CTA — save that for the final slide.
 - Optional: mark up to 1-2 key words or a number/percentage anywhere in a slide's headline, subheading, body, or points using these markers: **word** for accent color, ++word++ for highlight color, *word* for italic, __word__ for bold (e.g. "60% faster **ESG reporting**") — wrap one marker inside another, e.g. **__word__**, to combine effects on the same word. Every template supports this now. Use sparingly — a whole sentence in markers looks worse than one sharp phrase.
 - Optional: any slide's "subheading" (max 8 words) can carry a short supporting line under its headline. Leave it as an empty string on slides where it doesn't add anything.
 RULES;
@@ -236,7 +249,7 @@ RULES;
 // The exact "Return ONLY raw JSON..." tail per format — split out for
 // the same reason as build_slide_rules_bullets() above (Custom Prompt
 // mode needs the output contract even without any KB context).
-function build_json_schema_block(string $format): string
+function build_json_schema_block(string $format, int $slideCount = 5): string
 {
     if ($format === 'Single Image') {
         return <<<SCHEMA
@@ -258,6 +271,13 @@ Return ONLY raw JSON — no markdown, no code fences, no explanation:
 SCHEMA;
     }
     if ($format === 'Carousel') {
+        $last = max(2, $slideCount);
+        $slideExamples = ['{"slide_number": 1, "headline": "Hook headline here", "subheading": "", "body": "Teaser sentence.", "points": []}'];
+        for ($n = 2; $n < $last; $n++) {
+            $slideExamples[] = '{"slide_number": ' . $n . ', "headline": "Slide ' . $n . ' headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]}';
+        }
+        $slideExamples[] = '{"slide_number": ' . $last . ', "headline": "Closing headline", "subheading": "", "body": "One closing sentence.", "points": ["Exact CTA line here"]}';
+        $slidesJson = "    " . implode(",\n    ", $slideExamples);
         return <<<SCHEMA
 Return ONLY raw JSON — no markdown, no code fences, no explanation:
 {
@@ -265,11 +285,7 @@ Return ONLY raw JSON — no markdown, no code fences, no explanation:
   "caption": "full LinkedIn caption text including hashtags",
   "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
   "slides": [
-    {"slide_number": 1, "headline": "Hook headline here", "subheading": "", "body": "Teaser sentence.", "points": []},
-    {"slide_number": 2, "headline": "Slide 2 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
-    {"slide_number": 3, "headline": "Slide 3 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
-    {"slide_number": 4, "headline": "Slide 4 headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]},
-    {"slide_number": 5, "headline": "Closing headline", "subheading": "", "body": "One closing sentence.", "points": ["Exact CTA line here"]}
+{$slidesJson}
   ]
 }
 SCHEMA;
@@ -373,8 +389,12 @@ EXAMPLE of the right length and style (topic: quoting delays in manufacturing):
 PROMPT;
     }
 
-    $bullets = build_slide_rules_bullets('Carousel');
-    $schema = build_json_schema_block('Carousel');
+    // Caller-configurable (News Studio's "Create Draft" slide-count
+    // picker sets $row['Slide Count']); every other caller leaves it
+    // unset and gets the original fixed count of 5.
+    $slideCount = max(2, min(10, (int) trim($row['Slide Count'] ?? '') ?: 5));
+    $bullets = build_slide_rules_bullets('Carousel', $slideCount);
+    $schema = build_json_schema_block('Carousel', $slideCount);
     return <<<PROMPT
 {$context}You are a LinkedIn content specialist creating a carousel post for a B2B engineering/manufacturing audience.
 
@@ -382,7 +402,7 @@ POST DETAILS:
 - Topic: {$topic}
 - Target Audience: {$personaLabel}
 - Content Style: {$type}
-- Slide Count: 5
+- Slide Count: {$slideCount}
 - CTA: {$cta}
 - Tag Page: {$tagPage}
 
@@ -391,7 +411,7 @@ CAPTION:
 
 {$bullets}
 
-EXAMPLE of the right length and style (topic: quoting delays in manufacturing, 4 slides):
+EXAMPLE of the right length and style (topic: quoting delays in manufacturing — illustrative only, follow the SLIDE RULES above for the actual slide count and positions):
   Slide 1 (Hook): "Your Quote Cycle Is Leaking Revenue" / "When quoting takes too long, deals fall through."
   Slide 2: "The Hidden Cost of Manual Quoting" / "Most manufacturers never measure the revenue impact." / "Win rate drops when response exceeds 48 hours" / "Pricing errors create discount conversations that shouldn't happen" / "Sales teams avoid complex configs to reduce rework"
   Slide 3: "What a Fixed Quote Cycle Looks Like" / "CPQ implemented correctly changes the entire sales dynamic." / "Configuration logic in the system not in individuals" / "Pricing rules automated and consistently applied" / "Quotes generated in minutes not days"

@@ -421,7 +421,7 @@ function news_refresh(int $userId, ?int $workspaceId = null): array
 // the row's "News" field), the image is rendered immediately for
 // Single Image/Carousel so the draft is fully reviewable, and the item
 // is marked used. Returns the new post id.
-function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?string $format = null, string $length = CAPTION_LENGTH_DEFAULT): int
+function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?string $format = null, string $length = CAPTION_LENGTH_DEFAULT, ?int $slideCount = null): int
 {
     $pillar = $newsItem['content_pillar_id'] ? fetch_content_pillar($userId, (int) $newsItem['content_pillar_id']) : null;
 
@@ -450,6 +450,12 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         'News'           => $newsLine,
         'Content Length' => $length,
     ];
+    // Only meaningful for Carousel — build_generation_prompt() ignores
+    // it for every other format. Left unset (falls back to 5) unless
+    // the "Create Draft" form explicitly picked a count.
+    if ($format === 'Carousel' && $slideCount !== null) {
+        $row['Slide Count'] = (string) $slideCount;
+    }
 
     // Workspace context (profile fields + uploaded documents) beats the
     // legacy brief pair when the item belongs to a workspace.

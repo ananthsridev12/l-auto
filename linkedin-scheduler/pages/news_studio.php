@@ -63,8 +63,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!isset(CAPTION_LENGTH_PRESETS[$length])) {
             $length = CAPTION_LENGTH_DEFAULT;
         }
+        // 'auto' (the default) keeps the original random-pick-from-enabled
+        // behavior — news_generate_draft() treats a null $format that way.
+        $format = trim($_POST['format'] ?? 'auto');
+        if (!in_array($format, ['Text Post', 'Single Image', 'Carousel'], true)) {
+            $format = null;
+        }
+        $slideCount = (int) ($_POST['slide_count'] ?? 0) ?: null;
+        if ($slideCount !== null) {
+            $slideCount = max(2, min(10, $slideCount));
+        }
         try {
-            $postId = news_generate_draft($userId, $item, $aiConfig, null, $length);
+            $postId = news_generate_draft($userId, $item, $aiConfig, $format, $length, $slideCount);
             flash('success', 'Draft created — review it below or open it to edit/schedule.');
             redirect('pages/post.php?id=' . $postId);
         } catch (Throwable $e) {
@@ -157,6 +167,8 @@ $headlines = $itemStmt->fetchAll();
 $queries = news_build_queries($userId, $workspaceId);
 $autoEnabled = (bool) ($workspace['news_auto_enabled'] ?? false);
 $draftsPerDay = (int) ($workspace['news_drafts_per_day'] ?? 2);
+$enabledFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel'], get_enabled_formats($userId)));
+$slideCountOptions = [3, 4, 5, 6, 7, 8, 10];
 
 $pageTitle  = 'News Studio';
 $activePage = 'news_studio';
@@ -175,11 +187,11 @@ require __DIR__ . '/../includes/layout_top.php';
     </form>
   </div>
   <p class="muted">
-    Google News is searched for your <?= count($queries) ?> topic(s) — the news keywords and direct RSS feeds/subreddits you've added in
-    <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> (results can be limited to your trusted publishers there too). Fresh headlines land below; each one can become a draft post
-    written in your voice (your take on the story, not a summary). Drafts wait for your review — nothing posts without approval.
+    Searched for your <?= count($queries) ?> topic(s) — the keywords and direct RSS feeds/subreddits you've added in
+    <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a>. Fresh headlines land below; each one can become a draft post
+    written in your voice, or a full blog post. Drafts wait for your review — nothing posts without approval.
     <?php if ($autoEnabled): ?>
-      Auto-drafting is <strong>on</strong>: the daily cron generates up to <?= $draftsPerDay ?> draft(s) each morning.
+      Auto-drafting is <strong>on</strong>: up to <?= $draftsPerDay ?> draft(s) generate automatically each morning.
     <?php else: ?>
       Auto-drafting is <strong>off</strong> — turn it on in Settings to get drafts generated automatically every day.
     <?php endif; ?>
@@ -216,46 +228,74 @@ require __DIR__ . '/../includes/layout_top.php';
     <p class="muted">No unused headlines stored. Click "Fetch news now" above<?= $queries ? '' : ' after adding news keywords in Settings' ?>.</p>
   <?php else: ?>
     <?php foreach ($headlines as $item): ?>
-      <div class="account-row">
-        <div class="account-info">
-          <div>
-            <div>
-              <a href="<?= h($item['url']) ?>" target="_blank" rel="noopener noreferrer"><?= h($item['title']) ?></a>
-            </div>
-            <div class="muted">
-              <?= h($item['source'] ?: 'Unknown source') ?>
-              <?= $item['published_at'] ? ' · ' . h(date('j M Y', strtotime($item['published_at']))) : '' ?>
-              · matched "<?= h($item['topic_query']) ?>"
-            </div>
+      <?php $rid = (int) $item['id']; ?>
+      <div class="content-row">
+        <div>
+          <a class="content-row-title" href="<?= h($item['url']) ?>" target="_blank" rel="noopener noreferrer"><?= h($item['title']) ?></a>
+          <div class="content-row-meta">
+            <?= h($item['source'] ?: 'Unknown source') ?>
+            <?= $item['published_at'] ? ' · ' . h(date('j M Y', strtotime($item['published_at']))) : '' ?>
+            · matched "<?= h($item['topic_query']) ?>"
           </div>
         </div>
-        <div class="inline-form">
-          <form method="post">
+
+        <div class="control-strip">
+          <form method="post" class="news-draft-form" data-row="<?= $rid ?>">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
             <input type="hidden" name="form" value="create_draft">
-            <input type="hidden" name="item_id" value="<?= (int) $item['id'] ?>">
-            <select name="length" style="width:auto;" title="Caption length">
-              <?php foreach (CAPTION_LENGTH_PRESETS as $lkey => $lpreset): ?>
-                <option value="<?= h($lkey) ?>"<?= $lkey === CAPTION_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
-              <?php endforeach; ?>
-            </select>
-            <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Create Draft</button>
+            <input type="hidden" name="item_id" value="<?= $rid ?>">
+            <?php if (count($enabledFormats) > 1): ?>
+            <div class="control-field">
+              <label for="format-<?= $rid ?>">Format</label>
+              <select name="format" id="format-<?= $rid ?>" class="js-format-select" title="Post format">
+                <option value="auto">Auto</option>
+                <?php foreach ($enabledFormats as $fmt): ?>
+                  <option value="<?= h($fmt) ?>"><?= h($fmt) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <?php endif; ?>
+            <?php if (in_array('Carousel', $enabledFormats, true)): ?>
+            <div class="control-field js-slide-count-field" id="slideCountField-<?= $rid ?>" style="<?= count($enabledFormats) > 1 ? 'display:none;' : '' ?>">
+              <label for="slideCount-<?= $rid ?>">Slides</label>
+              <select name="slide_count" id="slideCount-<?= $rid ?>" title="Number of carousel slides">
+                <?php foreach ($slideCountOptions as $sc): ?>
+                  <option value="<?= $sc ?>"<?= $sc === 5 ? ' selected' : '' ?>><?= $sc ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <?php endif; ?>
+            <div class="control-field">
+              <label for="length-<?= $rid ?>">Length</label>
+              <select name="length" id="length-<?= $rid ?>" title="Caption length">
+                <?php foreach (CAPTION_LENGTH_PRESETS as $lkey => $lpreset): ?>
+                  <option value="<?= h($lkey) ?>"<?= $lkey === CAPTION_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <button type="submit" class="btn-secondary" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Create Draft</button>
           </form>
+        </div>
+
+        <div class="control-strip control-strip-secondary">
           <form method="post">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
             <input type="hidden" name="form" value="write_blog_post">
-            <input type="hidden" name="item_id" value="<?= (int) $item['id'] ?>">
-            <select name="length" style="width:auto;" title="Blog post length">
-              <?php foreach (BLOG_LENGTH_PRESETS as $lkey => $lpreset): ?>
-                <option value="<?= h($lkey) ?>"<?= $lkey === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
-              <?php endforeach; ?>
-            </select>
+            <input type="hidden" name="item_id" value="<?= $rid ?>">
+            <div class="control-field">
+              <label for="bloglength-<?= $rid ?>">Blog length</label>
+              <select name="length" id="bloglength-<?= $rid ?>" title="Blog post length">
+                <?php foreach (BLOG_LENGTH_PRESETS as $lkey => $lpreset): ?>
+                  <option value="<?= h($lkey) ?>"<?= $lkey === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
             <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
           </form>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
             <input type="hidden" name="form" value="dismiss_item">
-            <input type="hidden" name="item_id" value="<?= (int) $item['id'] ?>">
+            <input type="hidden" name="item_id" value="<?= $rid ?>">
             <button type="submit" class="btn-tiny btn-danger">Dismiss</button>
           </form>
         </div>
@@ -264,4 +304,4 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php endif; ?>
 </section>
 
-<?php require __DIR__ . '/../includes/layout_bottom.php'; ?>
+<?php $pageScripts = ['news_studio.js']; require __DIR__ . '/../includes/layout_bottom.php'; ?>
