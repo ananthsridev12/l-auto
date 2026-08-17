@@ -18,9 +18,11 @@ $pdo = db();
 $stmt = $pdo->query(
     "SELECT bp.*, w.wordpress_url, w.wordpress_username, w.wordpress_app_password,
             w.jekyll_repo, w.jekyll_branch, w.jekyll_token, w.jekyll_posts_path, w.jekyll_site_url,
-            w.grav_site_url, w.grav_api_key, w.grav_route_prefix, w.grav_template
+            w.grav_site_url, w.grav_api_key, w.grav_route_prefix, w.grav_template,
+            cp.grav_route_prefix AS pillar_grav_route_prefix, cp.grav_template AS pillar_grav_template
      FROM blog_posts bp
      JOIN workspaces w ON w.id = bp.workspace_id
+     LEFT JOIN content_pillars cp ON cp.id = bp.content_pillar_id
      WHERE bp.status = 'scheduled' AND bp.scheduled_at <= NOW()"
 );
 $due = $stmt->fetchAll();
@@ -62,12 +64,22 @@ foreach ($due as $post) {
         echo "[failed] #{$post['id']} \"{$post['title']}\": no publish target configured\n";
         continue;
     }
-    $publishers = [
-        'wordpress' => 'wordpress_publish_post',
-        'jekyll'    => 'jekyll_publish_post',
-        'grav'      => 'grav_publish_post',
-    ];
-    $result = $publishers[$target]($workspace, $post);
+    if ($target === 'grav') {
+        // Pulled via the LEFT JOIN above rather than fetch_content_pillar()
+        // — this loop already has everything it needs per-row and isn't
+        // in a request context with a session user to authorize against.
+        $pillar = $post['content_pillar_id'] ? [
+            'grav_route_prefix' => $post['pillar_grav_route_prefix'],
+            'grav_template'     => $post['pillar_grav_template'],
+        ] : null;
+        $result = grav_publish_post($workspace, $post, $pillar);
+    } else {
+        $publishers = [
+            'wordpress' => 'wordpress_publish_post',
+            'jekyll'    => 'jekyll_publish_post',
+        ];
+        $result = $publishers[$target]($workspace, $post);
+    }
     if ($result['success']) {
         mark_blog_post_published((int) $post['id'], $result['external_post_id'], $result['external_url'] ?? null, $target);
         $published++;

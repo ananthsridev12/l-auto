@@ -1246,7 +1246,7 @@ require __DIR__ . '/../includes/layout_top.php';
 <?php if (module_enabled('news_studio')): ?>
 <section class="card" data-tab="integrations">
   <h2>News Auto-Content</h2>
-  <p class="muted">The <a href="<?= h(app_path('pages/news_studio.php')) ?>">News Studio</a> searches Google News for every <a href="<?= h(app_path('pages/knowledge.php')) ?>#pillars">Content Pillar</a> name, plus the extra keywords below, and turns trending headlines into draft posts written in your voice. With auto-drafting on, the daily cron generates drafts each morning for you to review — nothing is ever posted without your approval.</p>
+  <p class="muted">The <a href="<?= h(app_path('pages/news_studio.php')) ?>">News Studio</a> searches Google News for the keywords below and turns trending headlines into draft posts written in your voice. With auto-drafting on, the daily cron generates drafts each morning for you to review — nothing is ever posted without your approval.</p>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="news_settings">
@@ -1263,8 +1263,8 @@ require __DIR__ . '/../includes/layout_top.php';
     </label>
     <button type="submit" class="btn-secondary">Save News Settings</button>
   </form>
-  <h3 style="margin-top:20px;">Extra news keywords, RSS feeds &amp; subreddits</h3>
-  <p class="muted">Searched in addition to your Content Pillar names — use these for topics you follow but don't have a pillar for (e.g. a competitor, a technology, an industry event). You can also paste a publication's own <strong>RSS feed URL</strong> to fetch that feed directly instead of searching Google News, or add a <strong>subreddit</strong> (requires Reddit credentials below) to pull trending discussion instead of headlines. Direct feeds and subreddits both skip the trusted-sources filter below, since adding one is itself the trust decision.</p>
+  <h3 style="margin-top:20px;">News keywords, RSS feeds &amp; subreddits</h3>
+  <p class="muted">These are the only topics searched — add whatever you want news drafts for (e.g. a competitor, a technology, an industry event). You can also paste a publication's own <strong>RSS feed URL</strong> to fetch that feed directly instead of searching Google News, or add a <strong>subreddit</strong> (requires Reddit credentials below) to pull trending discussion instead of headlines. Direct feeds and subreddits both skip the trusted-sources filter below, since adding one is itself the trust decision.</p>
   <?php if ($newsTopics): ?>
     <?php foreach ($newsTopics as $nt): ?>
       <div class="account-row">
@@ -1285,7 +1285,7 @@ require __DIR__ . '/../includes/layout_top.php';
       </div>
     <?php endforeach; ?>
   <?php else: ?>
-    <p class="muted">No extra keywords yet — your Content Pillar names are always searched.</p>
+    <p class="muted">No keywords yet — add one below to start fetching news.</p>
   <?php endif; ?>
   <form method="post" class="stacked-form" style="margin-top:12px;">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">

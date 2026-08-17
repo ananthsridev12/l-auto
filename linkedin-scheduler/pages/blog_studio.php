@@ -55,8 +55,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 fn ($p) => ['title' => $p['title'], 'slug' => $p['slug']],
                 fetch_blog_posts($userId, $workspaceId, 'published')
             );
+            $pillarId = (int) ($_POST['content_pillar_id'] ?? 0) ?: null;
+            if ($pillarId !== null && !fetch_content_pillar($userId, $pillarId)) {
+                $pillarId = null;
+            }
             $creative = generate_blog_post_via_ai(['title' => $topicTitle, 'length' => $length], $aiConfig, $workspace, $relatedMemory, null, $existingPosts);
-            $newPostId = create_blog_post($userId, $workspaceId, $creative, null);
+            $newPostId = create_blog_post($userId, $workspaceId, $creative, null, $pillarId);
             save_blog_content_memory($workspaceId, $newPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
             flash('success', 'Blog post drafted — review and edit before publishing.');
             redirect('pages/blog_studio.php?id=' . $newPostId);
@@ -84,6 +88,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
         if (in_array($_POST['publish_target'] ?? null, ['wordpress', 'jekyll', 'grav'], true)) {
             $fields['publish_target'] = $_POST['publish_target'];
+        }
+        if (array_key_exists('content_pillar_id', $_POST)) {
+            $pillarId = (int) $_POST['content_pillar_id'] ?: null;
+            $fields['content_pillar_id'] = ($pillarId !== null && fetch_content_pillar($userId, $pillarId)) ? $pillarId : null;
         }
         update_blog_post($userId, $postId, $fields);
         flash('success', 'Saved.');
@@ -114,12 +122,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'Connect WordPress, Jekyll, or Grav for this workspace in Settings first.');
             redirect('pages/blog_studio.php?id=' . $postId);
         }
-        $publishers = [
-            'wordpress' => 'wordpress_publish_post',
-            'jekyll'    => 'jekyll_publish_post',
-            'grav'      => 'grav_publish_post',
-        ];
-        $result = $publishers[$target]($workspace, $existing);
+        // Only Grav consults the pillar (its route/template override) —
+        // wordpress_publish_post()/jekyll_publish_post() have a
+        // 2-argument signature and don't take one.
+        if ($target === 'grav') {
+            $pillar = $existing['content_pillar_id'] ? fetch_content_pillar($userId, (int) $existing['content_pillar_id']) : null;
+            $result = grav_publish_post($workspace, $existing, $pillar);
+        } else {
+            $publishers = [
+                'wordpress' => 'wordpress_publish_post',
+                'jekyll'    => 'jekyll_publish_post',
+            ];
+            $result = $publishers[$target]($workspace, $existing);
+        }
         if ($result['success']) {
             mark_blog_post_published($postId, $result['external_post_id'], $result['external_url'] ?? null, $target);
             $successMsg = [
@@ -145,6 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pageTitle  = 'Blog Studio';
 $activePage = 'blog_studio';
 $token = csrf_token();
+$contentPillars = fetch_content_pillars($userId, $workspaceId);
 require __DIR__ . '/../includes/layout_top.php';
 
 if ($postId) {
@@ -154,6 +170,7 @@ if ($postId) {
         require __DIR__ . '/../includes/layout_bottom.php';
         exit;
     }
+    $postPillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
     $platformLabels = ['wordpress' => 'WordPress', 'jekyll' => 'Jekyll (GitHub)', 'grav' => 'Grav'];
     $configuredTargets = array_filter([
         'wordpress' => wordpress_configured($workspace),
@@ -196,6 +213,16 @@ if ($postId) {
         <label>Keywords
           <input type="text" name="keywords" value="<?= h($post['keywords'] ?? '') ?>" <?= $post['status'] === 'published' ? 'disabled' : '' ?>>
         </label>
+        <?php if ($contentPillars): ?>
+        <label>Content Pillar <span class="muted">(optional — a pillar with its own Grav route prefix/template routes this post there instead of the workspace default)</span>
+          <select name="content_pillar_id" <?= $post['status'] === 'published' ? 'disabled' : '' ?>>
+            <option value="">— None —</option>
+            <?php foreach ($contentPillars as $cp): ?>
+              <option value="<?= (int) $cp['id'] ?>"<?= $post['content_pillar_id'] == $cp['id'] ? ' selected' : '' ?>><?= h($cp['name']) ?><?= $cp['grav_route_prefix'] ? ' (' . h('/' . trim($cp['grav_route_prefix'], '/')) . ')' : '' ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <?php endif; ?>
         <label>Body (HTML)
           <textarea name="content_html" rows="20" style="font-family:monospace;" <?= $post['status'] === 'published' ? 'disabled' : '' ?>><?= h($post['content_html']) ?></textarea>
         </label>
@@ -221,6 +248,9 @@ if ($postId) {
         <p class="muted">Connect WordPress, Jekyll, or Grav for this workspace in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to publish or schedule.</p>
       <?php else: ?>
         <p class="muted">Will publish to <strong><?= h($publishPlatformLabel) ?></strong><?= count($configuredTargets) > 1 ? ' — change this above and Save first.' : '.' ?></p>
+        <?php if ($resolvedTarget === 'grav' && empty($post['external_post_id'])): ?>
+          <p class="muted">Route: <code><?= h(grav_post_route($workspace, $post, $postPillar)) ?></code><?= $postPillar && $postPillar['grav_route_prefix'] ? ' (from the "' . h($postPillar['name']) . '" pillar)' : '' ?></p>
+        <?php endif; ?>
         <form method="post" style="display:inline-block; margin-right:12px;">
           <input type="hidden" name="csrf" value="<?= h($token) ?>">
           <input type="hidden" name="action" value="publish_now">
@@ -277,6 +307,16 @@ if ($postId) {
             <?php endforeach; ?>
           </select>
         </label>
+        <?php if ($contentPillars): ?>
+        <label>Content Pillar <span class="muted">(optional — routes to that pillar's own Grav route prefix/template if it has one)</span>
+          <select name="content_pillar_id">
+            <option value="">— None —</option>
+            <?php foreach ($contentPillars as $cp): ?>
+              <option value="<?= (int) $cp['id'] ?>"><?= h($cp['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <?php endif; ?>
         <button type="submit" class="btn-primary" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Generate</button>
       </form>
     </section>

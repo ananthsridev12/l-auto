@@ -19,13 +19,34 @@ function grav_site_url(array $workspace): string
     return rtrim((string) $workspace['grav_site_url'], '/');
 }
 
-function grav_route_prefix(array $workspace): string
+// $pillar is the blog post's content_pillars row (fetch_content_pillar()),
+// if it has one — its own grav_route_prefix takes priority over the
+// workspace's when set (non-empty), so different pillars can route to
+// different sections of the same Grav site (e.g. a "Product Updates"
+// pillar under /blog/product/ vs "Industry News" under /blog/news/).
+// NULL/empty on the pillar falls through to the workspace's value, same
+// "no override" convention as content_pillars.default_layout.
+function grav_route_prefix(array $workspace, ?array $pillar = null): string
 {
-    return '/' . trim((string) ($workspace['grav_route_prefix'] ?? ''), '/') ?: '/blog';
+    $pillarValue = trim((string) ($pillar['grav_route_prefix'] ?? ''));
+    if ($pillarValue !== '') {
+        return '/' . trim($pillarValue, '/');
+    }
+    // Precedence note: '.' binds tighter than '?:', so a bare
+    // "'/' . trim(...) ?: '/blog'" would always return the truthy '/'
+    // and never actually fall back — trim the workspace value first,
+    // check IT for emptiness, then build the leading-slash path.
+    $wsValue = trim((string) ($workspace['grav_route_prefix'] ?? ''), '/');
+    return '/' . ($wsValue !== '' ? $wsValue : 'blog');
 }
 
-function grav_template(array $workspace): string
+// Same pillar-overrides-workspace pattern as grav_route_prefix() above.
+function grav_template(array $workspace, ?array $pillar = null): string
 {
+    $pillarValue = trim((string) ($pillar['grav_template'] ?? ''));
+    if ($pillarValue !== '') {
+        return $pillarValue;
+    }
     return trim((string) ($workspace['grav_template'] ?? '')) ?: 'item';
 }
 
@@ -37,9 +58,9 @@ function grav_auth_headers(array $workspace): array
     ];
 }
 
-function grav_post_route(array $workspace, array $blogPost): string
+function grav_post_route(array $workspace, array $blogPost, ?array $pillar = null): string
 {
-    $prefix = rtrim(grav_route_prefix($workspace), '/');
+    $prefix = rtrim(grav_route_prefix($workspace, $pillar), '/');
     return $prefix === '' ? '/' . $blogPost['slug'] : $prefix . '/' . $blogPost['slug'];
 }
 
@@ -82,19 +103,25 @@ function grav_test_connection(array $workspace): array
 // external_url here is reliable rather than a guess: the route is
 // something we choose in the request, not server-assigned, so
 // {site_url}/{route} is guaranteed to match once the page exists.
-function grav_publish_post(array $workspace, array $blogPost): array
+//
+// $pillar is $blogPost's own content_pillars row (or null if untagged)
+// — only consulted for a brand-new page's route/template (see
+// grav_route_prefix()/grav_template()); an update always PUTs to the
+// route the page was first created at, regardless of the pillar it's
+// tagged with now, same as editing a page in place rather than moving it.
+function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = null): array
 {
     if (!grav_configured($workspace)) {
         return ['success' => false, 'error' => 'This workspace has no Grav connection configured — add one in Settings.'];
     }
 
     $isUpdate = !empty($blogPost['external_post_id']);
-    $route = $isUpdate ? $blogPost['external_post_id'] : grav_post_route($workspace, $blogPost);
+    $route = $isUpdate ? $blogPost['external_post_id'] : grav_post_route($workspace, $blogPost, $pillar);
 
     $body = [
         'route'    => $route,
         'title'    => $blogPost['title'],
-        'template' => grav_template($workspace),
+        'template' => grav_template($workspace, $pillar),
         'header'   => [
             'title' => $blogPost['title'],
             'date'  => date('c'),

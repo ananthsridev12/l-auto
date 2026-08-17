@@ -734,15 +734,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $layout = $_POST['pillar_layout'] ?? '';
         $layout = array_key_exists($layout, render_design_templates()) ? $layout : null;
         $palette = validate_palette_select_value($userId, trim($_POST['pillar_palette'] ?? ''));
+        $gravRoutePrefix = trim($_POST['pillar_grav_route_prefix'] ?? '', "/ \t\n\r\0\x0B") ?: null;
+        $gravTemplate = trim($_POST['pillar_grav_template'] ?? '') ?: null;
         if ($name === '') {
             flash('error', 'Enter a content pillar name.');
             redirect('pages/knowledge.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO content_pillars (user_id, workspace_id, name, description, category, default_layout, default_palette) VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout), default_palette = VALUES(default_palette), workspace_id = VALUES(workspace_id)'
+            'INSERT INTO content_pillars (user_id, workspace_id, name, description, category, default_layout, default_palette, grav_route_prefix, grav_template) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout), default_palette = VALUES(default_palette), grav_route_prefix = VALUES(grav_route_prefix), grav_template = VALUES(grav_template), workspace_id = VALUES(workspace_id)'
         );
-        $stmt->execute([$userId, $workspaceId, $name, $desc, $category, $layout, $palette]);
+        $stmt->execute([$userId, $workspaceId, $name, $desc, $category, $layout, $palette, $gravRoutePrefix, $gravTemplate]);
         flash('success', "Content pillar \"{$name}\" saved.");
         redirect('pages/knowledge.php');
     }
@@ -775,6 +777,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/knowledge.php');
     }
 
+    // Move a KB entry to a different workspace — the missing piece for
+    // splitting mixed personal/company content across two workspaces
+    // without hand-recreating every entry. Only the entity types that
+    // directly feed build_context_block() (includes/ai_generate.php) are
+    // supported: documents/senders (strictly workspace-scoped) and
+    // personas/pillars/CTAs (legacy workspace_id-IS-NULL rows can be
+    // moved too, "claiming" them into a real workspace).
+    if (($_POST['form'] ?? '') === 'move_to_workspace') {
+        $entityType = $_POST['move_entity_type'] ?? '';
+        $entityId = (int) ($_POST['move_entity_id'] ?? 0);
+        $targetWorkspaceId = (int) ($_POST['move_target_workspace_id'] ?? 0);
+        $targetWorkspace = $targetWorkspaceId ? fetch_workspace($userId, $targetWorkspaceId) : null;
+        if (!$targetWorkspace || $targetWorkspaceId === $workspaceId) {
+            flash('error', 'Pick a different workspace to move this into.');
+            redirect('pages/knowledge.php');
+        }
+        $queries = [
+            'document' => 'UPDATE knowledge_documents SET workspace_id = ? WHERE id = ? AND workspace_id = ?',
+            'sender'   => 'UPDATE senders SET workspace_id = ?, is_default = 0 WHERE id = ? AND workspace_id = ?',
+            'persona'  => 'UPDATE personas SET workspace_id = ? WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL)',
+            'pillar'   => 'UPDATE content_pillars SET workspace_id = ? WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL)',
+            'cta'      => 'UPDATE cta_library SET workspace_id = ? WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL)',
+        ];
+        if (!isset($queries[$entityType])) {
+            flash('error', 'Unrecognized item type.');
+            redirect('pages/knowledge.php');
+        }
+        $params = in_array($entityType, ['document', 'sender'], true)
+            ? [$targetWorkspaceId, $entityId, $workspaceId]
+            : [$targetWorkspaceId, $entityId, $userId, $workspaceId];
+        try {
+            $stmt = db()->prepare($queries[$entityType]);
+            $stmt->execute($params);
+            $moved = $stmt->rowCount() > 0;
+        } catch (PDOException $e) {
+            if ($e->getCode() === '23000') {
+                flash('error', "Couldn't move — a same-named item already exists in \"{$targetWorkspace['name']}\". Rename one of them first.");
+                redirect('pages/knowledge.php');
+            }
+            throw $e;
+        }
+        flash($moved ? 'success' : 'error', $moved ? "Moved to \"{$targetWorkspace['name']}\"." : 'Item not found.');
+        redirect('pages/knowledge.php');
+    }
+
     flash('error', 'Unrecognized action.');
     redirect('pages/knowledge.php');
 }
@@ -792,6 +839,30 @@ $ctaLibrary = fetch_cta_library($userId, $workspaceId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
 $brandPalettes = fetch_brand_palettes(workspace_brand_user_id($userId, $workspaceId));
 $kbCompleteness = kb_completeness($userId, $workspace);
+$otherWorkspaces = array_values(array_filter(fetch_workspaces($userId), fn ($w) => (int) $w['id'] !== $workspaceId));
+
+// Inline "Move to workspace" mini-form, reused across the sections below
+// that hold entries build_context_block() (includes/ai_generate.php)
+// pulls into AI generation — the standard way to split mixed
+// personal/company content across two workspaces without retyping it.
+function kb_move_form(string $token, string $entityType, int $entityId, array $otherWorkspaces): string
+{
+    if (!$otherWorkspaces) {
+        return '';
+    }
+    $options = '';
+    foreach ($otherWorkspaces as $w) {
+        $options .= '<option value="' . (int) $w['id'] . '">' . h($w['name']) . '</option>';
+    }
+    return '<form method="post" class="inline-form" onsubmit="return confirm(\'Move this to the selected workspace?\');" style="display:flex; gap:4px; align-items:center;">'
+        . '<input type="hidden" name="csrf" value="' . h($token) . '">'
+        . '<input type="hidden" name="form" value="move_to_workspace">'
+        . '<input type="hidden" name="move_entity_type" value="' . h($entityType) . '">'
+        . '<input type="hidden" name="move_entity_id" value="' . $entityId . '">'
+        . '<select name="move_target_workspace_id" style="font-size:12px;">' . $options . '</select>'
+        . '<button type="submit" class="btn-tiny">Move</button>'
+        . '</form>';
+}
 
 $pageTitle  = 'Knowledge Base';
 $activePage = 'knowledge';
@@ -1187,12 +1258,15 @@ require __DIR__ . '/../includes/layout_top.php';
           <span><?= h($p['name']) ?></span>
           <span class="muted"><?= h(mb_strimwidth($p['description'] ?? '', 0, 80, '…')) ?></span>
         </div>
-        <form method="post" onsubmit="return confirm('Remove this persona?');">
-          <input type="hidden" name="csrf" value="<?= h($token) ?>">
-          <input type="hidden" name="form" value="persona_delete">
-          <input type="hidden" name="persona_id" value="<?= (int) $p['id'] ?>">
-          <button type="submit" class="btn-tiny btn-danger">Remove</button>
-        </form>
+        <div style="display:flex; gap:6px;">
+          <?= kb_move_form($token, 'persona', (int) $p['id'], $otherWorkspaces) ?>
+          <form method="post" onsubmit="return confirm('Remove this persona?');">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="persona_delete">
+            <input type="hidden" name="persona_id" value="<?= (int) $p['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        </div>
       </div>
     <?php endforeach; ?>
   <?php else: ?>
@@ -1372,6 +1446,7 @@ require __DIR__ . '/../includes/layout_top.php';
               <button type="submit" class="btn-tiny">Make Default</button>
             </form>
           <?php endif; ?>
+          <?= kb_move_form($token, 'sender', (int) $s['id'], $otherWorkspaces) ?>
           <form method="post" onsubmit="return confirm('Remove this sender?');">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
             <input type="hidden" name="form" value="sender_delete">
@@ -1550,6 +1625,7 @@ require __DIR__ . '/../includes/layout_top.php';
               <button type="submit" class="btn-tiny"><?= $doc['has_summary'] ? 'Re-summarize' : 'Summarize' ?></button>
             </form>
           <?php endif; ?>
+          <?= kb_move_form($token, 'document', (int) $doc['id'], $otherWorkspaces) ?>
           <form method="post" onsubmit="return confirm('Remove this document from the knowledge hub?');">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
             <input type="hidden" name="form" value="kb_doc_delete">
@@ -1622,14 +1698,18 @@ require __DIR__ . '/../includes/layout_top.php';
           <span class="badge <?= $cp['category'] === 'personal' ? 'badge-format' : 'badge-active' ?>"><?= $cp['category'] === 'personal' ? 'Personal' : 'Company' ?></span>
           <?php if ($cp['default_layout']): ?><span class="badge badge-campaign"><?= h(render_design_templates()[$cp['default_layout']]['name'] ?? $cp['default_layout']) ?></span><?php endif; ?>
           <?php if ($cp['default_palette']): ?><span class="badge badge-campaign"><?= h(palette_display_name($cp['default_palette'], $brandPalettes)) ?></span><?php endif; ?>
+          <?php if (!empty($cp['grav_route_prefix'])): ?><span class="badge badge-campaign">Grav: /<?= h(trim($cp['grav_route_prefix'], '/')) ?><?= !empty($cp['grav_template']) ? ' (' . h($cp['grav_template']) . ')' : '' ?></span><?php endif; ?>
           <span class="muted"><?= h(mb_strimwidth($cp['description'] ?? '', 0, 80, '…')) ?></span>
         </div>
-        <form method="post" onsubmit="return confirm('Remove this content pillar?');">
-          <input type="hidden" name="csrf" value="<?= h($token) ?>">
-          <input type="hidden" name="form" value="pillar_delete">
-          <input type="hidden" name="pillar_id" value="<?= (int) $cp['id'] ?>">
-          <button type="submit" class="btn-tiny btn-danger">Remove</button>
-        </form>
+        <div style="display:flex; gap:6px;">
+          <?= kb_move_form($token, 'pillar', (int) $cp['id'], $otherWorkspaces) ?>
+          <form method="post" onsubmit="return confirm('Remove this content pillar?');">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="pillar_delete">
+            <input type="hidden" name="pillar_id" value="<?= (int) $cp['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        </div>
       </div>
     <?php endforeach; ?>
   <?php else: ?>
@@ -1663,6 +1743,12 @@ require __DIR__ . '/../includes/layout_top.php';
         <?= render_palette_select_options('', $brandPalettes, true) ?>
       </select>
     </label>
+    <label>Grav route prefix for this pillar <span class="muted">(optional — overrides this workspace's Grav route prefix in Settings for blog posts tagged with this pillar; e.g. a "Product Updates" pillar could route to /blog/product/ while everything else stays under the workspace default)</span>
+      <input type="text" name="pillar_grav_route_prefix" placeholder="/blog/product">
+    </label>
+    <label>Grav template for this pillar <span class="muted">(optional — overrides this workspace's Grav template)</span>
+      <input type="text" name="pillar_grav_template" placeholder="item">
+    </label>
     <button type="submit" class="btn-secondary">Add Content Pillar</button>
   </form>
 </section>
@@ -1677,12 +1763,15 @@ require __DIR__ . '/../includes/layout_top.php';
           <span><?= h($cta['text']) ?></span>
           <?php if ($cta['funnel_stage']): ?><span class="badge badge-format"><?= h($cta['funnel_stage']) ?></span><?php endif; ?>
         </div>
-        <form method="post" onsubmit="return confirm('Remove this CTA?');">
-          <input type="hidden" name="csrf" value="<?= h($token) ?>">
-          <input type="hidden" name="form" value="cta_delete">
-          <input type="hidden" name="cta_id" value="<?= (int) $cta['id'] ?>">
-          <button type="submit" class="btn-tiny btn-danger">Remove</button>
-        </form>
+        <div style="display:flex; gap:6px;">
+          <?= kb_move_form($token, 'cta', (int) $cta['id'], $otherWorkspaces) ?>
+          <form method="post" onsubmit="return confirm('Remove this CTA?');">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="cta_delete">
+            <input type="hidden" name="cta_id" value="<?= (int) $cta['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        </div>
       </div>
     <?php endforeach; ?>
   <?php else: ?>

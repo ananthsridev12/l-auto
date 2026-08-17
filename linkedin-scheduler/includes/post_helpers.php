@@ -479,14 +479,14 @@ function kb_completeness(int $userId, array $workspace): array
 function fetch_content_pillars(int $userId, ?int $workspaceId = null): array
 {
     if ($workspaceId === null) {
-        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE user_id = ? ORDER BY name');
+        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette, grav_route_prefix, grav_template FROM content_pillars WHERE user_id = ? ORDER BY name');
         $stmt->execute([$userId]);
     } else {
         // Trusts workspace_id alone (not ANDed with user_id) once a
         // workspace is given — access to it is already gated upstream,
         // and a granted teammate must see the same pillars the owner
         // does. See fetch_personas()'s comment for the full reasoning.
-        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette FROM content_pillars WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY name');
+        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette, grav_route_prefix, grav_template FROM content_pillars WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY name');
         $stmt->execute([$workspaceId, $userId]);
     }
     return $stmt->fetchAll();
@@ -497,7 +497,7 @@ function fetch_content_pillars(int $userId, ?int $workspaceId = null): array
 function fetch_content_pillar(int $userId, int $id): ?array
 {
     $stmt = db()->prepare(
-        'SELECT cp.id, cp.name, cp.description, cp.category, cp.default_layout, cp.default_palette FROM content_pillars cp
+        'SELECT cp.id, cp.name, cp.description, cp.category, cp.default_layout, cp.default_palette, cp.grav_route_prefix, cp.grav_template FROM content_pillars cp
          LEFT JOIN workspaces w ON w.id = cp.workspace_id
          LEFT JOIN workspace_members wm ON wm.workspace_id = cp.workspace_id AND wm.user_id = ?
          WHERE cp.id = ? AND (

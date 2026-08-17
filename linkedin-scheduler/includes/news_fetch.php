@@ -128,16 +128,17 @@ function news_source_is_trusted(array $item, array $trustedEntries): bool
 
 // ── Query building ───────────────────────────────────────────────────
 
-// Every Content Pillar name is searched automatically (that's what the
-// user posts about), plus any custom keywords added in Settings. Pillar
-// queries carry the pillar id through to the stored item, so generation
-// can pull that pillar's description/brief/design defaults later.
+// Built from Settings' news keywords (and direct RSS feeds/subreddits
+// added there) only. This used to also auto-search every Content Pillar
+// name, but that pulled in a lot of irrelevant results — a pillar name
+// is a broad content theme, not a tuned search query, so it doesn't
+// make a good Google News query. 'pillar_id' stays in the shape (always
+// null now) so news_generate_draft()'s pillar-context lookup and
+// news_items.content_pillar_id keep working unchanged for anyone
+// reading old rows — it's just never set going forward.
 function news_build_queries(int $userId, ?int $workspaceId = null): array
 {
     $queries = [];
-    foreach (fetch_content_pillars($userId, $workspaceId) as $pillar) {
-        $queries[] = ['query' => $pillar['name'], 'pillar_id' => (int) $pillar['id'], 'feed' => false, 'source_type' => 'auto'];
-    }
     foreach (fetch_news_topics($userId, $workspaceId) as $topic) {
         $sourceType = $topic['source_type'] ?? 'auto';
         $queries[] = [
@@ -147,18 +148,7 @@ function news_build_queries(int $userId, ?int $workspaceId = null): array
             'source_type' => $sourceType,
         ];
     }
-    // Dedupe by lowercased query text (a keyword duplicating a pillar
-    // name would double-fetch the same feed) — first entry wins, so the
-    // pillar-linked version is kept.
-    $seen = [];
-    return array_values(array_filter($queries, function ($q) use (&$seen) {
-        $key = mb_strtolower($q['query']);
-        if (isset($seen[$key])) {
-            return false;
-        }
-        $seen[$key] = true;
-        return true;
-    }));
+    return $queries;
 }
 
 // ── Fetch + parse ────────────────────────────────────────────────────

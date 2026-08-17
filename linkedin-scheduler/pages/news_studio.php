@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'fetch_now') {
         $result = news_refresh($userId, $workspaceId);
         if ($result['fetched'] === 0) {
-            flash('error', 'Nothing to search — add Content Pillars or news keywords in Settings first.');
+            flash('error', 'Nothing to search — add news keywords in Settings first.');
         } else {
             $msg = "Searched {$result['fetched']} topic(s), {$result['stored']} new headline(s).";
             if ($result['errors']) {
@@ -175,7 +175,7 @@ require __DIR__ . '/../includes/layout_top.php';
     </form>
   </div>
   <p class="muted">
-    Google News is searched for your <?= count($queries) ?> topic(s) — every Content Pillar name plus the news keywords and direct RSS feeds in
+    Google News is searched for your <?= count($queries) ?> topic(s) — the news keywords and direct RSS feeds/subreddits you've added in
     <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> (results can be limited to your trusted publishers there too). Fresh headlines land below; each one can become a draft post
     written in your voice (your take on the story, not a summary). Drafts wait for your review — nothing posts without approval.
     <?php if ($autoEnabled): ?>
@@ -213,7 +213,7 @@ require __DIR__ . '/../includes/layout_top.php';
 <section class="card">
   <h2>Fresh headlines (<?= count($headlines) ?>)</h2>
   <?php if (!$headlines): ?>
-    <p class="muted">No unused headlines stored. Click "Fetch news now" above<?= $queries ? '' : ' after adding Content Pillars or news keywords in Settings' ?>.</p>
+    <p class="muted">No unused headlines stored. Click "Fetch news now" above<?= $queries ? '' : ' after adding news keywords in Settings' ?>.</p>
   <?php else: ?>
     <?php foreach ($headlines as $item): ?>
       <div class="account-row">
