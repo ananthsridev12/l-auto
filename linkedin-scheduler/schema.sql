@@ -955,3 +955,12 @@ ALTER TABLE `content_pillars`
 ALTER TABLE `blog_posts`
   ADD COLUMN `content_pillar_id` INT NULL AFTER `workspace_id`,
   ADD CONSTRAINT `fk_blog_posts_content_pillar` FOREIGN KEY (`content_pillar_id`) REFERENCES `content_pillars`(`id`) ON DELETE SET NULL;
+
+-- Per-workspace news source region + RSS snippet capture — see
+-- includes/news_fetch.php, includes/blog_generate.php,
+-- pages/news_studio.php, pages/settings.php.
+ALTER TABLE `workspaces`
+  ADD COLUMN `news_region` VARCHAR(10) NULL;
+
+ALTER TABLE `news_items`
+  ADD COLUMN `description` TEXT NULL;

@@ -182,8 +182,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'news_settings') {
         $enabled = !empty($_POST['news_auto_enabled']) ? 1 : 0;
         $perDay = max(1, min(5, (int) ($_POST['news_drafts_per_day'] ?? 2)));
-        db()->prepare('UPDATE workspaces SET news_auto_enabled = ?, news_drafts_per_day = ? WHERE id = ?')
-            ->execute([$enabled, $perDay, $workspaceId]);
+        $region = trim($_POST['news_region'] ?? '');
+        $region = array_key_exists($region, NEWS_REGION_PRESETS) ? $region : null;
+        db()->prepare('UPDATE workspaces SET news_auto_enabled = ?, news_drafts_per_day = ?, news_region = ? WHERE id = ?')
+            ->execute([$enabled, $perDay, $region, $workspaceId]);
         flash('success', 'News auto-content settings saved.');
         redirect('pages/settings.php');
     }
@@ -641,7 +643,7 @@ $defaultPaletteSingle = $workspace['default_palette_single'] ?? null;
 $defaultPaletteCarousel = $workspace['default_palette_carousel'] ?? null;
 $newsTopics = fetch_news_topics($userId, $workspaceId);
 $newsTrustedSources = fetch_news_trusted_sources($userId, $workspaceId);
-$newsSettings = ['news_auto_enabled' => $workspace['news_auto_enabled'] ?? 0, 'news_drafts_per_day' => $workspace['news_drafts_per_day'] ?? 2];
+$newsSettings = ['news_auto_enabled' => $workspace['news_auto_enabled'] ?? 0, 'news_drafts_per_day' => $workspace['news_drafts_per_day'] ?? 2, 'news_region' => $workspace['news_region'] ?? null];
 $brandPalettes = fetch_brand_palettes($userId);
 $brandFonts = fetch_brand_fonts($userId);
 $headingFontId = (int) (fetch_heading_font($userId)['id'] ?? 0);
@@ -1259,6 +1261,14 @@ require __DIR__ . '/../includes/layout_top.php';
         <?php for ($n = 1; $n <= 5; $n++): ?>
           <option value="<?= $n ?>"<?= (int) $newsSettings['news_drafts_per_day'] === $n ? ' selected' : '' ?>><?= $n ?></option>
         <?php endfor; ?>
+      </select>
+    </label>
+    <label>News source region <span class="muted">(which country's Google News edition headlines are searched from)</span>
+      <select name="news_region">
+        <option value="">Default (<?= h(NEWS_REGION_PRESETS[NEWS_FEED_COUNTRY]['label'] ?? NEWS_FEED_COUNTRY) ?>)</option>
+        <?php foreach (NEWS_REGION_PRESETS as $rkey => $rpreset): ?>
+          <option value="<?= h($rkey) ?>"<?= $newsSettings['news_region'] === $rkey ? ' selected' : '' ?>><?= h($rpreset['label']) ?></option>
+        <?php endforeach; ?>
       </select>
     </label>
     <button type="submit" class="btn-secondary">Save News Settings</button>

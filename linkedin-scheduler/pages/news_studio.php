@@ -133,10 +133,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/news_studio.php');
         }
         try {
-            // Sibling headlines from the same trend — grounds the post
-            // without pretending to have crawled the live web.
+            // Sibling headlines/snippets from the same trend — grounds the
+            // post without pretending to have crawled the live web.
             $sibStmt = db()->prepare(
-                "SELECT title, source FROM news_items
+                "SELECT title, source, description, url FROM news_items
                  WHERE user_id = ? AND topic_query = ? AND id != ?
                  ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 5"
             );
@@ -147,6 +147,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $siblings
             );
             $researchContext = $researchLines ? implode("\n", $researchLines) : null;
+
+            // Grounded Rewrite mode only — this headline's own snippet
+            // first, then any siblings that also had one. Falls back to
+            // Original Take behavior on its own if nothing came through
+            // (news_clean_description() returns null for a feed with no
+            // <description>, or for every Reddit item).
+            $blogMode = ($_POST['blog_mode'] ?? '') === BLOG_MODE_GROUNDED ? BLOG_MODE_GROUNDED : BLOG_MODE_ORIGINAL;
+            $includeReference = !empty($_POST['include_reference']);
+            $sourceSnippets = [];
+            if ($blogMode === BLOG_MODE_GROUNDED) {
+                if (!empty($item['description'])) {
+                    $sourceSnippets[] = ['text' => $item['description'], 'source' => $item['source'], 'url' => $item['url']];
+                }
+                foreach ($siblings as $s) {
+                    if (!empty($s['description'])) {
+                        $sourceSnippets[] = ['text' => $s['description'], 'source' => $s['source'], 'url' => $s['url']];
+                    }
+                }
+                if (!$sourceSnippets) {
+                    $blogMode = BLOG_MODE_ORIGINAL; // nothing to ground on — same as picking Original Take
+                }
+            }
 
             $meta = array_filter([$item['source'] ? 'reported by ' . $item['source'] : null, $item['published_at'] ? date('j M Y', strtotime($item['published_at'])) : null]);
             $blogLength = strtolower(trim($_POST['length'] ?? BLOG_LENGTH_DEFAULT));
@@ -160,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 fn ($p) => ['title' => $p['title'], 'slug' => $p['slug']],
                 fetch_blog_posts($userId, $workspaceId, 'published')
             );
-            $creative = generate_blog_post_via_ai($topic, $aiConfig, $workspace, $relatedMemory, $researchContext, $existingPosts);
+            $creative = generate_blog_post_via_ai($topic, $aiConfig, $workspace, $relatedMemory, $researchContext, $existingPosts, $blogMode, $includeReference, $sourceSnippets);
             $newBlogPostId = create_blog_post($userId, $workspaceId, $creative, $itemId);
             save_blog_content_memory($workspaceId, $newBlogPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
             db()->prepare('UPDATE news_items SET status = "used" WHERE id = ? AND user_id = ?')->execute([$itemId, $userId]);
@@ -344,6 +366,21 @@ require __DIR__ . '/../includes/layout_top.php';
                   <?php endforeach; ?>
                 </select>
               </div>
+              <?php if (!empty($item['description'])): ?>
+              <div class="control-field">
+                <label for="blogmode-<?= $rid ?>">Mode</label>
+                <select name="blog_mode" id="blogmode-<?= $rid ?>" title="How the source is used">
+                  <option value="<?= BLOG_MODE_ORIGINAL ?>">Original Take</option>
+                  <option value="<?= BLOG_MODE_GROUNDED ?>">Grounded Rewrite</option>
+                </select>
+              </div>
+              <?php else: ?>
+              <input type="hidden" name="blog_mode" value="<?= BLOG_MODE_ORIGINAL ?>">
+              <?php endif; ?>
+              <label class="checkbox-row" style="padding:0; gap:6px; align-self:flex-end; margin-bottom:9px;" title="Adds a 'Source:' credit line — only relevant with Grounded Rewrite">
+                <input type="checkbox" name="include_reference" value="1">
+                <span style="font-size:12px;">Cite source</span>
+              </label>
               <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
             </form>
             <form method="post">

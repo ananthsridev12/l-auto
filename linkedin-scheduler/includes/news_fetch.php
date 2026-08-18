@@ -6,18 +6,37 @@
 // AI generation path every other flow uses. Consumed by
 // cron/news_daily.php (scheduled) and pages/news_studio.php (manual).
 //
-// Copyright posture: only the headline, source name, link, and date are
-// stored or shown to the AI — never article body text. The generated
-// post is the user's own first-person commentary on the story (see the
-// NEWS block in includes/ai_generate.php build_generation_prompt()).
+// Copyright posture: the headline, source name, link, date, and a short
+// (HTML-stripped, truncated) snippet from the feed's own <description>
+// are stored — never full article text, and the snippet is only ever
+// used to extract factual values (numbers, names, dates), never quoted
+// or closely paraphrased (see build_blog_prompt()'s Grounded Rewrite
+// mode in includes/blog_generate.php). The default "Original Take" mode
+// still uses only the headline, exactly as before.
 
-// Feed locale — override in config.php if your audience is elsewhere.
+// Feed locale defaults — used when a workspace hasn't picked its own
+// News Source Region (workspaces.news_region, see pages/settings.php).
+// Override in config.php if most of your users are elsewhere.
 if (!defined('NEWS_FEED_LANG')) {
     define('NEWS_FEED_LANG', 'en-IN');   // hl
 }
 if (!defined('NEWS_FEED_COUNTRY')) {
     define('NEWS_FEED_COUNTRY', 'IN');   // gl; ceid becomes "IN:en"
 }
+
+// Curated region list for the Settings "News Source Region" picker —
+// deliberately short (a handful of English-language Google News
+// editions) rather than every country Google News supports, since this
+// app's UI/prompts are English-only anyway. Keys are stored verbatim in
+// workspaces.news_region.
+const NEWS_REGION_PRESETS = [
+    'IN' => ['label' => 'India',          'hl' => 'en-IN', 'gl' => 'IN'],
+    'US' => ['label' => 'United States',  'hl' => 'en-US', 'gl' => 'US'],
+    'GB' => ['label' => 'United Kingdom', 'hl' => 'en-GB', 'gl' => 'GB'],
+    'AU' => ['label' => 'Australia',      'hl' => 'en-AU', 'gl' => 'AU'],
+    'CA' => ['label' => 'Canada',         'hl' => 'en-CA', 'gl' => 'CA'],
+    'SG' => ['label' => 'Singapore',      'hl' => 'en-SG', 'gl' => 'SG'],
+];
 
 const NEWS_ITEMS_PER_QUERY = 8;    // top-N freshest headlines kept per query
 const NEWS_MAX_AGE_DAYS    = 7;    // older items in the feed are ignored
@@ -153,20 +172,28 @@ function news_build_queries(int $userId, ?int $workspaceId = null): array
 
 // ── Fetch + parse ────────────────────────────────────────────────────
 
-function news_feed_url(string $query): string
+// $region is a NEWS_REGION_PRESETS key (a workspace's news_region) or
+// null to fall back to the NEWS_FEED_LANG/NEWS_FEED_COUNTRY constants —
+// an unrecognized key falls back the same way, rather than erroring.
+function news_feed_url(string $query, ?string $region = null): string
 {
-    $lang = explode('-', NEWS_FEED_LANG)[0];
+    $preset = $region !== null ? (NEWS_REGION_PRESETS[$region] ?? null) : null;
+    $hl = $preset['hl'] ?? NEWS_FEED_LANG;
+    $gl = $preset['gl'] ?? NEWS_FEED_COUNTRY;
+    $lang = explode('-', $hl)[0];
     return 'https://news.google.com/rss/search?q=' . urlencode($query)
-        . '&hl=' . urlencode(NEWS_FEED_LANG)
-        . '&gl=' . urlencode(NEWS_FEED_COUNTRY)
-        . '&ceid=' . urlencode(NEWS_FEED_COUNTRY . ':' . $lang);
+        . '&hl=' . urlencode($hl)
+        . '&gl=' . urlencode($gl)
+        . '&ceid=' . urlencode($gl . ':' . $lang);
 }
 
 // Fetches raw feed XML — $target is either a search query (turned into
-// a Google News RSS URL) or, for direct feed topics, the feed URL itself.
-function news_fetch_feed_xml(string $target, bool $isFeedUrl = false): string
+// a Google News RSS URL) or, for direct feed topics, the feed URL itself
+// ($region is meaningless for a direct feed — the feed's own locale
+// applies, whatever that is).
+function news_fetch_feed_xml(string $target, bool $isFeedUrl = false, ?string $region = null): string
 {
-    $url = $isFeedUrl ? $target : news_feed_url($target);
+    $url = $isFeedUrl ? $target : news_feed_url($target, $region);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -327,9 +354,26 @@ function news_parse_feed(string $xml): array
             'source'        => $source ?: null,
             'source_domain' => $sourceDomain,
             'published_at'  => $publishedAt,
+            'description'   => news_clean_description((string) ($item->description ?? '')),
         ];
     }
     return $items;
+}
+
+// The feed's own <description> is frequently HTML (Google News wraps it
+// in an <a>/<ol> of related-coverage links; publisher feeds vary) — this
+// strips markup, decodes entities, collapses whitespace, and caps
+// length so what's stored is always a short plain-text snippet, never
+// anything resembling full article text. Empty/whitespace-only input
+// (or nothing worth keeping after cleanup) returns null rather than ''.
+function news_clean_description(string $raw): ?string
+{
+    $text = html_entity_decode(strip_tags($raw), ENT_QUOTES | ENT_HTML5);
+    $text = trim(preg_replace('/\s+/', ' ', $text) ?? '');
+    if ($text === '') {
+        return null;
+    }
+    return mb_substr($text, 0, 500);
 }
 
 // ── Store ────────────────────────────────────────────────────────────
@@ -341,8 +385,8 @@ function news_store_items(int $userId, string $query, ?int $pillarId, array $ite
 {
     $cutoff = date('Y-m-d H:i:s', strtotime('-' . NEWS_MAX_AGE_DAYS . ' days'));
     $stmt = db()->prepare(
-        'INSERT IGNORE INTO news_items (user_id, workspace_id, topic_query, content_pillar_id, title, url, url_hash, source, published_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT IGNORE INTO news_items (user_id, workspace_id, topic_query, content_pillar_id, title, url, url_hash, source, published_at, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stored = 0;
     foreach (array_slice($items, 0, NEWS_ITEMS_PER_QUERY) as $item) {
@@ -356,6 +400,7 @@ function news_store_items(int $userId, string $query, ?int $pillarId, array $ite
             sha1($item['url']),
             $item['source'] !== null ? mb_substr($item['source'], 0, 255) : null,
             $item['published_at'],
+            $item['description'] ?? null,
         ]);
         $stored += $stmt->rowCount() > 0 ? 1 : 0;
     }
@@ -374,6 +419,15 @@ function news_refresh(int $userId, ?int $workspaceId = null): array
     $errors = [];
     $queries = news_build_queries($userId, $workspaceId);
     $trusted = array_column(fetch_news_trusted_sources($userId, $workspaceId), 'source');
+    // A light direct read rather than fetch_workspace()'s owns-OR-granted
+    // JOIN — $workspaceId here already came from an authorized caller
+    // (current_workspace_id() or the cron's own workspace loop).
+    $region = null;
+    if ($workspaceId !== null) {
+        $regionStmt = db()->prepare('SELECT news_region FROM workspaces WHERE id = ?');
+        $regionStmt->execute([$workspaceId]);
+        $region = $regionStmt->fetchColumn() ?: null;
+    }
     $redditCreds = null; // resolved lazily, once, only if a reddit-type topic is present
     foreach ($queries as $q) {
         $isFeed = !empty($q['feed']);
@@ -392,7 +446,7 @@ function news_refresh(int $userId, ?int $workspaceId = null): array
                 // same as adding a direct RSS feed URL.
                 $items = reddit_fetch_subreddit_posts($q['query'], $redditCreds['client_id'], $redditCreds['client_secret']);
             } else {
-                $items = news_parse_feed(news_fetch_feed_xml($q['query'], $isFeed));
+                $items = news_parse_feed(news_fetch_feed_xml($q['query'], $isFeed, $isFeed ? null : $region));
                 if ($isFeed) {
                     // Plain publication feeds usually have no <source> tag —
                     // label items with the feed's host so the UI shows where
