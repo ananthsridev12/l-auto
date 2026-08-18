@@ -856,14 +856,18 @@ body.centered-page {
    standalone in a flat list (border-top dividers). Both classes
    usually land on the same element (e.g. class="account-row
    item-card") — that merged-class case must NOT also zero out
-   .item-card's own padding (a same-element selector like
-   .item-card.account-row is more specific than .item-card alone and
-   would win), so only border-top is reset there; padding:0 is scoped
-   to the genuinely-nested case (a bare .account-row/.content-row
-   inside a separate .item-card wrapper). */
+   .item-card's own padding. .account-row's padding (var(--space-3) 0)
+   and .content-row's (var(--space-4) 0) are both single-class rules
+   with the same specificity as .item-card's own — whichever is later
+   in this file wins the cascade regardless of which makes sense, and
+   .content-row happens to come after .item-card, so its 0-left/right
+   half silently overrode the card's horizontal padding. Repeating
+   padding explicitly in this compound (two-class, so unarguably more
+   specific) selector removes the source-order dependency entirely. */
 .item-card.account-row,
 .item-card.content-row {
   border-top: none;
+  padding: var(--space-4);
 }
 .item-card .account-row,
 .item-card .content-row {
