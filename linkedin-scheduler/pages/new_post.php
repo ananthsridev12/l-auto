@@ -138,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // else granted this page resolves the same location — see
         // api/post_rerender.php.
         $brandUserId = workspace_brand_user_id($userId, $workspaceId);
-        $photoPath = resolve_footer_image($brandUserId, 'personal', $workspaceId);
+        $photoPath = resolve_footer_image($brandUserId, resolve_post_category($workspace), $workspaceId);
         $destDir = UPLOAD_DIR . '/' . $brandUserId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         try {
             $slides = render_creative_to_slides($aiCreative, $destDir, $footerName, $photoPath, $userId, $workspaceId);

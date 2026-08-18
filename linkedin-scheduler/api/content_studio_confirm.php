@@ -40,7 +40,7 @@ $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your 
 // Brand identity and file storage key off the workspace owner, not
 // whoever's importing — see api/post_rerender.php.
 $brandUserId = workspace_brand_user_id($userId, $workspaceId);
-$photoPath = resolve_footer_image($brandUserId, 'personal', $workspaceId);
+$photoPath = resolve_footer_image($brandUserId, resolve_post_category(current_workspace()), $workspaceId);
 
 $pdo = db();
 $pdo->beginTransaction();

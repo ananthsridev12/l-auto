@@ -88,7 +88,6 @@ $creative['format'] = $post['format'] === 'Single Image' ? 'single' : 'carousel'
 $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
 $pillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
-$category = ($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal';
 $wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
 // Brand identity AND file storage both key off the workspace owner, not
 // whoever's re-rendering — a granted teammate re-editing a shared page's
@@ -96,6 +95,7 @@ $wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
 // the same directory the post's other slides already live in (which was
 // created under the owner's id when the post was first rendered).
 $brandUserId = workspace_brand_user_id($userId, $wsId);
+$category = resolve_post_category($wsId ? fetch_workspace($brandUserId, $wsId) : null, $pillar);
 $photoPath = resolve_footer_image($brandUserId, $category, $wsId);
 $destDir = UPLOAD_DIR . '/' . $brandUserId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $post['campaign_id']);
 

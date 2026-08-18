@@ -408,6 +408,21 @@ function resolve_brief_for_pillar(int $userId, ?array $pillar): ?string
 // assets/img/profile.* bundled default. Each tier only kicks in if the
 // one before it is absent, so nothing changes for an account that never
 // touches the new per-workspace upload.
+// Which footer image slot ('company' logo vs 'personal' photo) a
+// rendered post should use — the single source of truth every render
+// call site should go through, so a Company-workspace post never ends
+// up with the personal photo (or vice versa) just because a call site
+// forgot to check the workspace. Workspace type is authoritative once
+// a workspace exists; $pillar's own (legacy, pre-workspace) category
+// is only consulted as a fallback for workspace-less callers.
+function resolve_post_category(?array $workspace, ?array $pillar = null): string
+{
+    if ($workspace) {
+        return ($workspace['type'] ?? 'personal') === 'company' ? 'company' : 'personal';
+    }
+    return ($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal';
+}
+
 function resolve_footer_image(int $userId, string $category, ?int $workspaceId = null): ?string
 {
     $slot = $category === 'company' ? 'logo' : 'photo';

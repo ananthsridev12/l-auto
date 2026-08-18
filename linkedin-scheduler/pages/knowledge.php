@@ -1721,10 +1721,10 @@ require __DIR__ . '/../includes/layout_top.php';
     <label>Name
       <input type="text" name="pillar_name" placeholder="e.g. Case Studies" required>
     </label>
-    <label>Category
+    <label>Category <span class="muted">(defaults to match this workspace — change it if this particular pillar's voice differs)</span>
       <select name="pillar_category">
-        <option value="company">Company</option>
-        <option value="personal">Personal</option>
+        <option value="company"<?= $workspace['type'] !== 'personal' ? ' selected' : '' ?>>Company</option>
+        <option value="personal"<?= $workspace['type'] === 'personal' ? ' selected' : '' ?>>Personal</option>
       </select>
     </label>
     <label>Description <span class="muted">(optional)</span>

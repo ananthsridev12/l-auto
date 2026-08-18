@@ -39,11 +39,11 @@ $creative['format'] = $post['format'] === 'Single Image' ? 'single' : 'carousel'
 $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
 $pillar = $post['content_pillar_id'] ? fetch_content_pillar($userId, (int) $post['content_pillar_id']) : null;
-$category = ($pillar['category'] ?? 'company') === 'personal' ? 'personal' : 'company';
 $wsId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
 // Brand identity and file storage key off the workspace owner, not
 // whoever's generating this slot — see api/post_rerender.php.
 $brandUserId = workspace_brand_user_id($userId, $wsId);
+$category = resolve_post_category($wsId ? fetch_workspace($brandUserId, $wsId) : null, $pillar);
 $photoPath = resolve_footer_image($brandUserId, $category, $wsId);
 
 $campaignId = $post['campaign_id'];

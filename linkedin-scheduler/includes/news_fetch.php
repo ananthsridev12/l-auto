@@ -488,8 +488,7 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         $user->execute([$userId]);
         $u = $user->fetch();
         $footerName = trim($u['name'] ?? '') ?: explode('@', $u['email'] ?? 'Your Name')[0];
-        $category = $workspace ? ($workspace['type'] === 'company' ? 'company' : 'personal')
-            : (($pillar['category'] ?? 'personal') === 'company' ? 'company' : 'personal');
+        $category = resolve_post_category($workspace, $pillar);
         // $userId here is the workspace's owner when called from the daily
         // cron (iterates workspaces directly), but news_studio.php's
         // "Create Now" button calls this with the acting session user,

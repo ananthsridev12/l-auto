@@ -28,9 +28,10 @@ if (!is_array($creative) || empty($creative['slides'])) {
 
 $user = current_user();
 $footerName = trim($user['name'] ?? '') ?: explode('@', $user['email'] ?? 'Your Name')[0];
-// No pillar/category context at preview time (same as the actual save
-// path for New Post) — defaults to the personal footer image slot.
-$photoPath = resolve_footer_image(workspace_brand_user_id($userId, $workspaceId), 'personal', $workspaceId);
+// No pillar context at preview time (same as the actual save path for
+// New Post) — category still follows the active workspace's type, so
+// a Company-workspace preview shows the logo, not the personal photo.
+$photoPath = resolve_footer_image(workspace_brand_user_id($userId, $workspaceId), resolve_post_category(current_workspace()), $workspaceId);
 
 // Fixed, per-user scratch path — cleared on every preview rather than
 // accumulating files (e.g. switching Carousel -> Single Image would
