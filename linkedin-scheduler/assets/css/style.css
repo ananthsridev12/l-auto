@@ -853,11 +853,19 @@ body.centered-page {
 }
 .item-card:hover { border-color: var(--color-brand-light); box-shadow: var(--shadow-sm); }
 /* .account-row/.content-row keep their own internal layout when used
-   standalone in a flat list (border-top dividers) — nested inside a
-   .item-card the border/spacing comes from the card itself instead. */
+   standalone in a flat list (border-top dividers). Both classes
+   usually land on the same element (e.g. class="account-row
+   item-card") — that merged-class case must NOT also zero out
+   .item-card's own padding (a same-element selector like
+   .item-card.account-row is more specific than .item-card alone and
+   would win), so only border-top is reset there; padding:0 is scoped
+   to the genuinely-nested case (a bare .account-row/.content-row
+   inside a separate .item-card wrapper). */
 .item-card.account-row,
+.item-card.content-row {
+  border-top: none;
+}
 .item-card .account-row,
-.item-card.content-row,
 .item-card .content-row {
   border-top: none;
   padding: 0;
