@@ -89,6 +89,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/news_studio.php');
     }
 
+    // Same scope as the "Fresh headlines" query below (this workspace's
+    // own items + legacy workspace-less ones) so "Dismiss All" clears
+    // everything the list is currently showing, not just the visible
+    // page of up to 60.
+    if (($_POST['form'] ?? '') === 'dismiss_all') {
+        $stmt = db()->prepare(
+            "UPDATE news_items SET status = 'dismissed'
+             WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = 'new'"
+        );
+        $stmt->execute([$userId, $workspaceId]);
+        flash('success', $stmt->rowCount() . ' headline(s) dismissed.');
+        redirect('pages/news_studio.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'dismiss_selected') {
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['item_ids'] ?? [])))));
+        if (!$ids) {
+            flash('error', 'Select at least one headline to dismiss.');
+            redirect('pages/news_studio.php');
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = db()->prepare(
+            "UPDATE news_items SET status = 'dismissed'
+             WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = 'new' AND id IN ({$placeholders})"
+        );
+        $stmt->execute([$userId, $workspaceId, ...$ids]);
+        flash('success', $stmt->rowCount() . ' headline(s) dismissed.');
+        redirect('pages/news_studio.php');
+    }
+
     if (($_POST['form'] ?? '') === 'write_blog_post') {
         $itemId = (int) ($_POST['item_id'] ?? 0);
         $stmt = db()->prepare('SELECT * FROM news_items WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL)');
@@ -203,104 +233,129 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php if (!$newsDrafts): ?>
     <p class="muted">No news drafts yet. Create one from a headline below<?= $autoEnabled ? ', or wait for tomorrow\'s auto-drafts' : '' ?>.</p>
   <?php else: ?>
-    <?php foreach ($newsDrafts as $d): ?>
-      <div class="account-row">
-        <div class="account-info">
-          <?php if ($d['first_slide']): ?>
-            <img src="<?= h(slide_public_url($d['first_slide'])) ?>" style="width:56px; height:56px; object-fit:contain; border-radius:6px;" alt="">
-          <?php endif; ?>
-          <div>
-            <div><strong><?= h($d['title']) ?></strong> <span class="badge badge-format"><?= h($d['format']) ?></span></div>
-            <div class="muted"><?= h(mb_strimwidth($d['caption'] ?? '', 0, 140, '…')) ?></div>
+    <div class="item-grid">
+      <?php foreach ($newsDrafts as $d): ?>
+        <div class="account-row item-card">
+          <div class="account-info">
+            <?php if ($d['first_slide']): ?>
+              <img src="<?= h(slide_public_url($d['first_slide'])) ?>" style="width:56px; height:56px; object-fit:contain; border-radius:6px;" alt="">
+            <?php endif; ?>
+            <div>
+              <div><strong><?= h($d['title']) ?></strong> <span class="badge badge-format"><?= h($d['format']) ?></span></div>
+              <div class="muted"><?= h(mb_strimwidth($d['caption'] ?? '', 0, 140, '…')) ?></div>
+            </div>
+          </div>
+          <div class="inline-form">
+            <a href="<?= h(app_path('pages/post.php?id=' . $d['id'])) ?>" class="btn-tiny">Review &amp; Schedule</a>
           </div>
         </div>
-        <div class="inline-form">
-          <a href="<?= h(app_path('pages/post.php?id=' . $d['id'])) ?>" class="btn-tiny">Review &amp; Schedule</a>
-        </div>
-      </div>
-    <?php endforeach; ?>
+      <?php endforeach; ?>
+    </div>
   <?php endif; ?>
 </section>
 
 <section class="card">
-  <h2>Fresh headlines (<?= count($headlines) ?>)</h2>
+  <div class="card-header">
+    <h2>Fresh headlines (<?= count($headlines) ?>)</h2>
+    <?php if ($headlines): ?>
+      <div style="display:flex; gap:8px;">
+        <button type="submit" form="bulkDismissForm" id="dismissSelectedBtn" class="btn-tiny btn-danger" disabled>Dismiss Selected</button>
+        <form method="post" onsubmit="return confirm('Dismiss all <?= count($headlines) ?> headline(s) below? This can\'t be undone.');">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="form" value="dismiss_all">
+          <button type="submit" class="btn-tiny btn-danger">Dismiss All</button>
+        </form>
+      </div>
+    <?php endif; ?>
+  </div>
   <?php if (!$headlines): ?>
     <p class="muted">No unused headlines stored. Click "Fetch news now" above<?= $queries ? '' : ' after adding news keywords in Settings' ?>.</p>
   <?php else: ?>
-    <?php foreach ($headlines as $item): ?>
-      <?php $rid = (int) $item['id']; ?>
-      <div class="content-row">
-        <div>
-          <a class="content-row-title" href="<?= h($item['url']) ?>" target="_blank" rel="noopener noreferrer"><?= h($item['title']) ?></a>
+    <!-- Holds only the bulk-dismiss csrf/form fields — the per-row
+         checkboxes below live inside their own item cards (which also
+         contain other <form>s) and reference this one via the HTML5
+         form="" attribute instead of nesting, since forms can't nest. -->
+    <form method="post" id="bulkDismissForm" style="display:none;">
+      <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <input type="hidden" name="form" value="dismiss_selected">
+    </form>
+    <div class="item-grid">
+      <?php foreach ($headlines as $item): ?>
+        <?php $rid = (int) $item['id']; ?>
+        <div class="content-row item-card">
+          <label class="checkbox-row" style="padding:0; gap:6px;">
+            <input type="checkbox" name="item_ids[]" value="<?= $rid ?>" form="bulkDismissForm" class="js-headline-check">
+            <a class="content-row-title" href="<?= h($item['url']) ?>" target="_blank" rel="noopener noreferrer"><?= h($item['title']) ?></a>
+          </label>
           <div class="content-row-meta">
             <?= h($item['source'] ?: 'Unknown source') ?>
             <?= $item['published_at'] ? ' · ' . h(date('j M Y', strtotime($item['published_at']))) : '' ?>
             · matched "<?= h($item['topic_query']) ?>"
           </div>
-        </div>
 
-        <div class="control-strip">
-          <form method="post" class="news-draft-form" data-row="<?= $rid ?>">
-            <input type="hidden" name="csrf" value="<?= h($token) ?>">
-            <input type="hidden" name="form" value="create_draft">
-            <input type="hidden" name="item_id" value="<?= $rid ?>">
-            <?php if (count($enabledFormats) > 1): ?>
-            <div class="control-field">
-              <label for="format-<?= $rid ?>">Format</label>
-              <select name="format" id="format-<?= $rid ?>" class="js-format-select" title="Post format">
-                <option value="auto">Auto</option>
-                <?php foreach ($enabledFormats as $fmt): ?>
-                  <option value="<?= h($fmt) ?>"><?= h($fmt) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <?php endif; ?>
-            <?php if (in_array('Carousel', $enabledFormats, true)): ?>
-            <div class="control-field js-slide-count-field" id="slideCountField-<?= $rid ?>" style="<?= count($enabledFormats) > 1 ? 'display:none;' : '' ?>">
-              <label for="slideCount-<?= $rid ?>">Slides</label>
-              <select name="slide_count" id="slideCount-<?= $rid ?>" title="Number of carousel slides">
-                <?php foreach ($slideCountOptions as $sc): ?>
-                  <option value="<?= $sc ?>"<?= $sc === 5 ? ' selected' : '' ?>><?= $sc ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <?php endif; ?>
-            <div class="control-field">
-              <label for="length-<?= $rid ?>">Length</label>
-              <select name="length" id="length-<?= $rid ?>" title="Caption length">
-                <?php foreach (CAPTION_LENGTH_PRESETS as $lkey => $lpreset): ?>
-                  <option value="<?= h($lkey) ?>"<?= $lkey === CAPTION_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <button type="submit" class="btn-secondary" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Create Draft</button>
-          </form>
-        </div>
+          <div class="control-strip">
+            <form method="post" class="news-draft-form" data-row="<?= $rid ?>">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="create_draft">
+              <input type="hidden" name="item_id" value="<?= $rid ?>">
+              <?php if (count($enabledFormats) > 1): ?>
+              <div class="control-field">
+                <label for="format-<?= $rid ?>">Format</label>
+                <select name="format" id="format-<?= $rid ?>" class="js-format-select" title="Post format">
+                  <option value="auto">Auto</option>
+                  <?php foreach ($enabledFormats as $fmt): ?>
+                    <option value="<?= h($fmt) ?>"><?= h($fmt) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <?php endif; ?>
+              <?php if (in_array('Carousel', $enabledFormats, true)): ?>
+              <div class="control-field js-slide-count-field" id="slideCountField-<?= $rid ?>" style="<?= count($enabledFormats) > 1 ? 'display:none;' : '' ?>">
+                <label for="slideCount-<?= $rid ?>">Slides</label>
+                <select name="slide_count" id="slideCount-<?= $rid ?>" title="Number of carousel slides">
+                  <?php foreach ($slideCountOptions as $sc): ?>
+                    <option value="<?= $sc ?>"<?= $sc === 5 ? ' selected' : '' ?>><?= $sc ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <?php endif; ?>
+              <div class="control-field">
+                <label for="length-<?= $rid ?>">Length</label>
+                <select name="length" id="length-<?= $rid ?>" title="Caption length">
+                  <?php foreach (CAPTION_LENGTH_PRESETS as $lkey => $lpreset): ?>
+                    <option value="<?= h($lkey) ?>"<?= $lkey === CAPTION_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <button type="submit" class="btn-secondary" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Create Draft</button>
+            </form>
+          </div>
 
-        <div class="control-strip control-strip-secondary">
-          <form method="post">
-            <input type="hidden" name="csrf" value="<?= h($token) ?>">
-            <input type="hidden" name="form" value="write_blog_post">
-            <input type="hidden" name="item_id" value="<?= $rid ?>">
-            <div class="control-field">
-              <label for="bloglength-<?= $rid ?>">Blog length</label>
-              <select name="length" id="bloglength-<?= $rid ?>" title="Blog post length">
-                <?php foreach (BLOG_LENGTH_PRESETS as $lkey => $lpreset): ?>
-                  <option value="<?= h($lkey) ?>"<?= $lkey === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
-          </form>
-          <form method="post">
-            <input type="hidden" name="csrf" value="<?= h($token) ?>">
-            <input type="hidden" name="form" value="dismiss_item">
-            <input type="hidden" name="item_id" value="<?= $rid ?>">
-            <button type="submit" class="btn-tiny btn-danger">Dismiss</button>
-          </form>
+          <div class="control-strip control-strip-secondary">
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="write_blog_post">
+              <input type="hidden" name="item_id" value="<?= $rid ?>">
+              <div class="control-field">
+                <label for="bloglength-<?= $rid ?>">Blog length</label>
+                <select name="length" id="bloglength-<?= $rid ?>" title="Blog post length">
+                  <?php foreach (BLOG_LENGTH_PRESETS as $lkey => $lpreset): ?>
+                    <option value="<?= h($lkey) ?>"<?= $lkey === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
+            </form>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="dismiss_item">
+              <input type="hidden" name="item_id" value="<?= $rid ?>">
+              <button type="submit" class="btn-tiny btn-danger">Dismiss</button>
+            </form>
+          </div>
         </div>
-      </div>
-    <?php endforeach; ?>
+      <?php endforeach; ?>
+    </div>
   <?php endif; ?>
 </section>
 

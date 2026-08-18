@@ -339,31 +339,33 @@ if ($postId) {
     ?>
     <section class="card">
       <h2><?= h($label) ?> (<?= count($rows) ?>)</h2>
-      <?php foreach ($rows as $p): ?>
-        <div class="account-row">
-          <div class="account-info">
-            <div>
+      <div class="item-grid">
+        <?php foreach ($rows as $p): ?>
+          <div class="account-row item-card">
+            <div class="account-info">
               <div>
-                <strong><?= h($p['title']) ?></strong>
-                <?php if ($p['content_pillar_id'] && isset($pillarNameById[$p['content_pillar_id']])): ?>
-                  <span class="badge badge-format"><?= h($pillarNameById[$p['content_pillar_id']]) ?></span>
-                <?php endif; ?>
-                <?php if ($p['publish_target'] && isset($platformLabelsList[$p['publish_target']])): ?>
-                  <span class="badge badge-campaign"><?= h($platformLabelsList[$p['publish_target']]) ?></span>
-                <?php endif; ?>
-              </div>
-              <div class="muted">
-                <?= h(date('j M Y', strtotime($p['updated_at']))) ?>
-                <?php if ($p['status'] === 'scheduled' && $p['scheduled_at']): ?> · scheduled for <?= h(date('j M Y, g:i a', strtotime($p['scheduled_at']))) ?><?php endif; ?>
-                <?php if ($p['status'] === 'failed' && $p['error_message']): ?> · <?= h(mb_strimwidth($p['error_message'], 0, 100, '…')) ?><?php endif; ?>
+                <div>
+                  <strong><?= h($p['title']) ?></strong>
+                  <?php if ($p['content_pillar_id'] && isset($pillarNameById[$p['content_pillar_id']])): ?>
+                    <span class="badge badge-format"><?= h($pillarNameById[$p['content_pillar_id']]) ?></span>
+                  <?php endif; ?>
+                  <?php if ($p['publish_target'] && isset($platformLabelsList[$p['publish_target']])): ?>
+                    <span class="badge badge-campaign"><?= h($platformLabelsList[$p['publish_target']]) ?></span>
+                  <?php endif; ?>
+                </div>
+                <div class="muted">
+                  <?= h(date('j M Y', strtotime($p['updated_at']))) ?>
+                  <?php if ($p['status'] === 'scheduled' && $p['scheduled_at']): ?> · scheduled for <?= h(date('j M Y, g:i a', strtotime($p['scheduled_at']))) ?><?php endif; ?>
+                  <?php if ($p['status'] === 'failed' && $p['error_message']): ?> · <?= h(mb_strimwidth($p['error_message'], 0, 100, '…')) ?><?php endif; ?>
+                </div>
               </div>
             </div>
+            <div class="inline-form">
+              <a href="<?= h(app_path('pages/blog_studio.php?id=' . $p['id'])) ?>" class="btn-tiny">Open</a>
+            </div>
           </div>
-          <div class="inline-form">
-            <a href="<?= h(app_path('pages/blog_studio.php?id=' . $p['id'])) ?>" class="btn-tiny">Open</a>
-          </div>
-        </div>
-      <?php endforeach; ?>
+        <?php endforeach; ?>
+      </div>
     </section>
     <?php endforeach; ?>
 
