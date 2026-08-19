@@ -19,6 +19,7 @@ require_once __DIR__ . '/../includes/blog_generate.php';
 require_once __DIR__ . '/../includes/wordpress_api.php';
 require_once __DIR__ . '/../includes/jekyll_api.php';
 require_once __DIR__ . '/../includes/grav_api.php';
+require_once __DIR__ . '/../includes/sitemap.php';
 
 require_login();
 require_module('blog_studio');
@@ -50,18 +51,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/blog_studio.php');
         }
         try {
-            $relatedMemory = content_memory_related_for_topic($workspaceId, $topicTitle, $aiConfig, 'blog');
-            $existingPosts = array_map(
-                fn ($p) => ['title' => $p['title'], 'slug' => $p['slug']],
-                fetch_blog_posts($userId, $workspaceId, 'published')
-            );
+            $freshContext = !empty($_POST['fresh_context']);
+            $genWorkspace = $freshContext ? null : $workspace;
+            $relatedMemory = $freshContext ? [] : content_memory_related_for_topic($workspaceId, $topicTitle, $aiConfig, 'blog');
+            $existingPosts = blog_internal_link_candidates($userId, $workspaceId);
+            $contentType = trim($_POST['content_type'] ?? BLOG_CONTENT_TYPE_DEFAULT);
+            if (!array_key_exists($contentType, BLOG_CONTENT_TYPES)) {
+                $contentType = BLOG_CONTENT_TYPE_DEFAULT;
+            }
             $pillarId = (int) ($_POST['content_pillar_id'] ?? 0) ?: null;
             if ($pillarId !== null && !fetch_content_pillar($userId, $pillarId)) {
                 $pillarId = null;
             }
-            $creative = generate_blog_post_via_ai(['title' => $topicTitle, 'length' => $length], $aiConfig, $workspace, $relatedMemory, null, $existingPosts);
-            $newPostId = create_blog_post($userId, $workspaceId, $creative, null, $pillarId);
-            save_blog_content_memory($workspaceId, $newPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
+            $creative = generate_blog_post_via_ai(['title' => $topicTitle, 'length' => $length], $aiConfig, $genWorkspace, $relatedMemory, null, $existingPosts, BLOG_MODE_ORIGINAL, false, [], $contentType);
+            $newPostId = create_blog_post($userId, $workspaceId, $creative, null, $pillarId, $contentType);
+            if (!$freshContext) {
+                save_blog_content_memory($workspaceId, $newPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
+            }
             flash('success', 'Blog post drafted — review and edit before publishing.');
             redirect('pages/blog_studio.php?id=' . $newPostId);
         } catch (Throwable $e) {
@@ -150,6 +156,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/blog_studio.php?id=' . $postId);
     }
 
+    // Grav-only: soft "mark as deleted" (header.published = false — the
+    // page stays on the site, just hidden) and its reverse, plus a real
+    // permanent delete. All three require the post to actually be a
+    // published-to-Grav page (external_post_id set on a grav target).
+    if (in_array($action, ['grav_unpublish', 'grav_republish', 'grav_delete'], true)) {
+        if ($existing['publish_target'] !== 'grav' || empty($existing['external_post_id'])) {
+            flash('error', 'This post has no Grav page to act on.');
+            redirect('pages/blog_studio.php?id=' . $postId);
+        }
+        if ($action === 'grav_delete') {
+            $result = grav_delete_post($workspace, $existing);
+            if ($result['success']) {
+                mark_blog_post_deleted_from_platform($postId);
+                flash('success', 'Deleted from Grav permanently.');
+            } else {
+                flash('error', $result['error']);
+            }
+        } else {
+            $publish = $action === 'grav_republish';
+            $result = grav_set_published($workspace, $existing, $publish);
+            if ($result['success']) {
+                $publish ? mark_blog_post_published($postId, $existing['external_post_id'], $existing['external_url'], 'grav') : mark_blog_post_unpublished($postId);
+                flash('success', $publish ? 'Republished on Grav.' : 'Unpublished from Grav — the page is hidden but not deleted.');
+            } else {
+                flash('error', $result['error']);
+            }
+        }
+        redirect('pages/blog_studio.php?id=' . $postId);
+    }
+
     if ($action === 'delete') {
         delete_blog_post($userId, $postId);
         flash('success', 'Blog post deleted.');
@@ -179,10 +215,25 @@ if ($postId) {
     ]);
     $resolvedTarget = blog_resolve_publish_target($workspace, $post);
     $publishPlatformLabel = $platformLabels[$resolvedTarget] ?? 'WordPress';
+    // A post stays field-locked while it has a live (or hidden-but-still-
+    // there) remote copy — 'unpublished' means the Grav page still
+    // exists, just hidden, same reasoning as 'published'.
+    $locked = in_array($post['status'], ['published', 'unpublished'], true);
+    $isGravManaged = $post['publish_target'] === 'grav' && !empty($post['external_post_id']);
+    $statusBadgeClass = match ($post['status']) {
+        'published'   => 'badge-active',
+        'unpublished' => 'badge-warning',
+        'failed'      => 'badge-warning',
+        'scheduled'   => 'badge-scheduled',
+        default       => 'badge-format',
+    };
     ?>
     <div class="page-header">
       <h1><?= h($post['title']) ?></h1>
-      <span class="badge <?= $post['status'] === 'published' ? 'badge-active' : ($post['status'] === 'failed' ? 'badge-warning' : ($post['status'] === 'scheduled' ? 'badge-scheduled' : 'badge-format')) ?>"><?= h(ucfirst($post['status'])) ?></span>
+      <span class="badge <?= $statusBadgeClass ?>"><?= h(ucfirst($post['status'])) ?></span>
+      <?php if ($post['content_type'] && isset(BLOG_CONTENT_TYPES[$post['content_type']])): ?>
+        <span class="badge badge-format"><?= h(BLOG_CONTENT_TYPES[$post['content_type']]['label']) ?></span>
+      <?php endif; ?>
     </div>
     <a href="<?= h(app_path('pages/blog_studio.php')) ?>">&larr; Back to Blog Studio</a>
 
@@ -190,10 +241,37 @@ if ($postId) {
       <section class="card"><p class="badge badge-warning">Last publish attempt failed: <?= h($post['error_message']) ?></p></section>
     <?php endif; ?>
 
-    <?php if ($post['status'] === 'published'): ?>
+    <?php if ($post['status'] === 'published' || $post['status'] === 'unpublished'): ?>
       <section class="card">
-        <p>Published <?= h(date('j M Y, g:i a', strtotime($post['published_at']))) ?><?php if ($post['external_url']): ?> — <a href="<?= h($post['external_url']) ?>" target="_blank" rel="noopener noreferrer">View on <?= h($platformLabels[$post['publish_target']] ?? 'WordPress') ?></a><?php endif; ?><?php if ($post['publish_target'] === 'jekyll'): ?> <span class="muted">(remember to deploy from cPanel if the site hasn't picked this up yet)</span><?php endif; ?></p>
+        <p>
+          <?= $post['status'] === 'published' ? 'Published' : 'Unpublished (hidden, not deleted)' ?> <?= h(date('j M Y, g:i a', strtotime($post['published_at']))) ?><?php if ($post['external_url']): ?> — <a href="<?= h($post['external_url']) ?>" target="_blank" rel="noopener noreferrer">View on <?= h($platformLabels[$post['publish_target']] ?? 'WordPress') ?></a><?php endif; ?><?php if ($post['publish_target'] === 'jekyll'): ?> <span class="muted">(remember to deploy from cPanel if the site hasn't picked this up yet)</span><?php endif; ?>
+        </p>
       </section>
+    <?php endif; ?>
+
+    <?php if ($isGravManaged && $post['status'] !== 'draft'): ?>
+    <section class="card">
+      <h2>Grav Page Management</h2>
+      <p class="muted">The page still exists on Grav even when unpublished — only "Delete Permanently" actually removes it.</p>
+      <?php if ($post['status'] === 'unpublished'): ?>
+        <form method="post" style="display:inline-block; margin-right:12px;">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="action" value="grav_republish">
+          <button type="submit" class="btn-secondary">Republish</button>
+        </form>
+      <?php else: ?>
+        <form method="post" style="display:inline-block; margin-right:12px;">
+          <input type="hidden" name="csrf" value="<?= h($token) ?>">
+          <input type="hidden" name="action" value="grav_unpublish">
+          <button type="submit" class="btn-secondary">Unpublish (mark as deleted)</button>
+        </form>
+      <?php endif; ?>
+      <form method="post" style="display:inline-block;" onsubmit="return confirm('Permanently delete this page from Grav? This cannot be undone.');">
+        <input type="hidden" name="csrf" value="<?= h($token) ?>">
+        <input type="hidden" name="action" value="grav_delete">
+        <button type="submit" class="btn-tiny btn-danger">Delete Permanently from Grav</button>
+      </form>
+    </section>
     <?php endif; ?>
 
     <section class="card">
@@ -202,20 +280,20 @@ if ($postId) {
         <input type="hidden" name="csrf" value="<?= h($token) ?>">
         <input type="hidden" name="action" value="save">
         <label>Title
-          <input type="text" name="title" value="<?= h($post['title']) ?>" <?= $post['status'] === 'published' ? 'disabled' : 'required' ?>>
+          <input type="text" name="title" value="<?= h($post['title']) ?>" <?= $locked ? 'disabled' : 'required' ?>>
         </label>
         <label>Slug
-          <input type="text" name="slug" value="<?= h($post['slug']) ?>" <?= $post['status'] === 'published' ? 'disabled' : '' ?>>
+          <input type="text" name="slug" value="<?= h($post['slug']) ?>" <?= $locked ? 'disabled' : '' ?>>
         </label>
         <label>Meta description <span class="muted">(120-155 characters, for SEO)</span>
-          <input type="text" name="meta_description" value="<?= h($post['meta_description'] ?? '') ?>" <?= $post['status'] === 'published' ? 'disabled' : '' ?>>
+          <input type="text" name="meta_description" value="<?= h($post['meta_description'] ?? '') ?>" <?= $locked ? 'disabled' : '' ?>>
         </label>
         <label>Keywords
-          <input type="text" name="keywords" value="<?= h($post['keywords'] ?? '') ?>" <?= $post['status'] === 'published' ? 'disabled' : '' ?>>
+          <input type="text" name="keywords" value="<?= h($post['keywords'] ?? '') ?>" <?= $locked ? 'disabled' : '' ?>>
         </label>
         <?php if ($contentPillars): ?>
         <label>Content Pillar <span class="muted">(optional — a pillar with its own Grav route prefix/template routes this post there instead of the workspace default)</span>
-          <select name="content_pillar_id" <?= $post['status'] === 'published' ? 'disabled' : '' ?>>
+          <select name="content_pillar_id" <?= $locked ? 'disabled' : '' ?>>
             <option value="">— None —</option>
             <?php foreach ($contentPillars as $cp): ?>
               <option value="<?= (int) $cp['id'] ?>"<?= $post['content_pillar_id'] == $cp['id'] ? ' selected' : '' ?>><?= h($cp['name']) ?><?= $cp['grav_route_prefix'] ? ' (' . h('/' . trim($cp['grav_route_prefix'], '/')) . ')' : '' ?></option>
@@ -224,9 +302,9 @@ if ($postId) {
         </label>
         <?php endif; ?>
         <label>Body (HTML)
-          <textarea name="content_html" rows="20" style="font-family:monospace;" <?= $post['status'] === 'published' ? 'disabled' : '' ?>><?= h($post['content_html']) ?></textarea>
+          <textarea name="content_html" rows="20" style="font-family:monospace;" <?= $locked ? 'disabled' : '' ?>><?= h($post['content_html']) ?></textarea>
         </label>
-        <?php if ($post['status'] !== 'published' && count($configuredTargets) > 1): ?>
+        <?php if (!$locked && count($configuredTargets) > 1): ?>
           <label>Publish to
             <select name="publish_target">
               <?php foreach ($configuredTargets as $key => $isConfigured): ?>
@@ -235,13 +313,13 @@ if ($postId) {
             </select>
           </label>
         <?php endif; ?>
-        <?php if ($post['status'] !== 'published'): ?>
+        <?php if (!$locked): ?>
           <button type="submit" class="btn-primary">Save</button>
         <?php endif; ?>
       </form>
     </section>
 
-    <?php if ($post['status'] !== 'published'): ?>
+    <?php if (!$locked): ?>
     <section class="card">
       <h2>Publish</h2>
       <?php if (!$configuredTargets): ?>
@@ -287,6 +365,7 @@ if ($postId) {
     $drafts = fetch_blog_posts($userId, $workspaceId, 'draft');
     $scheduled = fetch_blog_posts($userId, $workspaceId, 'scheduled');
     $published = fetch_blog_posts($userId, $workspaceId, 'published');
+    $unpublished = fetch_blog_posts($userId, $workspaceId, 'unpublished');
     $failed = fetch_blog_posts($userId, $workspaceId, 'failed');
     $pillarNameById = array_column($contentPillars, 'name', 'id');
     $platformLabelsList = ['wordpress' => 'WordPress', 'jekyll' => 'Jekyll', 'grav' => 'Grav'];
@@ -322,7 +401,20 @@ if ($postId) {
             </select>
           </div>
           <?php endif; ?>
+          <div class="control-field">
+            <label for="blogGenType">Content Type</label>
+            <select name="content_type" id="blogGenType">
+              <?php foreach (BLOG_CONTENT_TYPES as $tkey => $type): ?>
+                <?php if ($type['requires_grounded']) continue; // News Roundup needs a news item's source facts — only offered from News Studio ?>
+                <option value="<?= h($tkey) ?>"<?= $tkey === BLOG_CONTENT_TYPE_DEFAULT ? ' selected' : '' ?>><?= h($type['label']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
         </div>
+        <label class="checkbox-row" title="Skips this workspace's Knowledge Hub voice/tone and Memory &amp; Context (past-post history) for this one generation">
+          <input type="checkbox" name="fresh_context" value="1">
+          Fresh Context <span class="muted">(no Knowledge Hub voice, no past-post memory — a clean blank slate)</span>
+        </label>
         <button type="submit" class="btn-primary" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Generate</button>
       </form>
     </section>
@@ -333,6 +425,7 @@ if ($postId) {
         'Drafts' => $drafts,
         'Failed' => $failed,
         'Published' => $published,
+        'Unpublished' => $unpublished,
     ];
     foreach ($sections as $label => $rows):
         if (!$rows) continue;
@@ -346,6 +439,9 @@ if ($postId) {
               <div>
                 <div>
                   <strong><?= h($p['title']) ?></strong>
+                  <?php if ($p['content_type'] && isset(BLOG_CONTENT_TYPES[$p['content_type']])): ?>
+                    <span class="badge badge-format"><?= h(BLOG_CONTENT_TYPES[$p['content_type']]['label']) ?></span>
+                  <?php endif; ?>
                   <?php if ($p['content_pillar_id'] && isset($pillarNameById[$p['content_pillar_id']])): ?>
                     <span class="badge badge-format"><?= h($pillarNameById[$p['content_pillar_id']]) ?></span>
                   <?php endif; ?>
@@ -369,7 +465,7 @@ if ($postId) {
     </section>
     <?php endforeach; ?>
 
-    <?php if (!$drafts && !$scheduled && !$published && !$failed): ?>
+    <?php if (!$drafts && !$scheduled && !$published && !$unpublished && !$failed): ?>
       <section class="card"><p class="muted">No blog posts yet — write one above.</p></section>
     <?php endif; ?>
     <?php

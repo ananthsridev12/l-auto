@@ -2,6 +2,25 @@
 // CRUD for blog_posts (Phase F) — same shape as includes/post_helpers.php
 // but for long-form blog content instead of LinkedIn creatives.
 
+// Merges this workspace's own published posts with sitemap-discovered
+// pages (includes/sitemap.php, must already be loaded by the caller)
+// into one internal-linking candidate list for build_blog_prompt()'s
+// $existingPosts param (includes/blog_generate.php) — used by both
+// pages/blog_studio.php and pages/news_studio.php so a post can link to
+// pages that exist on the site but weren't created through this app.
+function blog_internal_link_candidates(int $userId, int $workspaceId): array
+{
+    $posts = array_map(
+        fn ($p) => ['title' => $p['title'], 'slug' => $p['slug']],
+        fetch_blog_posts($userId, $workspaceId, 'published')
+    );
+    $sitemap = array_map(
+        fn ($s) => ['title' => $s['title'] ?: $s['url'], 'url' => $s['url'], 'category' => $s['category']],
+        fetch_sitemap_links($workspaceId)
+    );
+    return array_merge($posts, $sitemap);
+}
+
 function fetch_blog_posts(int $userId, int $workspaceId, ?string $status = null): array
 {
     if ($status !== null) {
@@ -31,11 +50,11 @@ function blog_slugify(string $title): string
     return trim($slug, '-') ?: 'post';
 }
 
-function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $newsItemId = null, ?int $contentPillarId = null): int
+function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $newsItemId = null, ?int $contentPillarId = null, ?string $contentType = null): int
 {
     $stmt = db()->prepare(
-        'INSERT INTO blog_posts (user_id, workspace_id, news_item_id, content_pillar_id, title, slug, meta_description, keywords, content_html, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "draft")'
+        'INSERT INTO blog_posts (user_id, workspace_id, news_item_id, content_pillar_id, title, slug, meta_description, keywords, content_html, content_type, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft")'
     );
     $stmt->execute([
         $userId, $workspaceId, $newsItemId, $contentPillarId,
@@ -44,13 +63,14 @@ function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $
         $creative['meta_description'] !== '' ? mb_substr($creative['meta_description'], 0, 500) : null,
         $creative['keywords'] !== '' ? mb_substr($creative['keywords'], 0, 500) : null,
         $creative['content_html'],
+        $contentType,
     ]);
     return (int) db()->lastInsertId();
 }
 
 function update_blog_post(int $userId, int $id, array $fields): void
 {
-    $allowed = ['title', 'slug', 'meta_description', 'keywords', 'content_html', 'publish_target', 'content_pillar_id'];
+    $allowed = ['title', 'slug', 'meta_description', 'keywords', 'content_html', 'publish_target', 'content_pillar_id', 'content_type'];
     $sets = [];
     $params = [];
     foreach ($allowed as $col) {
@@ -127,4 +147,23 @@ function mark_blog_post_published(int $id, string $externalPostId, ?string $exte
 function mark_blog_post_failed(int $id, string $error): void
 {
     db()->prepare('UPDATE blog_posts SET status = "failed", error_message = ? WHERE id = ?')->execute([$error, $id]);
+}
+
+// Soft-hidden from Grav (header.published = false, see
+// grav_set_published() in includes/grav_api.php) — external_post_id/
+// external_url are kept so a later "Republish" targets the same page
+// rather than creating a duplicate. mark_blog_post_published() already
+// covers republishing (it just sets status back to 'published').
+function mark_blog_post_unpublished(int $id): void
+{
+    db()->prepare('UPDATE blog_posts SET status = "unpublished" WHERE id = ?')->execute([$id]);
+}
+
+// A real DELETE against Grav (grav_delete_post()) — the remote page is
+// actually gone, so unlike unpublish this clears external_post_id/
+// external_url too: a later "Publish Now" must create a brand new page,
+// not PUT to a route that no longer exists.
+function mark_blog_post_deleted_from_platform(int $id): void
+{
+    db()->prepare('UPDATE blog_posts SET status = "draft", external_post_id = NULL, external_url = NULL, published_at = NULL WHERE id = ?')->execute([$id]);
 }

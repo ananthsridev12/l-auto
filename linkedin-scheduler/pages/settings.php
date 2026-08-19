@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/wordpress_api.php';
 require_once __DIR__ . '/../includes/jekyll_api.php';
 require_once __DIR__ . '/../includes/grav_api.php';
+require_once __DIR__ . '/../includes/sitemap.php';
 
 require_login();
 $userId = current_user_id();
@@ -188,6 +189,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ->execute([$enabled, $perDay, $region, $workspaceId]);
         flash('success', 'News auto-content settings saved.');
         redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'sitemap_save') {
+        $sitemapUrl = trim($_POST['sitemap_url'] ?? '');
+        db()->prepare('UPDATE workspaces SET sitemap_url = ? WHERE id = ?')
+            ->execute([$sitemapUrl !== '' ? $sitemapUrl : null, $workspaceId]);
+        flash('success', 'Sitemap URL saved.');
+        redirect('pages/settings.php#integrations');
+    }
+
+    if (($_POST['form'] ?? '') === 'sitemap_fetch') {
+        $sitemapUrl = trim((string) (fetch_workspace($userId, $workspaceId)['sitemap_url'] ?? ''));
+        if ($sitemapUrl === '') {
+            flash('error', 'Save a sitemap URL first.');
+            redirect('pages/settings.php#integrations');
+        }
+        $result = sitemap_fetch_and_store($workspaceId, $sitemapUrl);
+        if ($result['error']) {
+            flash('error', $result['error']);
+        } else {
+            flash('success', "Fetched {$result['fetched']} page(s) from the sitemap.");
+        }
+        redirect('pages/settings.php#integrations');
     }
 
     if (($_POST['form'] ?? '') === 'news_topic_add') {
@@ -644,6 +668,7 @@ $defaultPaletteCarousel = $workspace['default_palette_carousel'] ?? null;
 $newsTopics = fetch_news_topics($userId, $workspaceId);
 $newsTrustedSources = fetch_news_trusted_sources($userId, $workspaceId);
 $newsSettings = ['news_auto_enabled' => $workspace['news_auto_enabled'] ?? 0, 'news_drafts_per_day' => $workspace['news_drafts_per_day'] ?? 2, 'news_region' => $workspace['news_region'] ?? null];
+$sitemapLinks = fetch_sitemap_links($workspaceId);
 $brandPalettes = fetch_brand_palettes($userId);
 $brandFonts = fetch_brand_fonts($userId);
 $headingFontId = (int) (fetch_heading_font($userId)['id'] ?? 0);
@@ -896,6 +921,29 @@ require __DIR__ . '/../includes/layout_top.php';
       <input type="hidden" name="form" value="grav_test">
       <button type="submit" class="btn-tiny">Test Connection</button>
     </form>
+  <?php endif; ?>
+</section>
+
+<section class="card" data-tab="integrations">
+  <h2>Internal Linking (Sitemap) — <?= h($workspace['name']) ?></h2>
+  <p class="muted">Point this at your site's <code>sitemap.xml</code> to let Blog Studio suggest internal links to pages that already exist on your site — not just posts created through this app. A flat <code>&lt;urlset&gt;</code> sitemap only (a sitemap index/sitemap-of-sitemaps isn't followed). Titles and categories are guessed from each URL's own path, not fetched from the live page.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="sitemap_save">
+    <label>Sitemap URL
+      <input type="text" name="sitemap_url" value="<?= h($workspace['sitemap_url'] ?? '') ?>" placeholder="https://example.com/sitemap.xml">
+    </label>
+    <button type="submit" class="btn-secondary">Save Sitemap URL</button>
+  </form>
+  <?php if (!empty($workspace['sitemap_url'])): ?>
+    <form method="post" style="margin-top:12px;">
+      <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <input type="hidden" name="form" value="sitemap_fetch">
+      <button type="submit" class="btn-tiny">Fetch sitemap now</button>
+    </form>
+  <?php endif; ?>
+  <?php if ($sitemapLinks): ?>
+    <p class="muted" style="margin-top:12px;"><?= count($sitemapLinks) ?> page(s) available for internal linking, last fetched <?= h(date('j M Y, g:i a', strtotime($sitemapLinks[0]['fetched_at']))) ?>.</p>
   <?php endif; ?>
 </section>
 <?php endif; ?>

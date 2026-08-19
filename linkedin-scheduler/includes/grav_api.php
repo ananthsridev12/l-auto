@@ -167,3 +167,74 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
         'external_url'     => grav_site_url($workspace) . $page['route'],
     ];
 }
+
+// Shared HTTP mechanics for grav_set_published()/grav_delete_post()
+// below — both act on an already-published page's route rather than
+// creating one, so both need the same "no page to act on" guard and
+// the same request/response handling grav_publish_post() has inline.
+function grav_page_request(array $workspace, string $route, string $method, ?array $body = null): array
+{
+    $opts = [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST  => $method,
+        CURLOPT_HTTPHEADER     => grav_auth_headers($workspace),
+        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 3,
+    ];
+    if ($body !== null) {
+        $opts[CURLOPT_POSTFIELDS] = json_encode($body);
+    }
+    $ch = curl_init(grav_site_url($workspace) . '/api/v1/pages/' . ltrim($route, '/'));
+    curl_setopt_array($ch, $opts);
+    $response = curl_exec($ch);
+    if ($response === false) {
+        $err = curl_error($ch);
+        curl_close($ch);
+        return ['success' => false, 'error' => "Grav request failed: {$err}"];
+    }
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status < 200 || $status >= 300) {
+        $data = json_decode((string) $response, true);
+        $msg = $data['message'] ?? substr((string) $response, 0, 300);
+        return ['success' => false, 'error' => "Grav request failed (HTTP {$status}): {$msg}"];
+    }
+    return ['success' => true];
+}
+
+// Soft "mark as deleted" — sets header.published = false via PUT rather
+// than removing the page, so it's reversible (grav_set_published(...,
+// true) to bring it back) and every other bit of page content/history
+// stays intact. This is a dedicated action rather than something
+// grav_publish_post() folds into its normal update PUT, specifically so
+// a routine content edit never silently flips this flag back on: only
+// this function (called from an explicit Unpublish/Republish button,
+// see pages/blog_studio.php) ever touches it.
+function grav_set_published(array $workspace, array $blogPost, bool $published): array
+{
+    if (!grav_configured($workspace)) {
+        return ['success' => false, 'error' => 'This workspace has no Grav connection configured — add one in Settings.'];
+    }
+    if (empty($blogPost['external_post_id'])) {
+        return ['success' => false, 'error' => 'This post has no Grav page to update yet.'];
+    }
+    return grav_page_request($workspace, $blogPost['external_post_id'], 'PUT', ['header' => ['published' => $published]]);
+}
+
+// A real, permanent delete — unlike grav_set_published(false, ...) the
+// page itself is gone from Grav afterward, not just hidden. Callers
+// should clear external_post_id/external_url on success (see
+// mark_blog_post_deleted_from_platform() in includes/blog_posts.php) so
+// a later "Publish Now" creates a fresh page rather than PUTing to a
+// route that no longer exists.
+function grav_delete_post(array $workspace, array $blogPost): array
+{
+    if (!grav_configured($workspace)) {
+        return ['success' => false, 'error' => 'This workspace has no Grav connection configured — add one in Settings.'];
+    }
+    if (empty($blogPost['external_post_id'])) {
+        return ['success' => false, 'error' => 'This post has no Grav page to delete.'];
+    }
+    return grav_page_request($workspace, $blogPost['external_post_id'], 'DELETE');
+}

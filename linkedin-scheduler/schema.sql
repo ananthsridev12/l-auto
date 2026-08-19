@@ -964,3 +964,27 @@ ALTER TABLE `workspaces`
 
 ALTER TABLE `news_items`
   ADD COLUMN `description` TEXT NULL;
+
+-- Content types, Grav unpublish/delete, sitemap-based internal linking —
+-- see includes/blog_generate.php, includes/grav_api.php,
+-- includes/sitemap.php, pages/blog_studio.php, pages/settings.php.
+ALTER TABLE `blog_posts`
+  ADD COLUMN `content_type` VARCHAR(30) NULL;
+
+ALTER TABLE `blog_posts`
+  MODIFY COLUMN `status` ENUM('draft','scheduled','published','unpublished','failed') NOT NULL DEFAULT 'draft';
+
+ALTER TABLE `workspaces`
+  ADD COLUMN `sitemap_url` VARCHAR(1000) NULL;
+
+CREATE TABLE IF NOT EXISTS `sitemap_links` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `workspace_id` INT NOT NULL,
+  `url` VARCHAR(1000) NOT NULL,
+  `title` VARCHAR(500) NULL,
+  `category` VARCHAR(100) NULL,
+  `fetched_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE,
+  UNIQUE KEY `uniq_workspace_url` (`workspace_id`, `url`(255)),
+  INDEX `idx_workspace_category` (`workspace_id`, `category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

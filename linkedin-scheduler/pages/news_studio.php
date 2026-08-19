@@ -16,6 +16,7 @@ require_once __DIR__ . '/../includes/content_memory.php';
 require_once __DIR__ . '/../includes/news_fetch.php';
 require_once __DIR__ . '/../includes/blog_posts.php';
 require_once __DIR__ . '/../includes/blog_generate.php';
+require_once __DIR__ . '/../includes/sitemap.php';
 
 require_login();
 require_module('news_studio');
@@ -170,6 +171,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            $contentType = trim($_POST['content_type'] ?? BLOG_CONTENT_TYPE_DEFAULT);
+            if (!array_key_exists($contentType, BLOG_CONTENT_TYPES)) {
+                $contentType = BLOG_CONTENT_TYPE_DEFAULT;
+            }
+            $freshContext = !empty($_POST['fresh_context']);
+            $genWorkspace = $freshContext ? null : $workspace;
+
             $meta = array_filter([$item['source'] ? 'reported by ' . $item['source'] : null, $item['published_at'] ? date('j M Y', strtotime($item['published_at'])) : null]);
             $blogLength = strtolower(trim($_POST['length'] ?? BLOG_LENGTH_DEFAULT));
             if (!isset(BLOG_LENGTH_PRESETS[$blogLength])) {
@@ -177,14 +185,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $topic = ['title' => $item['title'], 'news_line' => $meta ? '(' . implode(', ', $meta) . ')' : null, 'length' => $blogLength];
 
-            $relatedMemory = content_memory_related_for_topic($workspaceId, $item['title'], $aiConfig, 'blog');
-            $existingPosts = array_map(
-                fn ($p) => ['title' => $p['title'], 'slug' => $p['slug']],
-                fetch_blog_posts($userId, $workspaceId, 'published')
-            );
-            $creative = generate_blog_post_via_ai($topic, $aiConfig, $workspace, $relatedMemory, $researchContext, $existingPosts, $blogMode, $includeReference, $sourceSnippets);
-            $newBlogPostId = create_blog_post($userId, $workspaceId, $creative, $itemId);
-            save_blog_content_memory($workspaceId, $newBlogPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
+            $relatedMemory = $freshContext ? [] : content_memory_related_for_topic($workspaceId, $item['title'], $aiConfig, 'blog');
+            $existingPosts = blog_internal_link_candidates($userId, $workspaceId);
+            $creative = generate_blog_post_via_ai($topic, $aiConfig, $genWorkspace, $relatedMemory, $researchContext, $existingPosts, $blogMode, $includeReference, $sourceSnippets, $contentType);
+            $newBlogPostId = create_blog_post($userId, $workspaceId, $creative, $itemId, null, $contentType);
+            if (!$freshContext) {
+                save_blog_content_memory($workspaceId, $newBlogPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
+            }
             db()->prepare('UPDATE news_items SET status = "used" WHERE id = ? AND user_id = ?')->execute([$itemId, $userId]);
             flash('success', 'Blog post drafted — review and edit before publishing.');
             redirect('pages/blog_studio.php?id=' . $newBlogPostId);
@@ -377,9 +384,21 @@ require __DIR__ . '/../includes/layout_top.php';
               <?php else: ?>
               <input type="hidden" name="blog_mode" value="<?= BLOG_MODE_ORIGINAL ?>">
               <?php endif; ?>
+              <div class="control-field">
+                <label for="blogtype-<?= $rid ?>">Content Type</label>
+                <select name="content_type" id="blogtype-<?= $rid ?>" title="Post structure">
+                  <?php foreach (BLOG_CONTENT_TYPES as $tkey => $type): ?>
+                    <option value="<?= h($tkey) ?>"<?= $tkey === BLOG_CONTENT_TYPE_DEFAULT ? ' selected' : '' ?>><?= h($type['label']) ?><?= $type['requires_grounded'] ? ' (needs Grounded Rewrite)' : '' ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
               <label class="checkbox-row" style="padding:0; gap:6px; align-self:flex-end; margin-bottom:9px;" title="Adds a 'Source:' credit line — only relevant with Grounded Rewrite">
                 <input type="checkbox" name="include_reference" value="1">
                 <span style="font-size:12px;">Cite source</span>
+              </label>
+              <label class="checkbox-row" style="padding:0; gap:6px; align-self:flex-end; margin-bottom:9px;" title="Skips this workspace's Knowledge Hub voice/tone and Memory &amp; Context for this one generation">
+                <input type="checkbox" name="fresh_context" value="1">
+                <span style="font-size:12px;">Fresh Context</span>
               </label>
               <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
             </form>

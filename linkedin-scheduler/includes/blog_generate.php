@@ -13,21 +13,102 @@
 // the same News Studio fetch that produced this topic; (b) the
 // workspace's Knowledge Hub documents; (c) related past blog posts via
 // Memory & Context. Internal links are woven into the same generation
-// call by passing existing published posts' title/slug pairs.
+// call by passing existing published posts' title/slug pairs, plus
+// (optionally) sitemap-discovered pages (includes/sitemap.php) for
+// pages that exist on the site but weren't created through this app.
+//
+// "Fresh Context" (no Memory & Context, no Knowledge Hub voice) isn't a
+// parameter here — the caller achieves it by simply passing
+// $workspace = null and $relatedMemory = [], the same as generating
+// with nothing configured at all. No separate code path needed.
 
-// Named content skeleton every generated post follows, replacing what
-// used to be a single loose "3-6 H2 subheadings" line. TOC_MIN_WORDS
-// gates the two long-form-only additions (Table of Contents, FAQ) —
-// forcing them onto a ~100-200 word post would overwhelm it.
-const BLOG_TOC_MIN_WORDS = 1000; // BLOG_LENGTH_PRESETS keys w1000/w2000
-const BLOG_STRUCTURE = <<<STRUCT
-STRUCTURE (follow this shape; adapt section count to the target word count — a short post may compress steps into fewer, shorter sections rather than dropping the shape entirely):
+// Named content skeleton every generated post follows, keyed by
+// BLOG_CONTENT_TYPES below — replacing what used to be a single loose
+// "3-6 H2 subheadings" line, and now a family of them for different
+// post shapes. BLOG_TOC_MIN_WORDS gates the two long-form-only
+// additions (Table of Contents, FAQ) — forcing them onto a ~100-200
+// word post would overwhelm it.
+const BLOG_CONTENT_TYPE_DEFAULT = 'analysis';
+
+const BLOG_STRUCTURE_ANALYSIS = <<<STRUCT
+STRUCTURE — ANALYSIS/OPINION (follow this shape; adapt section count to the target word count — a short post may compress steps into fewer, shorter sections rather than dropping the shape entirely):
 1. Hook — 1-2 sentences, no heading. Open with a stat, a question, or a contrarian line — not a throat-clearing intro.
 2. Context (<h2>) — why this matters right now.
 3. 2-4 Analysis sections (<h2> each) — the actual substance, one clear idea per section.
 4. Takeaways (<h2>) — 3-5 bullet points: practical "what to do with this."
 5. Conclusion (<h2>, can be titled naturally) — short wrap-up + a natural call to action.
 STRUCT;
+
+const BLOG_STRUCTURE_LISTICLE = <<<STRUCT
+STRUCTURE — LISTICLE:
+1. Hook — 1-2 sentences framing why this list matters right now, ending on the "here are N ways/things..." premise.
+2. One <h2> per list item — a short, punchy sub-headline per item, then a paragraph on that single idea. Pick a number of items that suits the target word count (roughly one item per 100-150 words) — never pad with a filler item just to hit a round number.
+3. Takeaways (<h2>) — 3-5 bullet points recapping the single most useful line from each item.
+4. Conclusion (<h2>) — short wrap-up + a natural call to action.
+STRUCT;
+
+const BLOG_STRUCTURE_HOWTO = <<<STRUCT
+STRUCTURE — HOW-TO / GUIDE:
+1. Hook — 1-2 sentences on the outcome this guide delivers and why it's worth the reader's time.
+2. Context (<h2>) — what's needed before starting (prerequisites, when this approach applies).
+3. Numbered Steps — one <h2> per step ("Step 1: ...", "Step 2: ...", etc.), each with clear, actionable instructions. Pick a number of steps that suits the target word count.
+4. Common Mistakes (<h2>) — 2-4 bullet points on pitfalls to avoid.
+5. Conclusion (<h2>) — short wrap-up + a natural call to action.
+STRUCT;
+
+const BLOG_STRUCTURE_COMPARISON = <<<STRUCT
+STRUCTURE — COMPARISON:
+1. Hook — 1-2 sentences framing the decision the reader is trying to make.
+2. Context (<h2>) — what's being compared and why it matters.
+3. Side-by-side sections — one <h2> per comparison dimension (pick dimensions that genuinely fit the topic, e.g. cost, ease of use, scalability), each covering both sides briefly.
+4. Summary Table (<h2>) — an HTML <table> with a header row and one row per dimension, one column per option compared.
+5. Recommendation (<h2>) — a clear, opinionated verdict on when to choose which option, + a natural call to action.
+STRUCT;
+
+const BLOG_STRUCTURE_NEWS_ROUNDUP = <<<STRUCT
+STRUCTURE — NEWS ROUNDUP:
+1. Hook — 1-2 sentences on the overall theme connecting these stories.
+2. One <h2> per story — a headline-style sub-heading, 2-3 sentences summarizing what happened (from the SOURCE FACTS below, entirely in your own words), followed by 1-2 sentences of your own take on why it matters.
+3. Takeaways (<h2>) — 3-5 bullet points: the through-line connecting all the stories.
+4. Conclusion (<h2>) — short wrap-up + a natural call to action.
+STRUCT;
+
+const BLOG_STRUCTURE_CASE_STUDY = <<<STRUCT
+STRUCTURE — CASE STUDY:
+1. Hook — 1-2 sentences stating the headline result (a number if you have one).
+2. Situation (<h2>) — the problem/context before.
+3. Approach (<h2>) — what was actually done, specifically.
+4. Results (<h2>) — the concrete outcomes, ideally with numbers.
+5. Takeaways (<h2>) — 3-5 bullet points on what other readers can apply from this.
+6. Conclusion (<h2>) — short wrap-up + a natural call to action.
+Only use real client/case details actually present in the Proof Point context above — never invent a client, number, or outcome. If no relevant Proof Point exists, write a realistic composite scenario and clearly label it as illustrative rather than presenting invented specifics as real.
+STRUCT;
+
+const BLOG_STRUCTURE_CHECKLIST = <<<STRUCT
+STRUCTURE — CHECKLIST:
+1. Hook — 1-2 sentences on what this checklist helps the reader avoid or achieve.
+2. Context (<h2>) — when/why to use this checklist.
+3. The Checklist (<h2>) — a single <ul> of checklist items (plain <li> text, not literal checkbox markup), each a short, specific, actionable statement. Pick a number of items that suits the target word count.
+4. Conclusion (<h2>) — short wrap-up + a natural call to action.
+STRUCT;
+
+// label: shown in the Content Type picker. structure: the STRUCTURE
+// block swapped into the prompt. requires_grounded: true means this
+// type only makes sense with real source facts (News Roundup) —
+// build_blog_prompt() silently falls back to 'analysis' if picked
+// without BLOG_MODE_GROUNDED source snippets, same graceful-degradation
+// pattern as the mode fallback itself (see pages/news_studio.php).
+const BLOG_CONTENT_TYPES = [
+    'analysis'     => ['label' => 'Analysis / Opinion', 'structure' => BLOG_STRUCTURE_ANALYSIS,     'requires_grounded' => false],
+    'listicle'     => ['label' => 'Listicle',            'structure' => BLOG_STRUCTURE_LISTICLE,     'requires_grounded' => false],
+    'howto'        => ['label' => 'How-To / Guide',       'structure' => BLOG_STRUCTURE_HOWTO,        'requires_grounded' => false],
+    'comparison'   => ['label' => 'Comparison (X vs Y)',  'structure' => BLOG_STRUCTURE_COMPARISON,   'requires_grounded' => false],
+    'news_roundup' => ['label' => 'News Roundup',         'structure' => BLOG_STRUCTURE_NEWS_ROUNDUP, 'requires_grounded' => true],
+    'case_study'   => ['label' => 'Case Study',           'structure' => BLOG_STRUCTURE_CASE_STUDY,   'requires_grounded' => false],
+    'checklist'    => ['label' => 'Checklist',             'structure' => BLOG_STRUCTURE_CHECKLIST,    'requires_grounded' => false],
+];
+
+const BLOG_TOC_MIN_WORDS_KEYS = ['w1000', 'w2000']; // BLOG_LENGTH_PRESETS keys long enough to earn a TOC/FAQ
 const BLOG_STRUCTURE_LONG_FORM_ADDITIONS = <<<ADD
 
 Since this is a long-form post, also include:
@@ -43,7 +124,11 @@ const BLOG_MODE_GROUNDED = 'grounded';  // extracts factual values from the sour
 
 // $topic: ['title' => string, 'news_line' => ?string, 'length' => ?string].
 // $researchContext: sibling headlines text (Original mode only), or null.
-// $existingPosts: [['title'=>...,'slug'=>...], ...] for internal linking.
+// $existingPosts: [['title'=>string,'slug'=>?string,'url'=>?string,'category'=>?string], ...]
+// for internal linking — either an in-app post (slug set, url null, built
+// as {workspace website}/{slug}) or a sitemap-discovered page (url set
+// directly, see includes/sitemap.php); 'category' is optional context,
+// shown alongside the title when present.
 // $sourceSnippets (Grounded mode only): [['text'=>string,'source'=>?string,'url'=>string], ...] —
 // the primary item plus any siblings that had a usable RSS <description>
 // (see news_clean_description() in includes/news_fetch.php). Empty when
@@ -61,7 +146,8 @@ function build_blog_prompt(
     array $existingPosts,
     string $mode = BLOG_MODE_ORIGINAL,
     bool $includeReference = false,
-    array $sourceSnippets = []
+    array $sourceSnippets = [],
+    string $contentType = BLOG_CONTENT_TYPE_DEFAULT
 ): string {
     $context = build_context_block(null, null, null, $workspace, $relatedMemory);
 
@@ -86,20 +172,33 @@ function build_blog_prompt(
     }
 
     if ($existingPosts) {
-        $links = implode("\n", array_map(
-            fn ($p) => "- \"{$p['title']}\" -> {$p['slug']}",
-            array_slice($existingPosts, 0, 15)
-        ));
         $website = trim((string) ($workspace['website'] ?? ''));
         $base = $website !== '' ? rtrim($website, '/') : '';
-        $parts[] = "EXISTING BLOG POSTS ON THIS SITE (weave in 2-4 contextual links where genuinely relevant, as <a href=\"{$base}/{slug}\">anchor text</a> — never force a link that doesn't fit):\n{$links}";
+        $links = implode("\n", array_map(
+            function ($p) use ($base) {
+                $href = $p['url'] ?? ($base . '/' . ltrim((string) ($p['slug'] ?? ''), '/'));
+                $tag = !empty($p['category']) ? ' [' . $p['category'] . ']' : '';
+                return "- \"{$p['title']}\"{$tag} -> {$href}";
+            },
+            array_slice($existingPosts, 0, 20)
+        ));
+        $parts[] = "EXISTING PAGES ON THIS SITE (weave in 2-4 contextual links where genuinely relevant, as <a href=\"{url}\">anchor text</a> — never force a link that doesn't fit):\n{$links}";
+    }
+
+    // A caller that asks for News Roundup without real source facts gets
+    // the same silent fallback as an unset/invalid content type — the
+    // same principle as BLOG_MODE_GROUNDED itself falling back to
+    // Original Take with nothing to ground on (see pages/news_studio.php).
+    $typeKey = array_key_exists($contentType, BLOG_CONTENT_TYPES) ? $contentType : BLOG_CONTENT_TYPE_DEFAULT;
+    if (BLOG_CONTENT_TYPES[$typeKey]['requires_grounded'] && !($mode === BLOG_MODE_GROUNDED && $sourceSnippets)) {
+        $typeKey = BLOG_CONTENT_TYPE_DEFAULT;
     }
 
     $newsLine = trim((string) ($topic['news_line'] ?? ''));
     $lengthKey = $topic['length'] ?? BLOG_LENGTH_DEFAULT;
     $wordCount = resolve_length_preset($lengthKey, BLOG_LENGTH_PRESETS, BLOG_LENGTH_DEFAULT);
-    $isLongForm = in_array($lengthKey, ['w1000', 'w2000'], true);
-    $structure = BLOG_STRUCTURE . ($isLongForm ? BLOG_STRUCTURE_LONG_FORM_ADDITIONS : '');
+    $isLongForm = in_array($lengthKey, BLOG_TOC_MIN_WORDS_KEYS, true);
+    $structure = BLOG_CONTENT_TYPES[$typeKey]['structure'] . ($isLongForm ? BLOG_STRUCTURE_LONG_FORM_ADDITIONS : '');
     $parts[] = <<<PROMPT
 TASK: Write an original, SEO-friendly blog post on this topic: "{$topic['title']}"
 {$newsLine}
@@ -110,7 +209,7 @@ Requirements:
 - {$wordCount}, written in the voice/tone described above.
 - Original analysis and perspective, not a rehash of any single source.
 - Naturally incorporate the target keywords if any are implied by the topic.
-- HTML body only (content_html) — use <h2>, <p>, <ul>/<li>, <strong>, <a> as appropriate. No <html>/<body>/<script> tags, no inline styles.
+- HTML body only (content_html) — use <h2>, <p>, <ul>/<li>, <strong>, <a>, and (Comparison type only) <table> as appropriate. No <html>/<body>/<script> tags, no inline styles.
 
 Return ONLY valid JSON with this exact shape, no markdown fences, no commentary:
 {
@@ -134,7 +233,8 @@ function generate_blog_post_via_ai(
     array $existingPosts = [],
     string $mode = BLOG_MODE_ORIGINAL,
     bool $includeReference = false,
-    array $sourceSnippets = []
+    array $sourceSnippets = [],
+    string $contentType = BLOG_CONTENT_TYPE_DEFAULT
 ): array {
     $provider = $aiConfig['provider'] ?? 'gemini';
     $label = AI_PROVIDER_LABELS[$provider] ?? ucfirst($provider);
@@ -143,7 +243,7 @@ function generate_blog_post_via_ai(
         throw new RuntimeException("Add a {$label} API key in Settings to generate a blog post.");
     }
 
-    $prompt = build_blog_prompt($topic, $workspace, $relatedMemory, $researchContext, $existingPosts, $mode, $includeReference, $sourceSnippets);
+    $prompt = build_blog_prompt($topic, $workspace, $relatedMemory, $researchContext, $existingPosts, $mode, $includeReference, $sourceSnippets, $contentType);
 
     $text = match ($provider) {
         'claude' => ai_call_claude($prompt, $aiConfig['api_key'], $aiConfig['model']),
