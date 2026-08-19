@@ -798,14 +798,56 @@ body.centered-page {
 .kb-details label { margin-top: var(--space-3); }
 .kb-details label:first-of-type { margin-top: var(--space-3); }
 
-/* Pairs an "Auto-generate X" checkbox with its X color field on one
-   row (Settings — Brand Palettes) instead of two full stacked-form
-   rows each — 7 such pairs used to run ~14 rows tall for no reason,
-   since the checkbox and the field it toggles are one decision, not
-   two. Wraps on a narrow viewport rather than needing its own
-   mobile-breakpoint rule. */
-.color-toggle-row { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
-.color-toggle-row .checkbox-row { min-width: 220px; }
+/* Settings — Brand Palettes, redesigned as an actual palette manager
+   instead of a dense settings-form wall: saved palettes render as a
+   card grid with a real swatch-strip preview, and the add/edit form's
+   7 optional color overrides render as small cards in a grid instead
+   of one long stacked-form column. */
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.palette-card {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.palette-card:hover { border-color: var(--color-brand-light); box-shadow: var(--shadow-sm); }
+.palette-card-swatches { display: flex; height: 56px; }
+.palette-card-swatches span { flex: 1; }
+.palette-card-photo { display: block; width: 100%; height: 56px; object-fit: cover; }
+.palette-card-body { padding: var(--space-3) var(--space-4) var(--space-4); }
+.palette-card-title { display: flex; align-items: center; gap: 8px; margin-bottom: var(--space-3); }
+.palette-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.palette-card .kb-details { margin-top: var(--space-3); padding: var(--space-2) var(--space-3); }
+.palette-card .kb-details summary { font-size: 12px; }
+.palette-card input[type="file"] { font-size: 12px; max-width: 170px; }
+
+.palette-editor {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+.palette-editor h3 { font-size: 16px; margin-bottom: var(--space-3); }
+.palette-editor-subhead { font-size: 13px; font-weight: 700; color: var(--gray-700); margin: var(--space-2) 0 0; }
+.palette-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-3);
+}
+.palette-field-card {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.palette-field-note { font-size: 11px; margin: -4px 0 0; }
 
 /* Color picker: a real swatch (not the generic 100%-width input rule,
    which stretched the native input[type=color] into an illegible gray
@@ -852,14 +894,6 @@ body.centered-page {
   cursor: pointer;
 }
 
-.palette-swatches { display: inline-flex; gap: 4px; }
-.palette-swatches span {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  display: inline-block;
-  border: 1px solid var(--gray-200);
-}
 
 .card {
   background: var(--color-surface);

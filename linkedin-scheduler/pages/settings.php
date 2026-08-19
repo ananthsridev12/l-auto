@@ -958,113 +958,128 @@ require __DIR__ . '/../includes/layout_top.php';
     <p class="muted" style="margin-top:var(--space-2);">Leave "Auto-generate" checked on a field to derive it automatically with guaranteed-readable contrast, or uncheck it to set your own literal color instead. Body/Points Text, Text-on-Accent, Badge Text, and CTA Text are the colors this app would otherwise always compute for you (Body/Points blends your Text color 35% toward Background; the other three auto-pick whichever of Background/Text contrasts best against their fill) — setting one directly is <strong>not contrast-checked</strong>, so only do it if you've confirmed it's actually readable. Signature controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes. Each palette can also have its own background photo (upload it square, matching the post's 1:1 shape, for a clean fit — off-square images are still center-cropped automatically) — select "Image" as the Background when generating a post using that palette. Your palette's Background color is drawn as a semi-transparent tint over the photo so text stays readable.</p>
   </details>
   <?php if ($brandPalettes): ?>
-    <?php foreach ($brandPalettes as $bp): ?>
-      <div class="account-row">
-        <div class="account-info">
+    <div class="palette-grid">
+      <?php foreach ($brandPalettes as $bp): ?>
+        <?php
+          $swatchColors = array_filter([
+              $bp['bg_color'], $bp['text_color'], $bp['accent_color'], $bp['cta_color'],
+              $bp['signature_color'], $bp['body_color'], $bp['accent_text_color'],
+              $bp['badge_text_color'], $bp['cta_text_color'],
+          ]);
+        ?>
+        <div class="palette-card">
           <?php if ($bp['background_image_path']): ?>
-            <img src="<?= h(slide_public_url($bp['background_image_path'])) ?>" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid var(--gray-200);">
+            <img class="palette-card-photo" src="<?= h(slide_public_url($bp['background_image_path'])) ?>" alt="">
+          <?php else: ?>
+            <div class="palette-card-swatches">
+              <?php foreach ($swatchColors as $c): ?><span style="background:<?= h($c) ?>" title="<?= h($c) ?>"></span><?php endforeach; ?>
+            </div>
           <?php endif; ?>
-          <span><?= h($bp['name']) ?></span>
-          <?php if ($bp['is_default']): ?><span class="badge badge-active">Default</span><?php endif; ?>
-          <span class="palette-swatches">
-            <span title="Background <?= h($bp['bg_color']) ?>" style="background:<?= h($bp['bg_color']) ?>"></span>
-            <span title="Text <?= h($bp['text_color']) ?>" style="background:<?= h($bp['text_color']) ?>"></span>
-            <?php if ($bp['accent_color']): ?><span title="Accent <?= h($bp['accent_color']) ?>" style="background:<?= h($bp['accent_color']) ?>"></span><?php endif; ?>
-            <?php if ($bp['cta_color']): ?><span title="CTA <?= h($bp['cta_color']) ?>" style="background:<?= h($bp['cta_color']) ?>"></span><?php endif; ?>
-            <?php if ($bp['signature_color']): ?><span title="Signature <?= h($bp['signature_color']) ?>" style="background:<?= h($bp['signature_color']) ?>"></span><?php endif; ?>
-            <?php if ($bp['body_color']): ?><span title="Body/Points Text <?= h($bp['body_color']) ?>" style="background:<?= h($bp['body_color']) ?>"></span><?php endif; ?>
-            <?php if ($bp['accent_text_color']): ?><span title="Text-on-Accent <?= h($bp['accent_text_color']) ?>" style="background:<?= h($bp['accent_text_color']) ?>"></span><?php endif; ?>
-            <?php if ($bp['badge_text_color']): ?><span title="Badge Text <?= h($bp['badge_text_color']) ?>" style="background:<?= h($bp['badge_text_color']) ?>"></span><?php endif; ?>
-            <?php if ($bp['cta_text_color']): ?><span title="CTA Text <?= h($bp['cta_text_color']) ?>" style="background:<?= h($bp['cta_text_color']) ?>"></span><?php endif; ?>
-          </span>
+          <div class="palette-card-body">
+            <div class="palette-card-title">
+              <strong><?= h($bp['name']) ?></strong>
+              <?php if ($bp['is_default']): ?><span class="badge badge-active">Default</span><?php endif; ?>
+            </div>
+            <div class="palette-card-actions">
+              <button type="button" class="btn-tiny palette-edit-btn"
+                data-name="<?= h($bp['name']) ?>"
+                data-bg="<?= h($bp['bg_color']) ?>"
+                data-text="<?= h($bp['text_color']) ?>"
+                data-accent="<?= h($bp['accent_color'] ?? '') ?>"
+                data-cta="<?= h($bp['cta_color'] ?? '') ?>"
+                data-signature="<?= h($bp['signature_color'] ?? '') ?>"
+                data-body="<?= h($bp['body_color'] ?? '') ?>"
+                data-accent_text="<?= h($bp['accent_text_color'] ?? '') ?>"
+                data-badge_text="<?= h($bp['badge_text_color'] ?? '') ?>"
+                data-cta_text="<?= h($bp['cta_text_color'] ?? '') ?>">Edit</button>
+              <?php if (!$bp['is_default']): ?>
+                <form method="post" style="display:contents;">
+                  <input type="hidden" name="csrf" value="<?= h($token) ?>">
+                  <input type="hidden" name="form" value="palette_set_default">
+                  <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
+                  <button type="submit" class="btn-tiny">Set Default</button>
+                </form>
+              <?php endif; ?>
+              <form method="post" style="display:contents;" onsubmit="return confirm('Remove this palette?');">
+                <input type="hidden" name="csrf" value="<?= h($token) ?>">
+                <input type="hidden" name="form" value="palette_delete">
+                <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
+                <button type="submit" class="btn-tiny btn-danger">Remove</button>
+              </form>
+            </div>
+            <details class="kb-details" style="margin-top:var(--space-3);">
+              <summary>Background photo</summary>
+              <form method="post" enctype="multipart/form-data" style="margin-top:var(--space-2); display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                <input type="hidden" name="csrf" value="<?= h($token) ?>">
+                <input type="hidden" name="form" value="palette_bg_image_upload">
+                <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
+                <input type="file" name="palette_bg_image" accept="image/png,image/jpeg" required>
+                <button type="submit" class="btn-tiny"><?= $bp['background_image_path'] ? 'Replace' : 'Upload' ?></button>
+              </form>
+              <?php if ($bp['background_image_path']): ?>
+                <form method="post" style="margin-top:6px;">
+                  <input type="hidden" name="csrf" value="<?= h($token) ?>">
+                  <input type="hidden" name="form" value="palette_bg_image_remove">
+                  <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
+                  <button type="submit" class="btn-tiny btn-danger">Remove Background</button>
+                </form>
+              <?php endif; ?>
+            </details>
+          </div>
         </div>
-        <div class="inline-form">
-          <button type="button" class="btn-tiny palette-edit-btn"
-            data-name="<?= h($bp['name']) ?>"
-            data-bg="<?= h($bp['bg_color']) ?>"
-            data-text="<?= h($bp['text_color']) ?>"
-            data-accent="<?= h($bp['accent_color'] ?? '') ?>"
-            data-cta="<?= h($bp['cta_color'] ?? '') ?>"
-            data-signature="<?= h($bp['signature_color'] ?? '') ?>"
-            data-body="<?= h($bp['body_color'] ?? '') ?>"
-            data-accent_text="<?= h($bp['accent_text_color'] ?? '') ?>"
-            data-badge_text="<?= h($bp['badge_text_color'] ?? '') ?>"
-            data-cta_text="<?= h($bp['cta_text_color'] ?? '') ?>">Edit</button>
-          <?php if (!$bp['is_default']): ?>
-            <form method="post">
-              <input type="hidden" name="csrf" value="<?= h($token) ?>">
-              <input type="hidden" name="form" value="palette_set_default">
-              <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
-              <button type="submit" class="btn-tiny">Set Default</button>
-            </form>
-          <?php endif; ?>
-          <form method="post" enctype="multipart/form-data">
-            <input type="hidden" name="csrf" value="<?= h($token) ?>">
-            <input type="hidden" name="form" value="palette_bg_image_upload">
-            <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
-            <input type="file" name="palette_bg_image" accept="image/png,image/jpeg" required style="max-width:160px;">
-            <button type="submit" class="btn-tiny"><?= $bp['background_image_path'] ? 'Replace' : 'Upload' ?> Background</button>
-          </form>
-          <?php if ($bp['background_image_path']): ?>
-            <form method="post">
-              <input type="hidden" name="csrf" value="<?= h($token) ?>">
-              <input type="hidden" name="form" value="palette_bg_image_remove">
-              <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
-              <button type="submit" class="btn-tiny btn-danger">Remove Background</button>
-            </form>
-          <?php endif; ?>
-          <form method="post" onsubmit="return confirm('Remove this palette?');">
-            <input type="hidden" name="csrf" value="<?= h($token) ?>">
-            <input type="hidden" name="form" value="palette_delete">
-            <input type="hidden" name="palette_id" value="<?= (int) $bp['id'] ?>">
-            <button type="submit" class="btn-tiny btn-danger">Remove</button>
-          </form>
-        </div>
-      </div>
-    <?php endforeach; ?>
+      <?php endforeach; ?>
+    </div>
   <?php else: ?>
     <p class="muted">No custom palettes yet — the 4 built-in presets are used automatically.</p>
   <?php endif; ?>
-  <form method="post" class="stacked-form" id="paletteForm" style="margin-top:16px;">
-    <input type="hidden" name="csrf" value="<?= h($token) ?>">
-    <input type="hidden" name="form" value="palette_add">
-    <label>Name
-      <input type="text" name="palette_name" id="palette_name" placeholder="e.g. My Brand" required>
-    </label>
-    <div class="form-grid">
-      <label>Background
-        <span class="color-field"><input type="color" name="palette_bg" id="palette_bg" value="#FBF5DD"><input type="text" class="hex-input" data-for="palette_bg" value="#FBF5DD" maxlength="7"></span>
-      </label>
-      <label>Text
-        <span class="color-field"><input type="color" name="palette_text" id="palette_text" value="#0D530E"><input type="text" class="hex-input" data-for="palette_text" value="#0D530E" maxlength="7"></span>
-      </label>
-    </div>
-    <?php
-    // Every remaining palette color follows the same "Auto-generate X"
-    // checkbox + X color-field shape — was 2 full stacked-form rows
-    // each (14 rows total), now one compact .color-toggle-row each.
-    $paletteColorFields = [
-        ['accent', 'Accent', null, '#E7E1B1'],
-        ['cta', 'CTA', null, '#0D530E'],
-        ['signature', 'Signature', null, '#0D530E'],
-        ['body', 'Body/Points Text', null, '#7776AD'],
-        ['accent_text', 'Text-on-Accent', 'text drawn on top of an accent-filled box/card', '#0D530E'],
-        ['badge_text', 'Badge Text', 'the numbered pill badges', '#FBF5DD'],
-        ['cta_text', 'CTA Text', 'text on the CTA banner/button', '#FBF5DD'],
-    ];
-    foreach ($paletteColorFields as [$key, $label, $note, $default]):
-    ?>
-    <div class="color-toggle-row">
-      <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_<?= $key ?>" checked> Auto-generate <?= h($label) ?></label>
-      <label><?= h($label) ?><?php if ($note): ?> <span class="muted">(<?= h($note) ?>)</span><?php endif; ?>
-        <span class="color-field"><input type="color" name="palette_<?= $key ?>" id="palette_<?= $key ?>" value="<?= h($default) ?>" disabled><input type="text" class="hex-input" data-for="palette_<?= $key ?>" value="<?= h($default) ?>" maxlength="7" disabled></span>
-      </label>
-    </div>
-    <?php endforeach; ?>
-    <button type="submit" class="btn-secondary" id="paletteSubmitBtn">Add Palette</button>
-    <button type="button" class="btn-tiny" id="paletteCancelEdit" style="display:none; align-self:flex-start;">Cancel edit</button>
-  </form>
-  <p class="muted" style="margin-top:8px;">Click "Edit" on a palette above to load its current colors into this form and update it in place — submitting a name that matches an existing palette always updates that palette rather than creating a duplicate.</p>
+  <div class="palette-editor">
+    <h3 id="paletteFormHeading">New Palette</h3>
+    <form method="post" class="stacked-form" id="paletteForm">
+      <input type="hidden" name="csrf" value="<?= h($token) ?>">
+      <input type="hidden" name="form" value="palette_add">
+      <p class="muted" style="margin:-8px 0 0;">Click "Edit" on a palette above to load its colors here and update it in place — a name matching an existing palette always updates it rather than creating a duplicate.</p>
+      <div class="form-grid">
+        <label>Name
+          <input type="text" name="palette_name" id="palette_name" placeholder="e.g. My Brand" required>
+        </label>
+        <label>Background
+          <span class="color-field"><input type="color" name="palette_bg" id="palette_bg" value="#FBF5DD"><input type="text" class="hex-input" data-for="palette_bg" value="#FBF5DD" maxlength="7"></span>
+        </label>
+        <label>Text
+          <span class="color-field"><input type="color" name="palette_text" id="palette_text" value="#0D530E"><input type="text" class="hex-input" data-for="palette_text" value="#0D530E" maxlength="7"></span>
+        </label>
+      </div>
+
+      <h4 class="palette-editor-subhead">Optional overrides <span class="muted">(auto-derived from Background/Text unless you turn one off)</span></h4>
+      <?php
+      // Every optional palette color follows the same "Auto-generate X"
+      // checkbox + X color-field shape — now a compact card in a grid
+      // instead of a long single column of stacked-form rows.
+      $paletteColorFields = [
+          ['accent', 'Accent', null, '#E7E1B1'],
+          ['cta', 'CTA', null, '#0D530E'],
+          ['signature', 'Signature', null, '#0D530E'],
+          ['body', 'Body/Points Text', null, '#7776AD'],
+          ['accent_text', 'Text-on-Accent', 'text on an accent-filled box/card', '#0D530E'],
+          ['badge_text', 'Badge Text', 'the numbered pill badges', '#FBF5DD'],
+          ['cta_text', 'CTA Text', 'text on the CTA banner/button', '#FBF5DD'],
+      ];
+      ?>
+      <div class="palette-field-grid">
+        <?php foreach ($paletteColorFields as [$key, $label, $note, $default]): ?>
+        <div class="palette-field-card">
+          <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_<?= $key ?>" checked> <?= h($label) ?></label>
+          <?php if ($note): ?><p class="muted palette-field-note"><?= h($note) ?></p><?php endif; ?>
+          <span class="color-field"><input type="color" name="palette_<?= $key ?>" id="palette_<?= $key ?>" value="<?= h($default) ?>" disabled><input type="text" class="hex-input" data-for="palette_<?= $key ?>" value="<?= h($default) ?>" maxlength="7" disabled></span>
+        </div>
+        <?php endforeach; ?>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <button type="submit" class="btn-secondary" id="paletteSubmitBtn">Add Palette</button>
+        <button type="button" class="btn-tiny" id="paletteCancelEdit" style="display:none;">Cancel edit</button>
+      </div>
+    </form>
+  </div>
 </section>
 
 <section class="card" data-tab="brand">
@@ -1528,6 +1543,7 @@ document.querySelectorAll('.color-field').forEach(function (field) {
   var form = document.getElementById('paletteForm');
   var submitBtn = document.getElementById('paletteSubmitBtn');
   var cancelBtn = document.getElementById('paletteCancelEdit');
+  var heading = document.getElementById('paletteFormHeading');
   if (!form || !submitBtn || !cancelBtn) return;
 
   function setField(name, value) {
@@ -1560,6 +1576,7 @@ document.querySelectorAll('.color-field').forEach(function (field) {
       setField('palette_cta_text', btn.dataset.cta_text);
       submitBtn.textContent = 'Update Palette';
       cancelBtn.style.display = 'inline-block';
+      if (heading) heading.textContent = 'Editing "' + btn.dataset.name + '"';
       form.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   });
@@ -1580,6 +1597,7 @@ document.querySelectorAll('.color-field').forEach(function (field) {
     });
     submitBtn.textContent = 'Add Palette';
     cancelBtn.style.display = 'none';
+    if (heading) heading.textContent = 'New Palette';
   });
 })();
 </script>
