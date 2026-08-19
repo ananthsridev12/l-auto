@@ -210,6 +210,7 @@ Requirements:
 - Original analysis and perspective, not a rehash of any single source.
 - Naturally incorporate the target keywords if any are implied by the topic.
 - HTML body only (content_html) — use <h2>, <p>, <ul>/<li>, <strong>, <a>, and (Comparison type only) <table> as appropriate. No <html>/<body>/<script> tags, no inline styles.
+- content_html must NOT start with a heading that repeats or rephrases the "title" field — the title is already displayed separately by the page template as its own <h1> above the body, so restating it in content_html duplicates it on the page. Start content_html directly with the opening paragraph; the first <h2> (if any) should be the first real subsection heading, not a restatement of the title/topic.
 
 Return ONLY valid JSON with this exact shape, no markdown fences, no commentary:
 {
@@ -259,6 +260,34 @@ function generate_blog_post_via_ai(
     $creative['slug'] = !empty($creative['slug']) ? blog_slugify($creative['slug']) : blog_slugify($creative['title']);
     $creative['meta_description'] = trim((string) ($creative['meta_description'] ?? ''));
     $creative['keywords'] = trim((string) ($creative['keywords'] ?? ''));
+    $creative['content_html'] = blog_strip_duplicate_title_heading((string) $creative['content_html'], (string) $creative['title']);
 
     return $creative;
+}
+
+// Safety net on top of the prompt's own "don't restate the title" rule
+// above — models occasionally do it anyway. The title is always
+// rendered as its own <h1> by the page template and by every publish
+// target's theme (WordPress/Jekyll/Grav all send title and content_html
+// as separate fields, see includes/wordpress_api.php etc.), so a
+// leading heading that just repeats it would show up twice on the
+// actual page. Only strips a *leading* <h1>/<h2> that closely matches
+// the title — a real first subsection heading that happens to share a
+// few words is left alone.
+function blog_strip_duplicate_title_heading(string $html, string $title): string
+{
+    $normalize = fn (string $s) => trim(preg_replace('/[^a-z0-9]+/', '', mb_strtolower(strip_tags($s))));
+    $titleNorm = $normalize($title);
+    if ($titleNorm === '' || !preg_match('/^\s*<h[12][^>]*>(.*?)<\/h[12]>\s*/is', $html, $m)) {
+        return $html;
+    }
+    $headingNorm = $normalize($m[1]);
+    if ($headingNorm === '') {
+        return $html;
+    }
+    similar_text($titleNorm, $headingNorm, $percent);
+    if ($headingNorm === $titleNorm || $percent > 70) {
+        return ltrim(substr($html, strlen($m[0])));
+    }
+    return $html;
 }

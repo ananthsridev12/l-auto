@@ -217,6 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['form'] ?? '') === 'news_topic_add') {
         $query = trim($_POST['news_query'] ?? '');
         $sourceType = ($_POST['news_source_type'] ?? 'auto') === 'reddit' ? 'reddit' : 'auto';
+        $searchApproach = ($_POST['news_search_approach'] ?? 'seo') === 'ai_mode' ? 'ai_mode' : 'seo';
         if ($sourceType === 'reddit') {
             $query = preg_replace('#^/?r/#i', '', $query); // stored bare, "r/" is added back for display
         }
@@ -225,10 +226,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($sourceType === 'auto' && news_topic_is_feed($query) && !filter_var($query, FILTER_VALIDATE_URL)) {
             flash('error', 'That looks like a URL but isn\'t a valid one — check it and try again.');
         } else {
-            add_news_topic($userId, $query, $workspaceId, $sourceType);
-            flash('success', $sourceType === 'reddit'
-                ? "Subreddit \"r/{$query}\" added."
-                : (news_topic_is_feed($query) ? 'RSS feed added — it will be fetched directly.' : "News keyword \"{$query}\" added."));
+            $newTopicId = add_news_topic($userId, $query, $workspaceId, $sourceType, $searchApproach);
+            $isAiMode = $newTopicId && $searchApproach === 'ai_mode' && $sourceType === 'auto' && !news_topic_is_feed($query);
+            if ($isAiMode) {
+                try {
+                    news_topic_regenerate_ai_expansion($userId, $newTopicId, resolve_ai_config($userId));
+                    flash('success', "News keyword \"{$query}\" added in AI Mode — related topics generated.");
+                } catch (Throwable $e) {
+                    flash('success', "News keyword \"{$query}\" added in AI Mode, but generating related topics failed: {$e->getMessage()} You can retry from the keyword list.");
+                }
+            } else {
+                flash('success', $sourceType === 'reddit'
+                    ? "Subreddit \"r/{$query}\" added."
+                    : (news_topic_is_feed($query) ? 'RSS feed added — it will be fetched directly.' : "News keyword \"{$query}\" added."));
+            }
+        }
+        redirect('pages/settings.php');
+    }
+
+    if (($_POST['form'] ?? '') === 'news_topic_regenerate_ai') {
+        try {
+            news_topic_regenerate_ai_expansion($userId, (int) ($_POST['topic_id'] ?? 0), resolve_ai_config($userId));
+            flash('success', 'AI Mode related topics regenerated.');
+        } catch (Throwable $e) {
+            flash('error', $e->getMessage());
         }
         redirect('pages/settings.php');
     }
@@ -773,19 +794,27 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="ai_provider">
-    <label class="checkbox-row"><input type="radio" name="ai_provider" value="gemini" <?= $aiProvider === 'gemini' ? 'checked' : '' ?>> Gemini</label>
-    <label>Gemini API Key
-      <input type="password" name="gemini_api_key" value="<?= h($geminiKey ?? '') ?>" placeholder="AIza..." autocomplete="off">
-    </label>
-    <label class="checkbox-row"><input type="radio" name="ai_provider" value="claude" <?= $aiProvider === 'claude' ? 'checked' : '' ?>> Claude</label>
-    <label>Claude API Key
-      <input type="password" name="claude_api_key" value="<?= h($claudeKey ?? '') ?>" placeholder="sk-ant-..." autocomplete="off">
-    </label>
-    <label class="checkbox-row"><input type="radio" name="ai_provider" value="openai" <?= $aiProvider === 'openai' ? 'checked' : '' ?>> OpenAI</label>
-    <label>OpenAI API Key
-      <input type="password" name="openai_api_key" value="<?= h($openaiKey ?? '') ?>" placeholder="sk-..." autocomplete="off">
-    </label>
-    <button type="submit" class="btn-primary">Save AI Provider</button>
+    <div class="item-grid">
+      <div class="item-card">
+        <label class="checkbox-row"><input type="radio" name="ai_provider" value="gemini" <?= $aiProvider === 'gemini' ? 'checked' : '' ?>> <strong>Gemini</strong></label>
+        <label style="margin-top:var(--space-2);">API Key
+          <input type="password" name="gemini_api_key" value="<?= h($geminiKey ?? '') ?>" placeholder="AIza..." autocomplete="off">
+        </label>
+      </div>
+      <div class="item-card">
+        <label class="checkbox-row"><input type="radio" name="ai_provider" value="claude" <?= $aiProvider === 'claude' ? 'checked' : '' ?>> <strong>Claude</strong></label>
+        <label style="margin-top:var(--space-2);">API Key
+          <input type="password" name="claude_api_key" value="<?= h($claudeKey ?? '') ?>" placeholder="sk-ant-..." autocomplete="off">
+        </label>
+      </div>
+      <div class="item-card">
+        <label class="checkbox-row"><input type="radio" name="ai_provider" value="openai" <?= $aiProvider === 'openai' ? 'checked' : '' ?>> <strong>OpenAI</strong></label>
+        <label style="margin-top:var(--space-2);">API Key
+          <input type="password" name="openai_api_key" value="<?= h($openaiKey ?? '') ?>" placeholder="sk-..." autocomplete="off">
+        </label>
+      </div>
+    </div>
+    <button type="submit" class="btn-primary" style="margin-top:var(--space-4);">Save AI Provider</button>
   </form>
   <?php endif; ?>
 </section>
@@ -797,12 +826,14 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="reddit_credentials">
-    <label>Client ID
-      <input type="text" name="reddit_client_id" value="<?= h($redditCreds['client_id'] ?? '') ?>" placeholder="e.g. abcXYZ123-_"  autocomplete="off">
-    </label>
-    <label>Client Secret
-      <input type="password" name="reddit_client_secret" value="<?= h($redditCreds['client_secret'] ?? '') ?>" placeholder="e.g. abcXYZ123-_..." autocomplete="off">
-    </label>
+    <div class="form-grid">
+      <label>Client ID
+        <input type="text" name="reddit_client_id" value="<?= h($redditCreds['client_id'] ?? '') ?>" placeholder="e.g. abcXYZ123-_"  autocomplete="off">
+      </label>
+      <label>Client Secret
+        <input type="password" name="reddit_client_secret" value="<?= h($redditCreds['client_secret'] ?? '') ?>" placeholder="e.g. abcXYZ123-_..." autocomplete="off">
+      </label>
+    </div>
     <button type="submit" class="btn-secondary">Save Reddit Credentials</button>
   </form>
 </section>
@@ -811,8 +842,9 @@ require __DIR__ . '/../includes/layout_top.php';
 <section class="card" data-tab="brand">
   <h2>Workspaces</h2>
   <p class="muted">Everything below is <strong>per workspace</strong> — branding and design defaults are separate for your Personal voice and for each company page, and so is the <a href="<?= h(app_path('pages/knowledge.php')) ?>">Knowledge Base</a> (company identity, personas, verticals, services, senders, and more). Switch workspaces with the selector at the top of the sidebar; every page (New Post, Content Calendar, News Studio, Drafts…) follows it.</p>
+  <div class="item-grid">
   <?php foreach ($workspaces as $wsRow): ?>
-    <div class="account-row">
+    <div class="item-card account-row">
       <div class="account-info">
         <span><strong><?= h($wsRow['name']) ?></strong></span>
         <span class="badge <?= $wsRow['type'] === 'personal' ? 'badge-format' : 'badge-active' ?>"><?= $wsRow['type'] === 'personal' ? 'Personal' : 'Company' ?></span>
@@ -828,6 +860,7 @@ require __DIR__ . '/../includes/layout_top.php';
       <?php endif; ?>
     </div>
   <?php endforeach; ?>
+  </div>
   <form method="post" class="stacked-form" style="margin-top:12px;">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="workspace_add">
@@ -845,12 +878,14 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="wordpress_settings">
-    <label>Site URL
-      <input type="text" name="wordpress_url" value="<?= h($workspace['wordpress_url'] ?? '') ?>" placeholder="https://example.com">
-    </label>
-    <label>Username
-      <input type="text" name="wordpress_username" value="<?= h($workspace['wordpress_username'] ?? '') ?>" autocomplete="off">
-    </label>
+    <div class="form-grid">
+      <label>Site URL
+        <input type="text" name="wordpress_url" value="<?= h($workspace['wordpress_url'] ?? '') ?>" placeholder="https://example.com">
+      </label>
+      <label>Username
+        <input type="text" name="wordpress_username" value="<?= h($workspace['wordpress_username'] ?? '') ?>" autocomplete="off">
+      </label>
+    </div>
     <label>Application Password
       <input type="password" name="wordpress_app_password" value="<?= h($workspace['wordpress_app_password'] ?? '') ?>" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" autocomplete="off">
     </label>
@@ -871,20 +906,22 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="jekyll_settings">
-    <label>Repo <span class="muted">(owner/repo)</span>
-      <input type="text" name="jekyll_repo" value="<?= h($workspace['jekyll_repo'] ?? '') ?>" placeholder="yourname/your-jekyll-site">
-    </label>
-    <label>Branch
-      <input type="text" name="jekyll_branch" value="<?= h($workspace['jekyll_branch'] ?? '') ?>" placeholder="main">
-    </label>
+    <div class="form-grid">
+      <label>Repo <span class="muted">(owner/repo)</span>
+        <input type="text" name="jekyll_repo" value="<?= h($workspace['jekyll_repo'] ?? '') ?>" placeholder="yourname/your-jekyll-site">
+      </label>
+      <label>Branch
+        <input type="text" name="jekyll_branch" value="<?= h($workspace['jekyll_branch'] ?? '') ?>" placeholder="main">
+      </label>
+      <label>Posts path
+        <input type="text" name="jekyll_posts_path" value="<?= h($workspace['jekyll_posts_path'] ?? '') ?>" placeholder="_posts">
+      </label>
+      <label>Site URL <span class="muted">(optional)</span>
+        <input type="text" name="jekyll_site_url" value="<?= h($workspace['jekyll_site_url'] ?? '') ?>" placeholder="https://example.com">
+      </label>
+    </div>
     <label>Personal Access Token
       <input type="password" name="jekyll_token" value="<?= h($workspace['jekyll_token'] ?? '') ?>" placeholder="github_pat_..." autocomplete="off">
-    </label>
-    <label>Posts path
-      <input type="text" name="jekyll_posts_path" value="<?= h($workspace['jekyll_posts_path'] ?? '') ?>" placeholder="_posts">
-    </label>
-    <label>Site URL <span class="muted">(optional — used to build the post link after publishing)</span>
-      <input type="text" name="jekyll_site_url" value="<?= h($workspace['jekyll_site_url'] ?? '') ?>" placeholder="https://example.com">
     </label>
     <button type="submit" class="btn-secondary">Save Jekyll Connection</button>
   </form>
@@ -903,17 +940,19 @@ require __DIR__ . '/../includes/layout_top.php';
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="grav_settings">
-    <label>Site URL
-      <input type="text" name="grav_site_url" value="<?= h($workspace['grav_site_url'] ?? '') ?>" placeholder="https://example.com">
-    </label>
+    <div class="form-grid">
+      <label>Site URL
+        <input type="text" name="grav_site_url" value="<?= h($workspace['grav_site_url'] ?? '') ?>" placeholder="https://example.com">
+      </label>
+      <label>Route prefix <span class="muted">(where new posts go)</span>
+        <input type="text" name="grav_route_prefix" value="<?= h($workspace['grav_route_prefix'] ?? '') ?>" placeholder="/blog">
+      </label>
+      <label>Template <span class="muted">(post page's template name)</span>
+        <input type="text" name="grav_template" value="<?= h($workspace['grav_template'] ?? '') ?>" placeholder="item">
+      </label>
+    </div>
     <label>API Key
       <input type="password" name="grav_api_key" value="<?= h($workspace['grav_api_key'] ?? '') ?>" placeholder="grav_..." autocomplete="off">
-    </label>
-    <label>Route prefix <span class="muted">(where new posts go)</span>
-      <input type="text" name="grav_route_prefix" value="<?= h($workspace['grav_route_prefix'] ?? '') ?>" placeholder="/blog">
-    </label>
-    <label>Template <span class="muted">(your blog post page's template name)</span>
-      <input type="text" name="grav_template" value="<?= h($workspace['grav_template'] ?? '') ?>" placeholder="item">
     </label>
     <button type="submit" class="btn-secondary">Save Grav Connection</button>
   </form>
@@ -1085,8 +1124,9 @@ require __DIR__ . '/../includes/layout_top.php';
 <section class="card" data-tab="brand">
   <h2>Footer Images — <?= h($workspace['name']) ?></h2>
   <p class="muted">Shown in the circular footer on the last (CTA) slide of a carousel. Logo is used for company-category posts, Photo for personal-category posts (see the Company/Personal tag on Content Pillars below). These are set per workspace — falls back to your account-wide upload (if any from before workspaces existed), then a bundled default, until this workspace has its own.</p>
+  <div class="item-grid">
   <?php foreach (['logo' => 'Logo (company posts)', 'photo' => 'Photo (personal posts)'] as $slot => $label): ?>
-    <div class="account-row">
+    <div class="item-card account-row">
       <div class="account-info">
         <?php if ($footerImages[$slot]): ?>
           <img src="<?= h($footerImages[$slot]) ?>" style="width:48px; height:48px; object-fit:cover; border-radius:50%;">
@@ -1113,12 +1153,13 @@ require __DIR__ . '/../includes/layout_top.php';
       </div>
     </div>
   <?php endforeach; ?>
+  </div>
 </section>
 
 <section class="card" data-tab="brand">
   <h2>Brand Logo — <?= h($workspace['name']) ?></h2>
   <p class="muted">Shown top-left on every generated slide in this workspace, across every Design Template and Color Palette. Aspect ratio is preserved (not cropped) — a transparent-background PNG wordmark works best. No logo means nothing is drawn.</p>
-  <div class="account-row">
+  <div class="item-card account-row">
     <div class="account-info">
       <?php if ($brandLogoUrl): ?>
         <img src="<?= h($brandLogoUrl) ?>" style="max-width:120px; max-height:48px; object-fit:contain;">
@@ -1147,9 +1188,10 @@ require __DIR__ . '/../includes/layout_top.php';
   <h2>Brand Fonts</h2>
   <p class="muted">Upload your own typefaces (Regular + Bold, .ttf or .otf), or add one already on the server below without uploading — a library to pick from, not a single active font. Assign one to <strong>Heading</strong> (headline text), one to <strong>Body</strong> (body text, numbered points, CTA banner, counter), and optionally one to <strong>Signature</strong> (the footer name) independently. Leave any unassigned to fall back to the next rule — Signature falls back to the Heading/Body toggle below, Heading/Body fall back to the built-in Inter.</p>
   <?php if ($brandFonts): ?>
+    <div class="item-grid">
     <?php foreach ($brandFonts as $bf): ?>
       <?php $isHeading = (int) $bf['id'] === $headingFontId; $isBody = (int) $bf['id'] === $bodyFontId; $isFooter = (int) $bf['id'] === $footerFontId; ?>
-      <div class="account-row">
+      <div class="item-card account-row">
         <div class="account-info">
           <span><?= h($bf['name']) ?></span>
           <?php if ($isHeading): ?><span class="badge badge-active">Heading</span><?php endif; ?>
@@ -1193,6 +1235,7 @@ require __DIR__ . '/../includes/layout_top.php';
         </div>
       </div>
     <?php endforeach; ?>
+    </div>
   <?php else: ?>
     <p class="muted">No custom fonts yet — Inter is used for both roles.</p>
   <?php endif; ?>
@@ -1228,8 +1271,9 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php if ($siteFonts): ?>
     <div class="mspec" style="margin-top:16px;">
       <div class="mspec-title">Already on the server (assets/fonts/) — add without uploading</div>
+      <div class="item-grid">
       <?php foreach ($siteFonts as $sf): ?>
-        <div class="account-row">
+        <div class="item-card account-row">
           <div class="account-info"><span><?= h($sf['name']) ?></span></div>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -1239,6 +1283,7 @@ require __DIR__ . '/../includes/layout_top.php';
           </form>
         </div>
       <?php endforeach; ?>
+      </div>
     </div>
   <?php endif; ?>
 
@@ -1321,67 +1366,105 @@ require __DIR__ . '/../includes/layout_top.php';
       <input type="checkbox" name="news_auto_enabled" value="1" <?= !empty($newsSettings['news_auto_enabled']) ? 'checked' : '' ?>>
       Auto-generate news drafts daily (requires the news cron job — see cron/news_daily.php)
     </label>
-    <label>Drafts per day
-      <select name="news_drafts_per_day">
-        <?php for ($n = 1; $n <= 5; $n++): ?>
-          <option value="<?= $n ?>"<?= (int) $newsSettings['news_drafts_per_day'] === $n ? ' selected' : '' ?>><?= $n ?></option>
-        <?php endfor; ?>
-      </select>
-    </label>
-    <label>News source region <span class="muted">(which country's Google News edition headlines are searched from)</span>
-      <select name="news_region">
-        <option value="">Default (<?= h(NEWS_REGION_PRESETS[NEWS_FEED_COUNTRY]['label'] ?? NEWS_FEED_COUNTRY) ?>)</option>
-        <?php foreach (NEWS_REGION_PRESETS as $rkey => $rpreset): ?>
-          <option value="<?= h($rkey) ?>"<?= $newsSettings['news_region'] === $rkey ? ' selected' : '' ?>><?= h($rpreset['label']) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </label>
+    <div class="form-grid">
+      <label>Drafts per day
+        <select name="news_drafts_per_day">
+          <?php for ($n = 1; $n <= 5; $n++): ?>
+            <option value="<?= $n ?>"<?= (int) $newsSettings['news_drafts_per_day'] === $n ? ' selected' : '' ?>><?= $n ?></option>
+          <?php endfor; ?>
+        </select>
+      </label>
+      <label>News source region <span class="muted">(Google News edition)</span>
+        <select name="news_region">
+          <option value="">Default (<?= h(NEWS_REGION_PRESETS[NEWS_FEED_COUNTRY]['label'] ?? NEWS_FEED_COUNTRY) ?>)</option>
+          <?php foreach (NEWS_REGION_PRESETS as $rkey => $rpreset): ?>
+            <option value="<?= h($rkey) ?>"<?= $newsSettings['news_region'] === $rkey ? ' selected' : '' ?>><?= h($rpreset['label']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+    </div>
     <button type="submit" class="btn-secondary">Save News Settings</button>
   </form>
   <h3 style="margin-top:20px;">News keywords, RSS feeds &amp; subreddits</h3>
   <p class="muted">These are the only topics searched — add whatever you want news drafts for (e.g. a competitor, a technology, an industry event). You can also paste a publication's own <strong>RSS feed URL</strong> to fetch that feed directly instead of searching Google News, or add a <strong>subreddit</strong> (requires Reddit credentials below) to pull trending discussion instead of headlines. Direct feeds and subreddits both skip the trusted-sources filter below, since adding one is itself the trust decision.</p>
   <?php if ($newsTopics): ?>
+    <div class="item-grid">
     <?php foreach ($newsTopics as $nt): ?>
-      <div class="account-row">
+      <?php $isAiMode = ($nt['search_approach'] ?? 'seo') === 'ai_mode'; ?>
+      <div class="item-card account-row">
         <div class="account-info">
           <span><?= h($nt['source_type'] === 'reddit' ? 'r/' . $nt['query'] : $nt['query']) ?></span>
           <?php if ($nt['source_type'] === 'reddit'): ?>
             <span class="badge badge-active">Reddit</span>
           <?php elseif (news_topic_is_feed($nt['query'])): ?>
             <span class="badge badge-scheduled">Direct feed</span>
+          <?php elseif ($isAiMode): ?>
+            <span class="badge badge-campaign">AI Mode</span>
+          <?php else: ?>
+            <span class="badge badge-format">SEO</span>
           <?php endif; ?>
         </div>
-        <form method="post">
-          <input type="hidden" name="csrf" value="<?= h($token) ?>">
-          <input type="hidden" name="form" value="news_topic_delete">
-          <input type="hidden" name="topic_id" value="<?= (int) $nt['id'] ?>">
-          <button type="submit" class="btn-tiny btn-danger">Remove</button>
-        </form>
+        <div class="inline-form">
+          <?php if ($isAiMode): ?>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="news_topic_regenerate_ai">
+              <input type="hidden" name="topic_id" value="<?= (int) $nt['id'] ?>">
+              <button type="submit" class="btn-tiny"><?= $nt['ai_expanded_queries'] ? 'Regenerate' : 'Generate now' ?></button>
+            </form>
+          <?php endif; ?>
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="news_topic_delete">
+            <input type="hidden" name="topic_id" value="<?= (int) $nt['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Remove</button>
+          </form>
+        </div>
+        <?php if ($isAiMode && $nt['ai_expanded_queries']): ?>
+          <?php $expandedQueries = json_decode($nt['ai_expanded_queries'], true) ?: []; ?>
+          <details class="kb-details" style="width:100%; margin-top:var(--space-2);">
+            <summary>AI-expanded related topics (<?= count($expandedQueries) ?>)</summary>
+            <ul style="margin:var(--space-2) 0 0; padding-left:20px;">
+              <?php foreach ($expandedQueries as $eq): ?><li class="muted"><?= h($eq) ?></li><?php endforeach; ?>
+            </ul>
+          </details>
+        <?php endif; ?>
       </div>
     <?php endforeach; ?>
+    </div>
   <?php else: ?>
     <p class="muted">No keywords yet — add one below to start fetching news.</p>
   <?php endif; ?>
   <form method="post" class="stacked-form" style="margin-top:12px;">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="news_topic_add">
-    <label>Source type
-      <select name="news_source_type">
-        <option value="auto">Google News keyword / RSS feed URL</option>
-        <option value="reddit">Subreddit (Reddit)</option>
-      </select>
-    </label>
+    <div class="form-grid">
+      <label>Source type
+        <select name="news_source_type">
+          <option value="auto">Google News keyword / RSS feed URL</option>
+          <option value="reddit">Subreddit (Reddit)</option>
+        </select>
+      </label>
+      <label>Search approach <span class="muted">(keywords only)</span>
+        <select name="news_search_approach">
+          <option value="seo">SEO — exact keyword match</option>
+          <option value="ai_mode">AI Mode — AI-expanded related topics</option>
+        </select>
+      </label>
+    </div>
     <label>Keyword, phrase, RSS feed URL, or subreddit name
       <input type="text" name="news_query" placeholder="e.g. predictive maintenance India — or https://example.com/feed.xml — or r/manufacturing" required>
     </label>
+    <p class="muted" style="margin:-8px 0 0;">"AI Mode" mirrors Google Search's own AI Mode tab — instead of only matching the exact keyword, your configured AI provider (Settings &gt; AI Provider) expands it into related natural-language topics/questions and searches those too, surfacing more than a plain keyword match would. Only applies to Google News keywords, not RSS feeds or subreddits.</p>
     <button type="submit" class="btn-secondary">Add</button>
   </form>
 
   <h3 style="margin-top:20px;">Trusted sources</h3>
   <p class="muted">Restrict Google News results to publishers you trust — enter a domain (<code>economictimes.indiatimes.com</code>) or a name (<code>Reuters</code>). While this list has entries, headlines from anyone else are dropped at fetch time. Leave it empty to allow all sources.</p>
   <?php if ($newsTrustedSources): ?>
+    <div class="item-grid">
     <?php foreach ($newsTrustedSources as $ns): ?>
-      <div class="account-row">
+      <div class="item-card account-row">
         <div class="account-info"><span><?= h($ns['source']) ?></span></div>
         <form method="post">
           <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -1391,6 +1474,7 @@ require __DIR__ . '/../includes/layout_top.php';
         </form>
       </div>
     <?php endforeach; ?>
+    </div>
   <?php else: ?>
     <p class="muted">No trusted sources set — headlines from any publisher are accepted.</p>
   <?php endif; ?>

@@ -46,10 +46,10 @@ const NEWS_MAX_AGE_DAYS    = 7;    // older items in the feed are ignored
 function fetch_news_topics(int $userId, ?int $workspaceId = null): array
 {
     if ($workspaceId === null) {
-        $stmt = db()->prepare('SELECT id, query, source_type FROM news_topics WHERE user_id = ? ORDER BY query');
+        $stmt = db()->prepare('SELECT id, query, source_type, search_approach, ai_expanded_queries FROM news_topics WHERE user_id = ? ORDER BY query');
         $stmt->execute([$userId]);
     } else {
-        $stmt = db()->prepare('SELECT id, query, source_type FROM news_topics WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY query');
+        $stmt = db()->prepare('SELECT id, query, source_type, search_approach, ai_expanded_queries FROM news_topics WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) ORDER BY query');
         $stmt->execute([$userId, $workspaceId]);
     }
     return $stmt->fetchAll();
@@ -59,14 +59,21 @@ function fetch_news_topics(int $userId, ?int $workspaceId = null): array
 // reddit_fetch_subreddit_posts() instead of Google News/direct-feed —
 // see news_refresh() below. 'auto' (default) preserves existing
 // behavior: news_topic_is_feed() sniffs URL vs. search-query text.
-function add_news_topic(int $userId, string $query, ?int $workspaceId = null, string $sourceType = 'auto'): void
+// $searchApproach 'ai_mode' only applies to plain keywords (a bare
+// search phrase, not a URL) — see news_build_queries(). Returns the new
+// row's id (0 if the insert was skipped/ignored as a duplicate) so a
+// caller can immediately kick off AI expansion.
+function add_news_topic(int $userId, string $query, ?int $workspaceId = null, string $sourceType = 'auto', string $searchApproach = 'seo'): int
 {
     $query = trim($query);
     if ($query === '') {
-        return;
+        return 0;
     }
     $sourceType = $sourceType === 'reddit' ? 'reddit' : 'auto';
-    db()->prepare('INSERT IGNORE INTO news_topics (user_id, workspace_id, query, source_type) VALUES (?, ?, ?, ?)')->execute([$userId, $workspaceId, $query, $sourceType]);
+    $searchApproach = ($searchApproach === 'ai_mode' && $sourceType === 'auto' && !news_topic_is_feed($query)) ? 'ai_mode' : 'seo';
+    db()->prepare('INSERT IGNORE INTO news_topics (user_id, workspace_id, query, source_type, search_approach) VALUES (?, ?, ?, ?, ?)')
+        ->execute([$userId, $workspaceId, $query, $sourceType, $searchApproach]);
+    return (int) db()->lastInsertId();
 }
 
 function delete_news_topic(int $userId, int $id): void
@@ -166,7 +173,78 @@ function news_build_queries(int $userId, ?int $workspaceId = null): array
             'feed'        => $sourceType === 'auto' && news_topic_is_feed($topic['query']),
             'source_type' => $sourceType,
         ];
+        // AI Mode: fan the keyword out into its cached AI-expanded related
+        // queries too, so the search surfaces broader/adjacent topics the
+        // same way Google's own AI Mode does, instead of just exact
+        // keyword matches. Falls back to the literal keyword alone
+        // (already added above) until expansion has been generated once —
+        // see news_generate_ai_expansion() / Settings' "Generate now".
+        if (($topic['search_approach'] ?? 'seo') === 'ai_mode' && !empty($topic['ai_expanded_queries'])) {
+            $expanded = json_decode($topic['ai_expanded_queries'], true);
+            foreach (is_array($expanded) ? $expanded : [] as $phrase) {
+                $phrase = trim((string) $phrase);
+                if ($phrase !== '') {
+                    $queries[] = ['query' => $phrase, 'pillar_id' => null, 'feed' => false, 'source_type' => 'auto'];
+                }
+            }
+        }
     }
+    return $queries;
+}
+
+// ── AI Mode keyword expansion ────────────────────────────────────────
+// Asks the workspace's configured AI provider (resolve_ai_config()) to
+// turn one plain keyword into a handful of related natural-language
+// search phrases — the kind of adjacent/question-style queries Google's
+// own "AI Mode" surfaces beyond an exact keyword match. Generated once
+// (at topic-add time, or via Settings' "Generate now"/"Regenerate"
+// button) and cached in news_topics.ai_expanded_queries rather than
+// called on every fetch, since it costs a real AI call.
+function news_generate_ai_expansion(string $query, array $aiConfig): array
+{
+    if (!ai_configured($aiConfig)) {
+        throw new RuntimeException('Set up an AI provider in Settings first.');
+    }
+    $prompt = <<<PROMPT
+Someone searching Google in "AI Mode" (its conversational, question-driven search experience) for the keyword below sees a broader spread of related topics than a plain keyword-matched search would — adjacent questions, related angles, and natural-language phrasings.
+
+Keyword: "{$query}"
+
+Generate 5 short, natural-language search phrases (each under 12 words) representing the related topics/questions an AI-mode-style search on this keyword would surface. Stay closely related to the original keyword's subject — don't drift into unrelated territory.
+
+Respond with ONLY a JSON object of this exact shape, no other text:
+{"queries": ["phrase one", "phrase two", "phrase three", "phrase four", "phrase five"]}
+PROMPT;
+
+    $text = match ($aiConfig['provider']) {
+        'claude' => ai_call_claude($prompt, $aiConfig['api_key'], $aiConfig['model']),
+        'openai' => ai_call_openai($prompt, $aiConfig['api_key'], $aiConfig['model']),
+        default  => ai_call_gemini($prompt, $aiConfig['api_key'], $aiConfig['model']),
+    };
+
+    $data = json_decode(trim($text), true);
+    $queries = is_array($data['queries'] ?? null) ? $data['queries'] : [];
+    $queries = array_values(array_filter(array_map(fn ($q) => trim((string) $q), $queries), fn ($q) => $q !== ''));
+    if (!$queries) {
+        throw new RuntimeException('The AI provider did not return any related queries — try again.');
+    }
+    return array_slice($queries, 0, 6);
+}
+
+// Generates (or regenerates) and stores the AI-expanded queries for one
+// topic. No-op if the topic isn't this user's, isn't AI Mode, or isn't a
+// plain keyword (nothing to expand for a subreddit/direct-feed topic).
+function news_topic_regenerate_ai_expansion(int $userId, int $topicId, array $aiConfig): array
+{
+    $stmt = db()->prepare('SELECT id, query, source_type, search_approach FROM news_topics WHERE id = ? AND user_id = ?');
+    $stmt->execute([$topicId, $userId]);
+    $topic = $stmt->fetch();
+    if (!$topic || $topic['search_approach'] !== 'ai_mode' || $topic['source_type'] !== 'auto' || news_topic_is_feed($topic['query'])) {
+        throw new RuntimeException('That keyword isn\'t set to AI Mode.');
+    }
+    $queries = news_generate_ai_expansion($topic['query'], $aiConfig);
+    db()->prepare('UPDATE news_topics SET ai_expanded_queries = ? WHERE id = ? AND user_id = ?')
+        ->execute([json_encode($queries), $topicId, $userId]);
     return $queries;
 }
 

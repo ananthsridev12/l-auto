@@ -501,6 +501,12 @@ ALTER TABLE users ADD COLUMN reddit_client_id VARCHAR(255) DEFAULT NULL;
 ALTER TABLE users ADD COLUMN reddit_client_secret VARCHAR(255) DEFAULT NULL;
 ALTER TABLE news_topics ADD COLUMN source_type ENUM('auto','reddit') NOT NULL DEFAULT 'auto';
 
+-- Keyword "search approach" — SEO (literal keyword, unchanged default
+-- behavior) vs AI Mode (AI-expanded related queries, see
+-- includes/news_fetch.php news_generate_ai_expansion()).
+ALTER TABLE news_topics ADD COLUMN search_approach ENUM('seo','ai_mode') NOT NULL DEFAULT 'seo';
+ALTER TABLE news_topics ADD COLUMN ai_expanded_queries TEXT NULL;
+
 -- ── Blog content + WordPress publishing (Phase F) ─────────────────────
 -- One WordPress site per workspace (Application Password, not the
 -- account password — a scoped/revocable credential, same risk profile
