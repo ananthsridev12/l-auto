@@ -672,10 +672,25 @@ body.centered-page {
 /* Shared input styling for every form container in the app (formerly
    6 near-duplicate blocks: .form-group, .stacked-form, .field-row,
    .nickname-input, .mapping-select, .editor-panel — all still work,
-   they just resolve through one rule now). */
-.form-group input,
+   they just resolve through one rule now). The :not(:where(...))
+   exclusion keeps this OFF checkbox/radio/color inputs — without it a
+   checkbox nested anywhere in a .stacked-form/.form-group inherited
+   width:100% and 14px padding, stretching the native control into a
+   huge invisible click target with its tiny glyph adrift somewhere
+   inside (every .checkbox-row across Settings/Knowledge Hub/News
+   Studio had this bug), and a color swatch/hex pair (.color-field
+   below) got stretched and squashed the same way. Wrapping the
+   exclusion list in :where(...) keeps its specificity contribution at
+   zero — a plain :not(a):not(b) chain would otherwise outrank
+   .color-field's own dedicated sizing rules further down this file and
+   reintroduce the exact bug it was meant to avoid. max-width keeps a
+   field from stretching edge-to-edge on a wide card — a one-word
+   "Personal" in an ~1100px-wide input read as broken/dated, not just
+   spacious. Textareas get a wider cap since paragraph content needs
+   more room per line than a single value. */
+.form-group input:not(:where([type="checkbox"], [type="radio"], [type="color"])),
 .form-group select,
-.stacked-form input,
+.stacked-form input:not(:where([type="checkbox"], [type="radio"], [type="color"])),
 .stacked-form select,
 .stacked-form textarea,
 .field-row input[type="text"],
@@ -687,6 +702,7 @@ body.centered-page {
 .editor-panel input[type=time],
 .editor-panel select {
   width: 100%;
+  max-width: 520px;
   padding: 10px 14px;
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-md);
@@ -696,6 +712,10 @@ body.centered-page {
   color: var(--gray-900);
   background: var(--color-surface);
   transition: border-color 0.12s, box-shadow 0.12s;
+}
+.stacked-form textarea,
+.field-row textarea {
+  max-width: 720px;
 }
 .form-group input:focus,
 .form-group select:focus,
@@ -714,8 +734,60 @@ body.centered-page {
 .nickname-input, .mapping-select { width: auto; padding: 5px 10px; border-radius: var(--radius-sm); font-size: 13px; }
 .mapping-select { min-width: 260px; }
 
+/* Groups short fields (Name/Email, three-field rows like Founded/Size/
+   HQ) side by side instead of .stacked-form's default one-per-row —
+   wrap the relevant <label> elements in a <div class="form-grid"> and
+   each becomes its own grid cell. auto-fit + minmax means it still
+   collapses to one column on a narrow card/viewport without a separate
+   mobile override. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  max-width: 720px;
+}
+.form-grid label { margin: 0; }
+
+/* .btn-primary/.post-btn default to width:100% for a narrow single-
+   column context (the auth card — login/signup/accept-invite all use
+   .stacked-form too — and a single post's action button) — but inside
+   a wide Settings/Knowledge Hub/Blog Studio .card, a full-bleed
+   ~1100px button below now-capped-width fields (see .stacked-form
+   input above) read as mismatched, not just spacious. Scoped to
+   ".card .stacked-form" specifically (not bare .stacked-form) so the
+   auth pages' intentionally full-width "Sign in"/"Create account"
+   button is untouched — .auth-card is a separate, narrower container
+   these rules never match. */
+.card .stacked-form button[type="submit"],
+.card .form-group button[type="submit"] {
+  width: auto;
+  align-self: flex-start;
+}
+
 .stacked-form { text-align: left; display: flex; flex-direction: column; gap: var(--space-4); }
-.stacked-form label { display: block; font-size: 13px; font-weight: 600; color: var(--gray-700); margin-bottom: 6px; }
+/* flex column (not display:block) so the label text and its field
+   reliably stack as two lines regardless of the field's own width —
+   plain display:block only forced that stacking by accident before,
+   because every field used to be width:100% and had no room to sit
+   beside the label text on one line. Now that fields have a sane
+   max-width (see .stacked-form input above), a short label like
+   "Industry" DOES have room next to a capped-width input, which read
+   as broken for anything bigger than one line (a textarea's label
+   floating beside it rather than above). flex-direction:column forces
+   the label text (and any inline .muted note beside it) onto its own
+   line every time, field below, gap between instead of margin. */
+.stacked-form label { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 13px; font-weight: 600; color: var(--gray-700); }
+/* Checkbox/radio rows want the opposite: control and text side by
+   side on one line, not stacked — explicit flex-direction:row (rather
+   than relying on the row default) so it isn't silently inherited away
+   by the column rule above, which otherwise wins on source order for
+   any property .checkbox-row doesn't itself redeclare. */
+.stacked-form label.checkbox-row,
+.form-group label.checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
 
 /* Progressive-disclosure wrapper for optional KB fields (Settings —
    Knowledge Hub profile) — collapsed by default so the primary form
@@ -725,6 +797,15 @@ body.centered-page {
 .kb-details[open] summary { margin-bottom: var(--space-3); }
 .kb-details label { margin-top: var(--space-3); }
 .kb-details label:first-of-type { margin-top: var(--space-3); }
+
+/* Pairs an "Auto-generate X" checkbox with its X color field on one
+   row (Settings — Brand Palettes) instead of two full stacked-form
+   rows each — 7 such pairs used to run ~14 rows tall for no reason,
+   since the checkbox and the field it toggles are one decision, not
+   two. Wraps on a narrow viewport rather than needing its own
+   mobile-breakpoint rule. */
+.color-toggle-row { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.color-toggle-row .checkbox-row { min-width: 220px; }
 
 /* Color picker: a real swatch (not the generic 100%-width input rule,
    which stretched the native input[type=color] into an illegible gray

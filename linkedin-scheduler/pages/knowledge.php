@@ -950,24 +950,28 @@ require __DIR__ . '/../includes/layout_top.php';
 
     <details class="kb-details">
       <summary><?= $workspace['type'] === 'personal' ? 'More about you' : 'More about the company' ?> <span class="muted">(optional — richer identity context)</span></summary>
-      <label>Tagline
-        <input type="text" name="ws_tagline" value="<?= h($workspace['tagline'] ?? '') ?>" placeholder="e.g. Predictive maintenance, made simple">
-      </label>
-      <label>Founded
-        <input type="text" name="ws_founded_year" value="<?= h($workspace['founded_year'] ?? '') ?>" placeholder="e.g. 2018">
-      </label>
-      <label><?= $workspace['type'] === 'personal' ? 'Years of experience' : 'Company size' ?>
-        <input type="text" name="ws_company_size" value="<?= h($workspace['company_size'] ?? '') ?>" placeholder="e.g. 200-500 employees">
-      </label>
-      <label>Headquarters / based in
-        <input type="text" name="ws_hq_location" value="<?= h($workspace['hq_location'] ?? '') ?>" placeholder="e.g. Austin, TX">
-      </label>
-      <label>Mission
-        <textarea name="ws_mission" rows="2"><?= h($workspace['mission'] ?? '') ?></textarea>
-      </label>
-      <label>Vision
-        <textarea name="ws_vision" rows="2"><?= h($workspace['vision'] ?? '') ?></textarea>
-      </label>
+      <div class="form-grid">
+        <label>Tagline
+          <input type="text" name="ws_tagline" value="<?= h($workspace['tagline'] ?? '') ?>" placeholder="e.g. Predictive maintenance, made simple">
+        </label>
+        <label>Founded
+          <input type="text" name="ws_founded_year" value="<?= h($workspace['founded_year'] ?? '') ?>" placeholder="e.g. 2018">
+        </label>
+        <label><?= $workspace['type'] === 'personal' ? 'Years of experience' : 'Company size' ?>
+          <input type="text" name="ws_company_size" value="<?= h($workspace['company_size'] ?? '') ?>" placeholder="e.g. 200-500 employees">
+        </label>
+        <label>Headquarters / based in
+          <input type="text" name="ws_hq_location" value="<?= h($workspace['hq_location'] ?? '') ?>" placeholder="e.g. Austin, TX">
+        </label>
+      </div>
+      <div class="form-grid">
+        <label>Mission
+          <textarea name="ws_mission" rows="2"><?= h($workspace['mission'] ?? '') ?></textarea>
+        </label>
+        <label>Vision
+          <textarea name="ws_vision" rows="2"><?= h($workspace['vision'] ?? '') ?></textarea>
+        </label>
+      </div>
       <label>Story
         <textarea name="ws_story" rows="3" placeholder="The longer origin story — used sparingly, mostly for longer-form content."><?= h($workspace['story'] ?? '') ?></textarea>
       </label>

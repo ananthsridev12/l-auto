@@ -361,52 +361,58 @@ require __DIR__ . '/../includes/layout_top.php';
           </div>
 
           <div class="control-strip control-strip-secondary">
-            <form method="post">
+            <form method="post" style="flex:1; min-width:0;">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
               <input type="hidden" name="form" value="write_blog_post">
               <input type="hidden" name="item_id" value="<?= $rid ?>">
-              <div class="control-field">
-                <label for="bloglength-<?= $rid ?>">Blog length</label>
-                <select name="length" id="bloglength-<?= $rid ?>" title="Blog post length">
-                  <?php foreach (BLOG_LENGTH_PRESETS as $lkey => $lpreset): ?>
-                    <option value="<?= h($lkey) ?>"<?= $lkey === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-              <?php if (!empty($item['description'])): ?>
-              <div class="control-field">
-                <label for="blogmode-<?= $rid ?>">Mode</label>
-                <select name="blog_mode" id="blogmode-<?= $rid ?>" title="How the source is used">
-                  <option value="<?= BLOG_MODE_ORIGINAL ?>">Original Take</option>
-                  <option value="<?= BLOG_MODE_GROUNDED ?>">Grounded Rewrite</option>
-                </select>
-              </div>
-              <?php else: ?>
+              <?php if (empty($item['description'])): ?>
               <input type="hidden" name="blog_mode" value="<?= BLOG_MODE_ORIGINAL ?>">
               <?php endif; ?>
-              <div class="control-field">
-                <label for="blogtype-<?= $rid ?>">Content Type</label>
-                <select name="content_type" id="blogtype-<?= $rid ?>" title="Post structure">
-                  <?php foreach (BLOG_CONTENT_TYPES as $tkey => $type): ?>
-                    <option value="<?= h($tkey) ?>"<?= $tkey === BLOG_CONTENT_TYPE_DEFAULT ? ' selected' : '' ?>><?= h($type['label']) ?><?= $type['requires_grounded'] ? ' (needs Grounded Rewrite)' : '' ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-              <label class="checkbox-row" style="padding:0; gap:6px; align-self:flex-end; margin-bottom:9px;" title="Adds a 'Source:' credit line — only relevant with Grounded Rewrite">
-                <input type="checkbox" name="include_reference" value="1">
-                <span style="font-size:12px;">Cite source</span>
-              </label>
-              <label class="checkbox-row" style="padding:0; gap:6px; align-self:flex-end; margin-bottom:9px;" title="Skips this workspace's Knowledge Hub voice/tone and Memory &amp; Context for this one generation">
-                <input type="checkbox" name="fresh_context" value="1">
-                <span style="font-size:12px;">Fresh Context</span>
-              </label>
-              <button type="submit" class="btn-tiny" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
+              <details class="kb-details">
+                <summary>Blog post options</summary>
+                <div class="control-strip" style="margin-top:0;">
+                  <div class="control-field">
+                    <label for="bloglength-<?= $rid ?>">Blog length</label>
+                    <select name="length" id="bloglength-<?= $rid ?>" title="Blog post length">
+                      <?php foreach (BLOG_LENGTH_PRESETS as $lkey => $lpreset): ?>
+                        <option value="<?= h($lkey) ?>"<?= $lkey === BLOG_LENGTH_DEFAULT ? ' selected' : '' ?>><?= h($lpreset['label']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <?php if (!empty($item['description'])): ?>
+                  <div class="control-field">
+                    <label for="blogmode-<?= $rid ?>">Mode</label>
+                    <select name="blog_mode" id="blogmode-<?= $rid ?>" title="How the source is used">
+                      <option value="<?= BLOG_MODE_ORIGINAL ?>">Original Take</option>
+                      <option value="<?= BLOG_MODE_GROUNDED ?>">Grounded Rewrite</option>
+                    </select>
+                  </div>
+                  <?php endif; ?>
+                  <div class="control-field">
+                    <label for="blogtype-<?= $rid ?>">Content Type</label>
+                    <select name="content_type" id="blogtype-<?= $rid ?>" title="Post structure">
+                      <?php foreach (BLOG_CONTENT_TYPES as $tkey => $type): ?>
+                        <option value="<?= h($tkey) ?>"<?= $tkey === BLOG_CONTENT_TYPE_DEFAULT ? ' selected' : '' ?>><?= h($type['label']) ?><?= $type['requires_grounded'] ? ' (needs Grounded Rewrite)' : '' ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <label class="checkbox-row" style="padding:0; gap:6px; align-self:flex-end; margin-bottom:9px;" title="Adds a 'Source:' credit line — only relevant with Grounded Rewrite">
+                    <input type="checkbox" name="include_reference" value="1">
+                    <span style="font-size:12px;">Cite source</span>
+                  </label>
+                  <label class="checkbox-row" style="padding:0; gap:6px; align-self:flex-end; margin-bottom:9px;" title="Skips this workspace's Knowledge Hub voice/tone and Memory &amp; Context for this one generation">
+                    <input type="checkbox" name="fresh_context" value="1">
+                    <span style="font-size:12px;">Fresh Context</span>
+                  </label>
+                </div>
+              </details>
+              <button type="submit" class="btn-tiny" style="margin-top:8px;" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
             </form>
             <form method="post">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
               <input type="hidden" name="form" value="dismiss_item">
               <input type="hidden" name="item_id" value="<?= $rid ?>">
-              <button type="submit" class="btn-tiny btn-danger">Dismiss</button>
+              <button type="submit" class="btn-tiny btn-danger" style="margin-top:8px;">Dismiss</button>
             </form>
           </div>
         </div>

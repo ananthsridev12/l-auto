@@ -727,12 +727,14 @@ require __DIR__ . '/../includes/layout_top.php';
   <h2>Profile</h2>
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
-    <label>Name
-      <input type="text" name="name" value="<?= h($user['name']) ?>">
-    </label>
-    <label>Email
-      <input type="email" value="<?= h($user['email']) ?>" disabled>
-    </label>
+    <div class="form-grid">
+      <label>Name
+        <input type="text" name="name" value="<?= h($user['name']) ?>">
+      </label>
+      <label>Email
+        <input type="email" value="<?= h($user['email']) ?>" disabled>
+      </label>
+    </div>
     <label>New Password <span class="muted">(leave blank to keep current)</span>
       <input type="password" name="new_password" minlength="8">
     </label>
@@ -950,7 +952,11 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card" data-tab="brand">
   <h2>Brand Palettes</h2>
-  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required; everything else is optional — leave "Auto-generate" checked to derive it automatically with guaranteed-readable contrast, or uncheck it to set your own literal color instead. Body/Points Text, Text-on-Accent, Badge Text, and CTA Text are the colors this app would otherwise always compute for you (Body/Points blends your Text color 35% toward Background; the other three auto-pick whichever of Background/Text contrasts best against their fill) — setting one directly is <strong>not contrast-checked</strong>, so only do it if you've confirmed it's actually readable. Signature controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes. Each palette can also have its own background photo (upload it square, matching the post's 1:1 shape, for a clean fit — off-square images are still center-cropped automatically) — select "Image" as the Background when generating a post using that palette. Your palette's Background color is drawn as a semi-transparent tint over the photo so text stays readable.</p>
+  <p class="muted">Your own colors for rendered post images, selectable as a template alongside the 4 built-in presets when generating content. Background and Text are required — everything else is optional and auto-derived with guaranteed-readable contrast unless you set it yourself.</p>
+  <details class="kb-details" style="margin-bottom:var(--space-4);">
+    <summary>How palette fields work</summary>
+    <p class="muted" style="margin-top:var(--space-2);">Leave "Auto-generate" checked on a field to derive it automatically with guaranteed-readable contrast, or uncheck it to set your own literal color instead. Body/Points Text, Text-on-Accent, Badge Text, and CTA Text are the colors this app would otherwise always compute for you (Body/Points blends your Text color 35% toward Background; the other three auto-pick whichever of Background/Text contrasts best against their fill) — setting one directly is <strong>not contrast-checked</strong>, so only do it if you've confirmed it's actually readable. Signature controls the footer name text — it switches along with whichever palette a post uses, so it stays consistent with that palette's own colors instead of a single fixed color that might clash with your other palettes. Each palette can also have its own background photo (upload it square, matching the post's 1:1 shape, for a clean fit — off-square images are still center-cropped automatically) — select "Image" as the Background when generating a post using that palette. Your palette's Background color is drawn as a semi-transparent tint over the photo so text stays readable.</p>
+  </details>
   <?php if ($brandPalettes): ?>
     <?php foreach ($brandPalettes as $bp): ?>
       <div class="account-row">
@@ -1025,40 +1031,36 @@ require __DIR__ . '/../includes/layout_top.php';
     <label>Name
       <input type="text" name="palette_name" id="palette_name" placeholder="e.g. My Brand" required>
     </label>
-    <label>Background
-      <span class="color-field"><input type="color" name="palette_bg" id="palette_bg" value="#FBF5DD"><input type="text" class="hex-input" data-for="palette_bg" value="#FBF5DD" maxlength="7"></span>
-    </label>
-    <label>Text
-      <span class="color-field"><input type="color" name="palette_text" id="palette_text" value="#0D530E"><input type="text" class="hex-input" data-for="palette_text" value="#0D530E" maxlength="7"></span>
-    </label>
-    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_accent" checked> Auto-generate Accent</label>
-    <label>Accent
-      <span class="color-field"><input type="color" name="palette_accent" id="palette_accent" value="#E7E1B1" disabled><input type="text" class="hex-input" data-for="palette_accent" value="#E7E1B1" maxlength="7" disabled></span>
-    </label>
-    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_cta" checked> Auto-generate CTA color</label>
-    <label>CTA
-      <span class="color-field"><input type="color" name="palette_cta" id="palette_cta" value="#0D530E" disabled><input type="text" class="hex-input" data-for="palette_cta" value="#0D530E" maxlength="7" disabled></span>
-    </label>
-    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_signature" checked> Auto-generate Signature color</label>
-    <label>Signature
-      <span class="color-field"><input type="color" name="palette_signature" id="palette_signature" value="#0D530E" disabled><input type="text" class="hex-input" data-for="palette_signature" value="#0D530E" maxlength="7" disabled></span>
-    </label>
-    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_body" checked> Auto-generate Body/Points Text color</label>
-    <label>Body/Points Text
-      <span class="color-field"><input type="color" name="palette_body" id="palette_body" value="#7776AD" disabled><input type="text" class="hex-input" data-for="palette_body" value="#7776AD" maxlength="7" disabled></span>
-    </label>
-    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_accent_text" checked> Auto-generate Text-on-Accent color</label>
-    <label>Text-on-Accent <span class="muted">(text drawn on top of an accent-filled box/card)</span>
-      <span class="color-field"><input type="color" name="palette_accent_text" id="palette_accent_text" value="#0D530E" disabled><input type="text" class="hex-input" data-for="palette_accent_text" value="#0D530E" maxlength="7" disabled></span>
-    </label>
-    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_badge_text" checked> Auto-generate Badge Text color</label>
-    <label>Badge Text <span class="muted">(the numbered pill badges)</span>
-      <span class="color-field"><input type="color" name="palette_badge_text" id="palette_badge_text" value="#FBF5DD" disabled><input type="text" class="hex-input" data-for="palette_badge_text" value="#FBF5DD" maxlength="7" disabled></span>
-    </label>
-    <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_cta_text" checked> Auto-generate CTA Text color</label>
-    <label>CTA Text <span class="muted">(text on the CTA banner/button)</span>
-      <span class="color-field"><input type="color" name="palette_cta_text" id="palette_cta_text" value="#FBF5DD" disabled><input type="text" class="hex-input" data-for="palette_cta_text" value="#FBF5DD" maxlength="7" disabled></span>
-    </label>
+    <div class="form-grid">
+      <label>Background
+        <span class="color-field"><input type="color" name="palette_bg" id="palette_bg" value="#FBF5DD"><input type="text" class="hex-input" data-for="palette_bg" value="#FBF5DD" maxlength="7"></span>
+      </label>
+      <label>Text
+        <span class="color-field"><input type="color" name="palette_text" id="palette_text" value="#0D530E"><input type="text" class="hex-input" data-for="palette_text" value="#0D530E" maxlength="7"></span>
+      </label>
+    </div>
+    <?php
+    // Every remaining palette color follows the same "Auto-generate X"
+    // checkbox + X color-field shape — was 2 full stacked-form rows
+    // each (14 rows total), now one compact .color-toggle-row each.
+    $paletteColorFields = [
+        ['accent', 'Accent', null, '#E7E1B1'],
+        ['cta', 'CTA', null, '#0D530E'],
+        ['signature', 'Signature', null, '#0D530E'],
+        ['body', 'Body/Points Text', null, '#7776AD'],
+        ['accent_text', 'Text-on-Accent', 'text drawn on top of an accent-filled box/card', '#0D530E'],
+        ['badge_text', 'Badge Text', 'the numbered pill badges', '#FBF5DD'],
+        ['cta_text', 'CTA Text', 'text on the CTA banner/button', '#FBF5DD'],
+    ];
+    foreach ($paletteColorFields as [$key, $label, $note, $default]):
+    ?>
+    <div class="color-toggle-row">
+      <label class="checkbox-row"><input type="checkbox" class="auto-toggle" data-target="palette_<?= $key ?>" checked> Auto-generate <?= h($label) ?></label>
+      <label><?= h($label) ?><?php if ($note): ?> <span class="muted">(<?= h($note) ?>)</span><?php endif; ?>
+        <span class="color-field"><input type="color" name="palette_<?= $key ?>" id="palette_<?= $key ?>" value="<?= h($default) ?>" disabled><input type="text" class="hex-input" data-for="palette_<?= $key ?>" value="<?= h($default) ?>" maxlength="7" disabled></span>
+      </label>
+    </div>
+    <?php endforeach; ?>
     <button type="submit" class="btn-secondary" id="paletteSubmitBtn">Add Palette</button>
     <button type="button" class="btn-tiny" id="paletteCancelEdit" style="display:none; align-self:flex-start;">Cancel edit</button>
   </form>
