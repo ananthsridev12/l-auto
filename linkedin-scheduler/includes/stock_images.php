@@ -110,3 +110,28 @@ function unsplash_fetch_image(string $fullUrl): array
     }
     return ['bytes' => $bytes, 'mime' => $mime];
 }
+
+// Resolves the Stock/AI Photo panel's two possible submissions (an
+// Unsplash full_url, or a data: URL from AI generation) into raw bytes
+// — shared by every consumer of that panel (New Post's raw-photo
+// attach, Post edit's swap, and New Post's branded-background picker).
+// Returns null if neither field was actually submitted (panel wasn't
+// used this request). Throws on a malformed/invalid submission.
+function resolve_stock_or_ai_submission(string $stockImageUrl, string $stockAiDataUrl): ?array
+{
+    if ($stockAiDataUrl !== '') {
+        if (!preg_match('#^data:image/(?:png|jpeg);base64,(.+)$#', $stockAiDataUrl, $m)) {
+            throw new RuntimeException('Invalid generated image data.');
+        }
+        $bytes = base64_decode($m[1]);
+        $mime = zip_sniff_image_mime((string) $bytes);
+        if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
+            throw new RuntimeException('That image could not be used — not a valid PNG/JPEG.');
+        }
+        return ['bytes' => $bytes, 'mime' => $mime];
+    }
+    if ($stockImageUrl !== '') {
+        return unsplash_fetch_image($stockImageUrl);
+    }
+    return null;
+}

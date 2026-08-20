@@ -49,11 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['form'] ?? '') === 'create_draft') {
         $itemId = (int) ($_POST['item_id'] ?? 0);
-        $stmt = db()->prepare('SELECT * FROM news_items WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = "new"');
+        // Only blocks a SECOND draft from the same headline (post_id
+        // already set) or an explicitly dismissed one — a headline
+        // that already has a blog post but no draft yet is still fair
+        // game here, see includes/news_fetch.php news_generate_draft().
+        $stmt = db()->prepare('SELECT * FROM news_items WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status != "dismissed" AND post_id IS NULL');
         $stmt->execute([$itemId, $userId, $workspaceId]);
         $item = $stmt->fetch();
         if (!$item) {
-            flash('error', 'Headline not found (already used or dismissed?).');
+            flash('error', 'Headline not found (already drafted, or dismissed?).');
             redirect('pages/news_studio.php');
         }
         if (!ai_configured($aiConfig)) {
@@ -122,11 +126,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['form'] ?? '') === 'write_blog_post') {
         $itemId = (int) ($_POST['item_id'] ?? 0);
-        $stmt = db()->prepare('SELECT * FROM news_items WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL)');
+        // Only blocks a SECOND blog post from the same headline
+        // (blog_post_id already set) or an explicitly dismissed one —
+        // a headline that already has a LinkedIn draft but no blog
+        // post yet is still fair game here.
+        $stmt = db()->prepare('SELECT * FROM news_items WHERE id = ? AND user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status != "dismissed" AND blog_post_id IS NULL');
         $stmt->execute([$itemId, $userId, $workspaceId]);
         $item = $stmt->fetch();
         if (!$item) {
-            flash('error', 'Headline not found.');
+            flash('error', 'Headline not found (already used to write a blog post, or dismissed?).');
             redirect('pages/news_studio.php');
         }
         if (!ai_configured($aiConfig)) {
@@ -192,7 +200,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$freshContext) {
                 save_blog_content_memory($workspaceId, $newBlogPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
             }
-            db()->prepare('UPDATE news_items SET status = "used" WHERE id = ? AND user_id = ?')->execute([$itemId, $userId]);
+            // Same "only advance once both are done" rule as
+            // news_generate_draft() — see that function's comment.
+            db()->prepare('UPDATE news_items SET blog_post_id = ?, status = IF(post_id IS NOT NULL, "used", status) WHERE id = ? AND user_id = ?')
+                ->execute([$newBlogPostId, $itemId, $userId]);
             flash('success', 'Blog post drafted — review and edit before publishing.');
             redirect('pages/blog_studio.php?id=' . $newBlogPostId);
         } catch (Throwable $e) {
@@ -323,6 +334,9 @@ require __DIR__ . '/../includes/layout_top.php';
           </div>
 
           <div class="control-strip">
+            <?php if ($item['post_id']): ?>
+              <a href="<?= h(app_path('pages/post.php?id=' . (int) $item['post_id'])) ?>" class="btn-secondary">View Draft &rarr;</a>
+            <?php else: ?>
             <form method="post" class="news-draft-form" data-row="<?= $rid ?>">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
               <input type="hidden" name="form" value="create_draft">
@@ -358,9 +372,13 @@ require __DIR__ . '/../includes/layout_top.php';
               </div>
               <button type="submit" class="btn-secondary" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Create Draft</button>
             </form>
+            <?php endif; ?>
           </div>
 
           <div class="control-strip control-strip-secondary">
+            <?php if ($item['blog_post_id']): ?>
+              <a href="<?= h(app_path('pages/blog_studio.php?id=' . (int) $item['blog_post_id'])) ?>" class="btn-tiny" style="margin-top:8px;">View Blog Post &rarr;</a>
+            <?php else: ?>
             <form method="post" style="flex:1; min-width:0;">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
               <input type="hidden" name="form" value="write_blog_post">
@@ -408,6 +426,7 @@ require __DIR__ . '/../includes/layout_top.php';
               </details>
               <button type="submit" class="btn-tiny" style="margin-top:8px;" <?= ai_configured($aiConfig) ? '' : 'disabled title="Add an AI provider key in Settings first"' ?>>Write Blog Post</button>
             </form>
+            <?php endif; ?>
             <form method="post">
               <input type="hidden" name="csrf" value="<?= h($token) ?>">
               <input type="hidden" name="form" value="dismiss_item">

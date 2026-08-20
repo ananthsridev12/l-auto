@@ -645,7 +645,13 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
         save_content_memory($wsId, $postId, trim($title . ' ' . $caption), $title ?: mb_substr($caption, 0, 200), $aiConfig);
     }
 
-    db()->prepare('UPDATE news_items SET status = "used", post_id = ? WHERE id = ? AND user_id = ?')
+    // Only advances status to 'used' once BOTH a draft and a blog post
+    // exist for this headline (blog_post_id already set means writing
+    // the blog post happened first) — a headline with just this one
+    // action done stays 'new' so it keeps showing in the list with the
+    // other action (Write Blog Post) still available. See
+    // pages/news_studio.php's create_draft/write_blog_post handlers.
+    db()->prepare('UPDATE news_items SET post_id = ?, status = IF(blog_post_id IS NOT NULL, "used", status) WHERE id = ? AND user_id = ?')
         ->execute([$postId, (int) $newsItem['id'], $userId]);
 
     return $postId;
@@ -656,15 +662,20 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
 // topic_query first, then fills remaining slots by recency.
 function news_pick_items_for_drafts(int $userId, int $count, ?int $workspaceId = null): array
 {
+    // post_id IS NULL is the real "not drafted yet" condition — status
+    // stays 'new' for a headline that already has a blog post but no
+    // draft, which is exactly the case this should still pick up (see
+    // news_generate_draft()'s comment on the two being tracked
+    // independently).
     if ($workspaceId === null) {
         $stmt = db()->prepare(
-            "SELECT * FROM news_items WHERE user_id = ? AND status = 'new'
+            "SELECT * FROM news_items WHERE user_id = ? AND status = 'new' AND post_id IS NULL
              ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 100"
         );
         $stmt->execute([$userId]);
     } else {
         $stmt = db()->prepare(
-            "SELECT * FROM news_items WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = 'new'
+            "SELECT * FROM news_items WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = 'new' AND post_id IS NULL
              ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 100"
         );
         $stmt->execute([$userId, $workspaceId]);

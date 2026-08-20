@@ -2531,7 +2531,19 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $footerNameColorRgb = $paletteColors['signature'] ?? null;
     $layout = array_key_exists($data['layout'] ?? '', render_design_templates()) ? $data['layout'] : 'classic';
     $bgStyle = in_array($data['background'] ?? '', ['gradient', 'image'], true) ? $data['background'] : 'flat';
-    $bgImagePath = ($bgStyle === 'image' && $brandUserId) ? render_resolve_palette_background_image($data['template'] ?? null, $brandUserId) : null;
+    // An ad-hoc background (New Post's Stock/AI Photo picker, used as a
+    // one-off background instead of a saved Brand Palette photo) takes
+    // priority over the palette's own background_image_path when
+    // present — see pages/new_post.php's stock/AI-as-background
+    // handling, which downloads/validates the file and sets this
+    // before calling here. Falls back to the palette's photo exactly
+    // as before when no override is given, so every existing caller is
+    // unaffected.
+    $bgImageOverride = is_string($data['background_image_override'] ?? null) && is_file($data['background_image_override'])
+        ? $data['background_image_override'] : null;
+    $bgImagePath = $bgStyle === 'image'
+        ? ($bgImageOverride ?? ($brandUserId ? render_resolve_palette_background_image($data['template'] ?? null, $brandUserId) : null))
+        : null;
     $logoPath = $brandUserId ? resolve_brand_logo($brandUserId, $workspaceId) : null;
     $size = array_key_exists($data['size'] ?? '', RENDER_SIZES) ? $data['size'] : 'square';
     [$canvasW, $canvasH] = RENDER_SIZES[$size];

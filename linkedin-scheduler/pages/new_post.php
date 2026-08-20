@@ -158,6 +158,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $brandUserId = workspace_brand_user_id($userId, $workspaceId);
         $photoPath = resolve_footer_image($brandUserId, resolve_post_category($workspace), $workspaceId);
         $destDir = UPLOAD_DIR . '/' . $brandUserId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+
+        // Background: Stock/AI Photo — an ad-hoc photo (picked from the
+        // same search/generate panel used for the raw-photo path below,
+        // just submitted under its own bg_* field names) used as the
+        // branded slide's background instead of a saved Brand Palette
+        // photo. Applies to every slide of a Carousel too, since
+        // render_creative_to_slides() already shares one background
+        // image across all slides. No-op unless the panel was actually
+        // used for this generation.
+        try {
+            $bgSubmission = resolve_stock_or_ai_submission(trim($_POST['bg_stock_image_url'] ?? ''), trim($_POST['bg_stock_ai_image_b64'] ?? ''));
+        } catch (Throwable $e) {
+            db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
+            flash('error', 'Could not use the selected background photo: ' . $e->getMessage());
+            redirect('pages/new_post.php');
+        }
+        if ($bgSubmission !== null) {
+            if (!is_dir($destDir)) {
+                mkdir($destDir, 0755, true);
+            }
+            $bgExt = $bgSubmission['mime'] === 'image/png' ? 'png' : 'jpg';
+            $bgPath = $destDir . '/bg_source.' . $bgExt;
+            file_put_contents($bgPath, $bgSubmission['bytes']);
+            $aiCreative['background'] = 'image';
+            $aiCreative['background_image_override'] = $bgPath;
+            // Persisted back into the row's stored creative_json (not
+            // just used for this render) so a later "Re-render Image"
+            // on the edit page (api/post_rerender.php) keeps using this
+            // same background file instead of silently falling back to
+            // the palette's own saved photo.
+            db()->prepare('UPDATE posts SET creative_json = ? WHERE id = ?')->execute([json_encode($aiCreative), $postId]);
+            $bgDownloadLocation = trim($_POST['bg_stock_download_location'] ?? '');
+            if ($bgDownloadLocation !== '') {
+                $unsplashKey = get_unsplash_access_key($userId);
+                if ($unsplashKey) {
+                    unsplash_track_download($bgDownloadLocation, $unsplashKey);
+                }
+            }
+        }
+
         try {
             $slides = render_creative_to_slides($aiCreative, $destDir, $footerName, $photoPath, $userId, $workspaceId);
         } catch (Throwable $e) {
@@ -491,9 +531,45 @@ require __DIR__ . '/../includes/layout_top.php';
           <select id="aiBackgroundSelect">
             <option value="flat">Flat</option>
             <option value="gradient">Gradient</option>
-            <option value="image">Image (needs a palette with a background photo uploaded)</option>
+            <option value="image">Image</option>
           </select>
         </label>
+        <div id="aiBgImageSourceRow" style="width:100%; margin-top:6px; display:none;">
+          <label class="checkbox-row"><input type="radio" name="ai_bg_image_source" value="palette" checked> Use the palette's saved background photo</label>
+          <label class="checkbox-row"><input type="radio" name="ai_bg_image_source" value="stock_ai"> Pick a Stock/AI Photo now</label>
+        </div>
+        <div id="aiBgStockPhotoPicker" style="width:100%; margin-top:8px; display:none;">
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="btn-secondary" id="bgStockSearchTabBtn">Search Stock Photos</button>
+            <button type="button" class="btn-tiny" id="bgStockAiTabBtn">Generate with AI</button>
+          </div>
+          <div id="bgStockSearchTab" style="margin-top:8px;">
+            <?php if ($stockSearchUsable): ?>
+              <div style="display:flex; gap:6px;">
+                <input type="text" id="bgStockSearchQuery" placeholder="e.g. team meeting, factory floor, city skyline" style="flex:1;">
+                <button type="button" class="btn-secondary" id="bgStockSearchBtn">Search</button>
+              </div>
+              <p id="bgStockSearchStatus" class="muted"></p>
+              <div id="bgStockSearchResults" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(90px, 1fr)); gap:6px; margin-top:8px;"></div>
+            <?php else: ?>
+              <p class="muted">Add an Unsplash Access Key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to search stock photos.</p>
+            <?php endif; ?>
+          </div>
+          <div id="bgStockAiTab" style="margin-top:8px; display:none;">
+            <?php if ($stockAiUsable): ?>
+              <textarea id="bgStockAiPrompt" rows="3" style="width:100%;" placeholder="Describe the photo/graphic you want to use as the background"></textarea>
+              <button type="button" class="btn-secondary" id="bgStockAiGenBtn" style="margin-top:6px;">Generate</button>
+              <p id="bgStockAiStatus" class="muted"></p>
+              <div id="bgStockAiResult" style="margin-top:8px;"></div>
+            <?php else: ?>
+              <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to generate a photo.</p>
+            <?php endif; ?>
+          </div>
+          <div id="bgStockSelectedPreview" style="margin-top:8px; display:none;"></div>
+          <input type="hidden" name="bg_stock_image_url" id="bgStockImageUrlField" form="newPostForm">
+          <input type="hidden" name="bg_stock_download_location" id="bgStockDownloadLocationField" form="newPostForm">
+          <input type="hidden" name="bg_stock_ai_image_b64" id="bgStockAiB64Field" form="newPostForm">
+        </div>
         <label class="field-row">Background Image Tint <span class="muted">(only applies when Background is "Image" — 0% shows the full photo, 100% fully hides it)</span> <input type="range" id="aiBgOpacitySlider" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>50%</span></label>
         <label>Size <span class="muted">(optional)</span>
           <select id="aiSizeSelect">
