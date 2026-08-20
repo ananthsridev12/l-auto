@@ -466,6 +466,15 @@
       var fd = new FormData();
       fd.append('csrf', window.NEW_POST_CSRF);
       fd.append('creative_json', JSON.stringify(creative));
+      // Background: Stock/AI Photo (assets/js/stock_photo.js's embedded
+      // picker) lives in its own bg_* hidden fields outside the creative
+      // JSON this function builds — forward them here too so the preview
+      // actually reflects a picked background instead of silently
+      // falling back to the palette's own saved photo.
+      var bgUrlField = document.getElementById('bgStockImageUrlField');
+      var bgB64Field = document.getElementById('bgStockAiB64Field');
+      if (bgUrlField && bgUrlField.value) fd.append('bg_stock_image_url', bgUrlField.value);
+      if (bgB64Field && bgB64Field.value) fd.append('bg_stock_ai_image_b64', bgB64Field.value);
 
       previewStatus.textContent = 'Rendering...';
       previewResult.innerHTML = '';

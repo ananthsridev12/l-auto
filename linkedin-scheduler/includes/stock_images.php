@@ -135,3 +135,32 @@ function resolve_stock_or_ai_submission(string $stockImageUrl, string $stockAiDa
     }
     return null;
 }
+
+// Downloads/decodes a Stock/AI Photo submission and saves it to
+// $destDir/bg_source.{ext}, returning the saved path (null if the
+// panel wasn't used this request). Tracks the Unsplash download ping
+// when applicable. Shared by the real save path
+// (pages/new_post.php's branded-background handling) and the image
+// preview endpoint (api/new_post_preview_image.php), so "Generate
+// Image Preview" actually reflects what gets saved instead of quietly
+// falling back to the palette's own background photo.
+function save_stock_or_ai_background(int $userId, string $destDir, string $stockImageUrl, string $stockAiDataUrl, string $downloadLocation = ''): ?string
+{
+    $submission = resolve_stock_or_ai_submission($stockImageUrl, $stockAiDataUrl);
+    if ($submission === null) {
+        return null;
+    }
+    if (!is_dir($destDir)) {
+        mkdir($destDir, 0755, true);
+    }
+    $ext = $submission['mime'] === 'image/png' ? 'png' : 'jpg';
+    $path = $destDir . '/bg_source.' . $ext;
+    file_put_contents($path, $submission['bytes']);
+    if ($downloadLocation !== '') {
+        $unsplashKey = get_unsplash_access_key($userId);
+        if ($unsplashKey) {
+            unsplash_track_download($downloadLocation, $unsplashKey);
+        }
+    }
+    return $path;
+}

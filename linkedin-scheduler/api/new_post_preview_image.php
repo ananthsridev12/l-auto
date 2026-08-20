@@ -9,6 +9,8 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
+require_once __DIR__ . '/../includes/zip_import.php';
+require_once __DIR__ . '/../includes/stock_images.php';
 
 require_login();
 $userId = current_user_id();
@@ -40,6 +42,25 @@ $photoPath = resolve_footer_image(workspace_brand_user_id($userId, $workspaceId)
 $outDir = UPLOAD_DIR . '/' . $userId . '/_preview';
 foreach (glob($outDir . '/*.png') ?: [] as $stale) {
     unlink($stale);
+}
+
+// Background: Stock/AI Photo — mirrors pages/new_post.php's actual
+// save-path handling exactly, so this preview really is "what will be
+// saved" (see new_post_ai.js's previewImageBtn handler, which also
+// forwards these same bg_* fields alongside creative_json). The
+// Unsplash download-location ping is deliberately skipped here (empty
+// string, not the real value) — that's Unsplash's "this photo was
+// actually used" signal, and a preview can be clicked many times
+// before (or without) ever actually saving; the real save path pings
+// it for real exactly once.
+try {
+    $bgPath = save_stock_or_ai_background($userId, $outDir, trim($_POST['bg_stock_image_url'] ?? ''), trim($_POST['bg_stock_ai_image_b64'] ?? ''), '');
+} catch (Throwable $e) {
+    json_response(['success' => false, 'error' => 'Could not use the selected background photo: ' . $e->getMessage()], 422);
+}
+if ($bgPath !== null) {
+    $creative['background'] = 'image';
+    $creative['background_image_override'] = $bgPath;
 }
 
 try {

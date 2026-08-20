@@ -168,19 +168,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // image across all slides. No-op unless the panel was actually
         // used for this generation.
         try {
-            $bgSubmission = resolve_stock_or_ai_submission(trim($_POST['bg_stock_image_url'] ?? ''), trim($_POST['bg_stock_ai_image_b64'] ?? ''));
+            $bgPath = save_stock_or_ai_background($userId, $destDir, trim($_POST['bg_stock_image_url'] ?? ''), trim($_POST['bg_stock_ai_image_b64'] ?? ''), trim($_POST['bg_stock_download_location'] ?? ''));
         } catch (Throwable $e) {
             db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
             flash('error', 'Could not use the selected background photo: ' . $e->getMessage());
             redirect('pages/new_post.php');
         }
-        if ($bgSubmission !== null) {
-            if (!is_dir($destDir)) {
-                mkdir($destDir, 0755, true);
-            }
-            $bgExt = $bgSubmission['mime'] === 'image/png' ? 'png' : 'jpg';
-            $bgPath = $destDir . '/bg_source.' . $bgExt;
-            file_put_contents($bgPath, $bgSubmission['bytes']);
+        if ($bgPath !== null) {
             $aiCreative['background'] = 'image';
             $aiCreative['background_image_override'] = $bgPath;
             // Persisted back into the row's stored creative_json (not
@@ -189,13 +183,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // same background file instead of silently falling back to
             // the palette's own saved photo.
             db()->prepare('UPDATE posts SET creative_json = ? WHERE id = ?')->execute([json_encode($aiCreative), $postId]);
-            $bgDownloadLocation = trim($_POST['bg_stock_download_location'] ?? '');
-            if ($bgDownloadLocation !== '') {
-                $unsplashKey = get_unsplash_access_key($userId);
-                if ($unsplashKey) {
-                    unsplash_track_download($bgDownloadLocation, $unsplashKey);
-                }
-            }
         }
 
         try {
