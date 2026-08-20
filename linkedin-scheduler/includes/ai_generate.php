@@ -545,6 +545,18 @@ function ai_call_openai(string $prompt, string $apiKey, string $model): string
 // Gemini/OpenAI key the user already has configured for text
 // generation — no separate credential needed. Claude has no image
 // generation API, so it isn't offered here.
+//
+// Defaulted here (not just in config.sample.php) the same way
+// NEWS_FEED_LANG/NEWS_FEED_COUNTRY are in includes/news_fetch.php — a
+// live config.php doesn't get new constants automatically on deploy
+// (it's gitignored, holds secrets), so this keeps the feature working
+// out of the box; override in config.php if you want a different model.
+if (!defined('GEMINI_IMAGE_MODEL')) {
+    define('GEMINI_IMAGE_MODEL', 'gemini-2.5-flash-image');
+}
+if (!defined('OPENAI_IMAGE_MODEL')) {
+    define('OPENAI_IMAGE_MODEL', 'dall-e-3');
+}
 
 function ai_call_gemini_image(string $prompt, string $apiKey): array
 {
