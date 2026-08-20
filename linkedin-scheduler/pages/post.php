@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
+require_once __DIR__ . '/../includes/collections.php';
 
 require_login();
 require_module('post_scheduling');
@@ -102,21 +103,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = 'scheduled';
     }
 
+    $collectionId = (int) ($_POST['collection_id'] ?? 0) ?: null;
+    if ($collectionId !== null && !fetch_content_collection($userId, $collectionId)) {
+        $collectionId = null;
+    }
+
     // $existing above already came from fetch_post_with_slides()
     // (owns-or-granted access check) — no need to re-check user_id here.
     $stmt = db()->prepare(
-        'UPDATE posts SET caption = ?, title = ?, campaign_id = ?, linkedin_account_id = ?, scheduled_at = ?, status = ?
+        'UPDATE posts SET caption = ?, title = ?, campaign_id = ?, collection_id = ?, linkedin_account_id = ?, scheduled_at = ?, status = ?
          WHERE id = ?'
     );
     try {
-        $stmt->execute([$caption, $title, $campaignId, $accountId, $scheduledAt, $status, $postId]);
+        $stmt->execute([$caption, $title, $campaignId, $collectionId, $accountId, $scheduledAt, $status, $postId]);
     } catch (PDOException $e) {
         if ((string) $e->getCode() === '23000') {
             // Genuine race (two saves with the same typed id landing at
             // once) — the pre-check above already handles the common case.
             $campaignId .= '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
             $campaignIdRenamed = true;
-            $stmt->execute([$caption, $title, $campaignId, $accountId, $scheduledAt, $status, $postId]);
+            $stmt->execute([$caption, $title, $campaignId, $collectionId, $accountId, $scheduledAt, $status, $postId]);
         } else {
             throw $e;
         }
@@ -136,6 +142,7 @@ if (!$post) {
 }
 $postWorkspaceId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
 $accounts = fetch_user_accounts($userId, $postWorkspaceId);
+$contentCollections = fetch_content_collections($userId, $postWorkspaceId);
 $formatDisabled = !in_array($post['format'], get_enabled_formats($userId), true);
 
 // Posts whose image was generated from creative JSON (AI or "write
@@ -230,6 +237,17 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <label>Campaign ID
         <input type="text" name="campaign_id" value="<?= h($post['campaign_id']) ?>" form="postForm">
       </label>
+
+      <?php if ($contentCollections): ?>
+      <label>Collection <span class="muted">(optional)</span>
+        <select name="collection_id" form="postForm">
+          <option value="">— None —</option>
+          <?php foreach ($contentCollections as $cc): ?>
+            <option value="<?= (int) $cc['id'] ?>"<?= $post['collection_id'] == $cc['id'] ? ' selected' : '' ?>><?= h($cc['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <?php endif; ?>
 
       <p class="muted">This image was generated from the slide content below — edit it and re-render to replace the image.</p>
       <div id="reeditCard">
@@ -363,6 +381,17 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
           <label>Campaign ID
             <input type="text" name="campaign_id" value="<?= h($post['campaign_id']) ?>">
           </label>
+
+          <?php if ($contentCollections): ?>
+          <label>Collection <span class="muted">(optional)</span>
+            <select name="collection_id">
+              <option value="">— None —</option>
+              <?php foreach ($contentCollections as $cc): ?>
+                <option value="<?= (int) $cc['id'] ?>"<?= $post['collection_id'] == $cc['id'] ? ' selected' : '' ?>><?= h($cc['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <?php endif; ?>
 
           <label>LinkedIn Account
             <select name="linkedin_account_id">

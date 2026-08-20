@@ -10,6 +10,17 @@
 
 const SITEMAP_MAX_LINKS = 200; // cap per fetch — a runaway sitemap shouldn't flood the table or the prompt
 
+// Generic/boilerplate URL-path segments sitemap_category_from_url()
+// can surface that aren't meaningful content topics — flagging these
+// as a "content gap needing a pillar" would be noise, not a useful
+// suggestion (see sitemap_content_gaps() below).
+const SITEMAP_GAP_IGNORE_CATEGORIES = [
+    'page', 'tag', 'tags', 'category', 'categories', 'author', 'feed',
+    'wp-json', 'wp-content', 'wp-admin', 'wp-includes', 'assets', 'static',
+    'cdn-cgi', 'search', 'login', 'signup', 'cart', 'checkout', 'account',
+    'privacy', 'terms', 'contact', 'about',
+];
+
 function fetch_sitemap_links(int $workspaceId): array
 {
     $stmt = db()->prepare('SELECT * FROM sitemap_links WHERE workspace_id = ? ORDER BY category, title');
@@ -114,4 +125,57 @@ function sitemap_fetch_and_store(int $workspaceId, string $url): array
     $pdo->commit();
 
     return ['fetched' => count($urls), 'stored' => count($urls), 'error' => null];
+}
+
+// Cross-references sitemap categories (site sections that already
+// exist, from sitemap_category_from_url()'s coarse first-path-segment
+// grouping) against this workspace's Content Pillars — the topics this
+// app is actively tuned to create content for — to flag established
+// site sections with no obviously-matching pillar. A plain word-overlap
+// heuristic (shared word of 4+ letters between the category slug and a
+// pillar name), not an AI judgment call, so it's a suggestion to check
+// rather than a verdict — a pillar named quite differently in wording
+// could still genuinely cover a flagged category. $minPages filters out
+// one-off pages (e.g. a single /careers page) that aren't worth a
+// dedicated pillar.
+function sitemap_content_gaps(int $workspaceId, array $contentPillars, int $minPages = 2): array
+{
+    $links = fetch_sitemap_links($workspaceId);
+    if (!$links) {
+        return [];
+    }
+
+    $counts = [];
+    foreach ($links as $l) {
+        $cat = $l['category'] ?: 'page';
+        $counts[$cat] = ($counts[$cat] ?? 0) + 1;
+    }
+
+    $pillarWords = [];
+    foreach ($contentPillars as $p) {
+        foreach (preg_split('/[^a-z0-9]+/', mb_strtolower($p['name'])) ?: [] as $w) {
+            if (mb_strlen($w) >= 4) {
+                $pillarWords[$w] = true;
+            }
+        }
+    }
+
+    $gaps = [];
+    foreach ($counts as $cat => $count) {
+        if ($count < $minPages || in_array($cat, SITEMAP_GAP_IGNORE_CATEGORIES, true)) {
+            continue;
+        }
+        $covered = false;
+        foreach (preg_split('/[^a-z0-9]+/', mb_strtolower($cat)) ?: [] as $w) {
+            if (mb_strlen($w) >= 4 && isset($pillarWords[$w])) {
+                $covered = true;
+                break;
+            }
+        }
+        if (!$covered) {
+            $gaps[] = ['category' => $cat, 'page_count' => $count];
+        }
+    }
+    usort($gaps, fn ($a, $b) => $b['page_count'] <=> $a['page_count']);
+    return $gaps;
 }

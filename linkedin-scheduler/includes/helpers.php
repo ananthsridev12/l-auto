@@ -238,6 +238,25 @@ function get_reddit_credentials(int $userId): ?array
     return ['client_id' => $row['reddit_client_id'], 'client_secret' => $row['reddit_client_secret']];
 }
 
+// Unsplash Access Key (New Post's "Stock/AI Photo" panel stock-search
+// tab, see includes/stock_images.php) — a free, self-service "Demo" app
+// at unsplash.com/oauth/applications, no approval wait for search
+// volumes this app needs. Stored per-user like the Reddit/AI provider
+// keys above.
+function get_unsplash_access_key(int $userId): ?string
+{
+    $stmt = db()->prepare('SELECT unsplash_access_key FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $key = $stmt->fetchColumn();
+    return $key !== false && trim((string) $key) !== '' ? $key : null;
+}
+
+function set_unsplash_access_key(int $userId, ?string $key): void
+{
+    $key = trim((string) $key);
+    db()->prepare('UPDATE users SET unsplash_access_key = ? WHERE id = ?')->execute([$key === '' ? null : $key, $userId]);
+}
+
 function set_reddit_credentials(int $userId, ?string $clientId, ?string $clientSecret): void
 {
     $clientId = trim((string) $clientId);

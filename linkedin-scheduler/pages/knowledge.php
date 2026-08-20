@@ -12,6 +12,7 @@ require_once __DIR__ . '/../includes/kb_documents.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/csv_parser.php';
+require_once __DIR__ . '/../includes/collections.php';
 
 require_login();
 $userId = current_user_id();
@@ -756,6 +757,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/knowledge.php');
     }
 
+    if (($_POST['form'] ?? '') === 'collection_add') {
+        $name = trim($_POST['collection_name'] ?? '');
+        $desc = trim($_POST['collection_description'] ?? '');
+        if ($name === '') {
+            flash('error', 'Enter a name for the collection.');
+            redirect('pages/knowledge.php#collections');
+        }
+        add_content_collection($userId, $workspaceId, $name, $desc);
+        flash('success', "Collection \"{$name}\" saved.");
+        redirect('pages/knowledge.php#collections');
+    }
+
+    if (($_POST['form'] ?? '') === 'collection_archive') {
+        archive_content_collection($userId, (int) ($_POST['collection_id'] ?? 0));
+        flash('success', 'Collection archived — its posts keep their tag, but it no longer shows as a pick when tagging new content.');
+        redirect('pages/knowledge.php#collections');
+    }
+
+    if (($_POST['form'] ?? '') === 'collection_delete') {
+        delete_content_collection($userId, (int) ($_POST['collection_id'] ?? 0));
+        flash('success', 'Collection deleted — posts/blog posts that were in it are unaffected, just no longer tagged with it.');
+        redirect('pages/knowledge.php#collections');
+    }
+
     if (($_POST['form'] ?? '') === 'cta_add') {
         $text = trim($_POST['cta_text'] ?? '');
         $stage = $_POST['cta_funnel_stage'] ?? '';
@@ -834,6 +859,8 @@ $services = fetch_services($workspaceId);
 $icps = fetch_icps($workspaceId);
 $proofPoints = fetch_proof_points($workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
+$contentCollections = fetch_content_collections($userId, $workspaceId);
+$archivedCollections = fetch_content_collections($userId, $workspaceId, 'archived');
 $knowledgeDocuments = fetch_knowledge_documents($workspaceId);
 $ctaLibrary = fetch_cta_library($userId, $workspaceId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
@@ -904,6 +931,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <button type="button" class="settings-tab-btn" data-tab-target="proof">Proof Points</button>
   <button type="button" class="settings-tab-btn" data-tab-target="documents">Documents</button>
   <button type="button" class="settings-tab-btn" data-tab-target="pillars">Content Pillars</button>
+  <button type="button" class="settings-tab-btn" data-tab-target="collections">Content Collections</button>
   <button type="button" class="settings-tab-btn" data-tab-target="cta">CTA Library</button>
   <button type="button" class="settings-tab-btn" data-tab-target="tags">Tag Directory</button>
 </nav>
@@ -1757,6 +1785,100 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
+<section class="card" data-tab="collections">
+  <h2>Content Collections</h2>
+  <p class="muted">Group related LinkedIn posts and blog posts together — a product launch, a themed content week, anything you want to see and manage as one set rather than scattered across Drafts/Calendar/Blog Studio. Pick a collection from New Post, Post edit, or Blog Studio's Save form to tag content into it.</p>
+  <?php if ($contentCollections): ?>
+    <div class="item-grid">
+      <?php foreach ($contentCollections as $cc): ?>
+        <?php $items = content_collection_items($workspaceId, (int) $cc['id']); ?>
+        <div class="item-card">
+          <div class="account-info" style="margin-bottom:var(--space-2);">
+            <strong><?= h($cc['name']) ?></strong>
+            <span class="badge badge-active"><?= count($items) ?> item<?= count($items) === 1 ? '' : 's' ?></span>
+          </div>
+          <?php if ($cc['description']): ?><p class="muted" style="margin-top:0;"><?= h($cc['description']) ?></p><?php endif; ?>
+          <?php if ($items): ?>
+            <ul style="margin:var(--space-2) 0; padding-left:20px;">
+              <?php foreach (array_slice($items, 0, 8) as $item): ?>
+                <?php
+                  $itemUrl = $item['kind'] === 'blog' ? app_path('pages/blog_studio.php?id=' . $item['id']) : app_path('pages/post.php?id=' . $item['id']);
+                  // posts.status is draft/scheduled/posted/failed (all
+                  // have a matching .badge-{status} class); blog_posts.status
+                  // adds published/unpublished, which don't — same mapping
+                  // pages/blog_studio.php's single-post view already uses.
+                  $itemBadgeClass = match ($item['status']) {
+                      'posted', 'published' => 'badge-posted',
+                      'unpublished'         => 'badge-warning',
+                      'scheduled'           => 'badge-scheduled',
+                      'failed'              => 'badge-failed',
+                      default               => 'badge-draft',
+                  };
+                ?>
+                <li>
+                  <a href="<?= h($itemUrl) ?>"><?= h($item['label'] ?: '(untitled)') ?></a>
+                  <span class="badge <?= h($itemBadgeClass) ?>"><?= h(ucfirst($item['status'])) ?></span>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+            <?php if (count($items) > 8): ?><p class="muted">+ <?= count($items) - 8 ?> more.</p><?php endif; ?>
+          <?php else: ?>
+            <p class="muted">Nothing tagged into this collection yet.</p>
+          <?php endif; ?>
+          <div class="inline-form" style="margin-top:var(--space-2);">
+            <form method="post" onsubmit="return confirm('Archive this collection? Its posts keep their tag, but it stops showing as a pick for new content.');">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="collection_archive">
+              <input type="hidden" name="collection_id" value="<?= (int) $cc['id'] ?>">
+              <button type="submit" class="btn-tiny">Archive</button>
+            </form>
+            <form method="post" onsubmit="return confirm('Delete this collection? Its posts/blog posts are kept, just untagged.');">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="collection_delete">
+              <input type="hidden" name="collection_id" value="<?= (int) $cc['id'] ?>">
+              <button type="submit" class="btn-tiny btn-danger">Delete</button>
+            </form>
+          </div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php else: ?>
+    <p class="muted">No collections yet — add one below.</p>
+  <?php endif; ?>
+
+  <?php if ($archivedCollections): ?>
+    <details class="kb-details" style="margin-top:var(--space-4);">
+      <summary>Archived collections (<?= count($archivedCollections) ?>)</summary>
+      <div class="item-grid" style="margin-top:var(--space-3);">
+        <?php foreach ($archivedCollections as $cc): ?>
+          <div class="item-card account-row">
+            <div class="account-info"><span><?= h($cc['name']) ?></span></div>
+            <form method="post">
+              <input type="hidden" name="csrf" value="<?= h($token) ?>">
+              <input type="hidden" name="form" value="collection_add">
+              <input type="hidden" name="collection_name" value="<?= h($cc['name']) ?>">
+              <input type="hidden" name="collection_description" value="<?= h($cc['description'] ?? '') ?>">
+              <button type="submit" class="btn-tiny">Reactivate</button>
+            </form>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    </details>
+  <?php endif; ?>
+
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="collection_add">
+    <label>Name
+      <input type="text" name="collection_name" placeholder="e.g. Q1 Product Launch" required>
+    </label>
+    <label>Description <span class="muted">(optional)</span>
+      <textarea name="collection_description" rows="2"></textarea>
+    </label>
+    <button type="submit" class="btn-secondary">Add Collection</button>
+  </form>
+</section>
+
 <section class="card" data-tab="cta">
   <h2>CTA Library</h2>
   <p class="muted">Reusable calls-to-action, optionally tagged with a funnel stage. Pick one from New Post's "Generate with AI" panel instead of writing a CTA from scratch each time.</p>
@@ -1837,7 +1959,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <script>
   (function () {
-    var VALID_TABS = ['company', 'verticals', 'services', 'icps', 'personas', 'tone', 'senders', 'proof', 'documents', 'pillars', 'cta', 'tags'];
+    var VALID_TABS = ['company', 'verticals', 'services', 'icps', 'personas', 'tone', 'senders', 'proof', 'documents', 'pillars', 'collections', 'cta', 'tags'];
     var tabBtns = document.querySelectorAll('#kbTabs .settings-tab-btn');
     var panels = document.querySelectorAll('[data-tab]');
 

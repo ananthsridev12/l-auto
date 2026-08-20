@@ -52,6 +52,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/settings.php');
     }
 
+    if (($_POST['form'] ?? '') === 'unsplash_key') {
+        set_unsplash_access_key($userId, $_POST['unsplash_access_key'] ?? '');
+        flash('success', 'Unsplash Access Key saved.');
+        redirect('pages/settings.php');
+    }
+
     if (($_POST['form'] ?? '') === 'wordpress_settings') {
         // $workspaceId is current_workspace_id() — already resolved and
         // access-checked (owns OR granted) for this session, so no extra
@@ -681,6 +687,7 @@ $claudeKey = get_claude_api_key($userId);
 $openaiKey = get_openai_api_key($userId);
 $aiProvider = get_ai_provider($userId) ?: AI_PROVIDER_DEFAULT;
 $redditCreds = get_reddit_credentials($userId);
+$unsplashKey = get_unsplash_access_key($userId);
 $workspaces = fetch_workspaces($userId);
 $defaultLayoutSingle = $workspace['default_layout_single'] ?? null;
 $defaultLayoutCarousel = $workspace['default_layout_carousel'] ?? null;
@@ -835,6 +842,21 @@ require __DIR__ . '/../includes/layout_top.php';
       </label>
     </div>
     <button type="submit" class="btn-secondary">Save Reddit Credentials</button>
+  </form>
+</section>
+<?php endif; ?>
+
+<?php if (module_enabled('post_scheduling')): ?>
+<section class="card" data-tab="integrations">
+  <h2>Stock Photos (Unsplash)</h2>
+  <p class="muted">Lets New Post's "Stock/AI Photo" panel search real photos for a Single Image post instead of only a branded template or a manual upload. Create a free app at <a href="https://unsplash.com/oauth/applications" target="_blank" rel="noopener">unsplash.com/oauth/applications</a> (no approval wait for a personal "Demo" app) and paste its Access Key here.</p>
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="unsplash_key">
+    <label>Access Key
+      <input type="password" name="unsplash_access_key" value="<?= h($unsplashKey ?? '') ?>" placeholder="e.g. AbCdEf..." autocomplete="off">
+    </label>
+    <button type="submit" class="btn-secondary">Save Unsplash Key</button>
   </form>
 </section>
 <?php endif; ?>

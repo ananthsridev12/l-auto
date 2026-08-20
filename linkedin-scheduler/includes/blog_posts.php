@@ -50,14 +50,14 @@ function blog_slugify(string $title): string
     return trim($slug, '-') ?: 'post';
 }
 
-function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $newsItemId = null, ?int $contentPillarId = null, ?string $contentType = null): int
+function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $newsItemId = null, ?int $contentPillarId = null, ?string $contentType = null, ?int $collectionId = null): int
 {
     $stmt = db()->prepare(
-        'INSERT INTO blog_posts (user_id, workspace_id, news_item_id, content_pillar_id, title, slug, meta_description, keywords, content_html, content_type, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft")'
+        'INSERT INTO blog_posts (user_id, workspace_id, news_item_id, content_pillar_id, collection_id, title, slug, meta_description, keywords, content_html, content_type, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft")'
     );
     $stmt->execute([
-        $userId, $workspaceId, $newsItemId, $contentPillarId,
+        $userId, $workspaceId, $newsItemId, $contentPillarId, $collectionId,
         mb_substr($creative['title'], 0, 500),
         mb_substr($creative['slug'], 0, 500),
         $creative['meta_description'] !== '' ? mb_substr($creative['meta_description'], 0, 500) : null,
@@ -70,7 +70,7 @@ function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $
 
 function update_blog_post(int $userId, int $id, array $fields): void
 {
-    $allowed = ['title', 'slug', 'meta_description', 'keywords', 'content_html', 'publish_target', 'content_pillar_id', 'content_type'];
+    $allowed = ['title', 'slug', 'meta_description', 'keywords', 'content_html', 'publish_target', 'content_pillar_id', 'content_type', 'collection_id'];
     $sets = [];
     $params = [];
     foreach ($allowed as $col) {

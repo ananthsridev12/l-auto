@@ -66,6 +66,11 @@ define('OPENAI_MODEL', 'gpt-4o-mini');
 // see ai_generate_embedding()'s null-on-unsupported-provider behavior.
 define('GEMINI_EMBEDDING_MODEL', 'text-embedding-004');
 define('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small');
+// Raw (non-branded) image generation — New Post's "Stock/AI Photo"
+// panel (includes/ai_generate.php ai_generate_image()). Claude has no
+// image generation API, so there's no CLAUDE_IMAGE_MODEL.
+define('GEMINI_IMAGE_MODEL', 'gemini-2.5-flash-image');
+define('OPENAI_IMAGE_MODEL', 'dall-e-3');
 
 define('CLAUDE_API_KEY_DEFAULT', '');
 define('OPENAI_API_KEY_DEFAULT', '');

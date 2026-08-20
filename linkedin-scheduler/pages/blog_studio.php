@@ -20,6 +20,7 @@ require_once __DIR__ . '/../includes/wordpress_api.php';
 require_once __DIR__ . '/../includes/jekyll_api.php';
 require_once __DIR__ . '/../includes/grav_api.php';
 require_once __DIR__ . '/../includes/sitemap.php';
+require_once __DIR__ . '/../includes/collections.php';
 
 require_login();
 require_module('blog_studio');
@@ -63,8 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pillarId !== null && !fetch_content_pillar($userId, $pillarId)) {
                 $pillarId = null;
             }
+            $collectionId = (int) ($_POST['collection_id'] ?? 0) ?: null;
+            if ($collectionId !== null && !fetch_content_collection($userId, $collectionId)) {
+                $collectionId = null;
+            }
             $creative = generate_blog_post_via_ai(['title' => $topicTitle, 'length' => $length], $aiConfig, $genWorkspace, $relatedMemory, null, $existingPosts, BLOG_MODE_ORIGINAL, false, [], $contentType);
-            $newPostId = create_blog_post($userId, $workspaceId, $creative, null, $pillarId, $contentType);
+            $newPostId = create_blog_post($userId, $workspaceId, $creative, null, $pillarId, $contentType, $collectionId);
             if (!$freshContext) {
                 save_blog_content_memory($workspaceId, $newPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
             }
@@ -98,6 +103,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (array_key_exists('content_pillar_id', $_POST)) {
             $pillarId = (int) $_POST['content_pillar_id'] ?: null;
             $fields['content_pillar_id'] = ($pillarId !== null && fetch_content_pillar($userId, $pillarId)) ? $pillarId : null;
+        }
+        if (array_key_exists('collection_id', $_POST)) {
+            $collectionId = (int) $_POST['collection_id'] ?: null;
+            $fields['collection_id'] = ($collectionId !== null && fetch_content_collection($userId, $collectionId)) ? $collectionId : null;
         }
         update_blog_post($userId, $postId, $fields);
         flash('success', 'Saved.');
@@ -197,6 +206,7 @@ $pageTitle  = 'Blog Studio';
 $activePage = 'blog_studio';
 $token = csrf_token();
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
+$contentCollections = fetch_content_collections($userId, $workspaceId);
 require __DIR__ . '/../includes/layout_top.php';
 
 if ($postId) {
@@ -301,6 +311,16 @@ if ($postId) {
           </select>
         </label>
         <?php endif; ?>
+        <?php if ($contentCollections): ?>
+        <label>Collection <span class="muted">(optional — groups this with related LinkedIn posts/blog posts, see Knowledge Hub)</span>
+          <select name="collection_id" <?= $locked ? 'disabled' : '' ?>>
+            <option value="">— None —</option>
+            <?php foreach ($contentCollections as $cc): ?>
+              <option value="<?= (int) $cc['id'] ?>"<?= $post['collection_id'] == $cc['id'] ? ' selected' : '' ?>><?= h($cc['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <?php endif; ?>
         <label>Body (HTML)
           <textarea name="content_html" rows="20" style="font-family:monospace;" <?= $locked ? 'disabled' : '' ?>><?= h($post['content_html']) ?></textarea>
         </label>
@@ -368,9 +388,29 @@ if ($postId) {
     $unpublished = fetch_blog_posts($userId, $workspaceId, 'unpublished');
     $failed = fetch_blog_posts($userId, $workspaceId, 'failed');
     $pillarNameById = array_column($contentPillars, 'name', 'id');
+    $collectionNameById = array_column($contentCollections, 'name', 'id');
     $platformLabelsList = ['wordpress' => 'WordPress', 'jekyll' => 'Jekyll', 'grav' => 'Grav'];
     ?>
     <div class="page-header"><h1>Blog Studio</h1><span class="badge badge-campaign"><?= h($workspace['name']) ?></span></div>
+
+    <?php $contentGaps = sitemap_content_gaps($workspaceId, $contentPillars); ?>
+    <?php if ($contentGaps): ?>
+    <section class="card">
+      <h2>Content Gaps <span class="muted">(from your sitemap)</span></h2>
+      <p class="muted">Site sections from your <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">sitemap</a> that don't obviously match any of your <a href="<?= h(app_path('pages/knowledge.php')) ?>#pillars">Content Pillars</a> — this app's content engine isn't tuned to write for them yet. A rough word-match heuristic, not a verdict — a pillar worded differently could already cover one of these.</p>
+      <div class="item-grid">
+        <?php foreach ($contentGaps as $gap): ?>
+          <div class="item-card account-row">
+            <div class="account-info">
+              <span>/<?= h($gap['category']) ?></span>
+              <span class="badge badge-warning"><?= (int) $gap['page_count'] ?> pages</span>
+            </div>
+            <a href="<?= h(app_path('pages/knowledge.php#pillars')) ?>" class="btn-tiny">+ Add Pillar</a>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    </section>
+    <?php endif; ?>
 
     <section class="card">
       <h2>New Blog Post</h2>
@@ -397,6 +437,17 @@ if ($postId) {
               <option value="">— None —</option>
               <?php foreach ($contentPillars as $cp): ?>
                 <option value="<?= (int) $cp['id'] ?>"><?= h($cp['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <?php endif; ?>
+          <?php if ($contentCollections): ?>
+          <div class="control-field">
+            <label for="blogGenCollection">Collection</label>
+            <select name="collection_id" id="blogGenCollection" title="Optional — groups this with related LinkedIn posts/blog posts, see Knowledge Hub">
+              <option value="">— None —</option>
+              <?php foreach ($contentCollections as $cc): ?>
+                <option value="<?= (int) $cc['id'] ?>"><?= h($cc['name']) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
@@ -444,6 +495,9 @@ if ($postId) {
                   <?php endif; ?>
                   <?php if ($p['content_pillar_id'] && isset($pillarNameById[$p['content_pillar_id']])): ?>
                     <span class="badge badge-format"><?= h($pillarNameById[$p['content_pillar_id']]) ?></span>
+                  <?php endif; ?>
+                  <?php if ($p['collection_id'] && isset($collectionNameById[$p['collection_id']])): ?>
+                    <span class="badge badge-active"><?= h($collectionNameById[$p['collection_id']]) ?></span>
                   <?php endif; ?>
                   <?php if ($p['publish_target'] && isset($platformLabelsList[$p['publish_target']])): ?>
                     <span class="badge badge-campaign"><?= h($platformLabelsList[$p['publish_target']]) ?></span>

@@ -8,6 +8,8 @@ require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/embeddings.php';
 require_once __DIR__ . '/../includes/content_memory.php';
+require_once __DIR__ . '/../includes/collections.php';
+require_once __DIR__ . '/../includes/stock_images.php';
 
 require_login();
 require_module('post_scheduling');
@@ -20,6 +22,7 @@ $accounts = fetch_user_accounts($userId, $workspaceId);
 $aiConfig = resolve_ai_config($userId);
 $personas = fetch_personas($userId, $workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
+$contentCollections = fetch_content_collections($userId, $workspaceId);
 $brandPalettes = fetch_brand_palettes(workspace_brand_user_id($userId, $workspaceId));
 $services = fetch_services($workspaceId);
 
@@ -51,9 +54,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if ($aiCreative === null) {
+    // A stock photo (Unsplash) or a plain AI-generated photo picked in
+    // the "Stock/AI Photo" panel — a third, mutually-exclusive
+    // alternative to uploading a file or generating a branded slide.
+    // Only offered for Single Image (a real photo doesn't make sense as
+    // one slide of a branded carousel).
+    $stockImageUrl = $format === 'Single Image' ? trim($_POST['stock_image_url'] ?? '') : '';
+    $stockDownloadLocation = trim($_POST['stock_download_location'] ?? '');
+    $stockAiDataUrl = $format === 'Single Image' ? trim($_POST['stock_ai_image_b64'] ?? '') : '';
+    $usingStockOrAiPhoto = $stockImageUrl !== '' || $stockAiDataUrl !== '';
+
+    if ($aiCreative === null && !$usingStockOrAiPhoto) {
         if ($format === 'Single Image' && empty($_FILES['image']['tmp_name'])) {
-            flash('error', 'Upload an image for a Single Image post, or use "Generate with AI" / "Write content directly".');
+            flash('error', 'Upload an image for a Single Image post, or use "Generate with AI" / "Write content directly" / "Stock/AI Photo".');
             redirect('pages/new_post.php');
         }
         if ($format === 'Carousel') {
@@ -94,6 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    $collectionId = (int) ($_POST['collection_id'] ?? 0) ?: null;
+    if ($collectionId !== null && !fetch_content_collection($userId, $collectionId)) {
+        $collectionId = null;
+    }
+
     $action    = $_POST['action'] ?? 'save';
     $schedDate = trim($_POST['scheduled_date'] ?? '');
     $schedTime = trim($_POST['scheduled_time'] ?? '09:00');
@@ -111,10 +129,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $storedCreative = ($aiCreative !== null && in_array($format, ['Single Image', 'Carousel'], true))
             ? json_encode($aiCreative) : null;
         $stmt = db()->prepare(
-            'INSERT INTO posts (user_id, workspace_id, linkedin_account_id, campaign_id, title, format, caption, status, scheduled_at, creative_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO posts (user_id, workspace_id, linkedin_account_id, campaign_id, collection_id, title, format, caption, status, scheduled_at, creative_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
+        $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $collectionId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
     } catch (PDOException $e) {
         if ((string) $e->getCode() === '23000') {
             // The pre-check above already handles the common case — this
@@ -123,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // than redirecting away and losing everything the user typed.
             $campaignId .= '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
             $campaignIdRenamed = true;
-            $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
+            $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $collectionId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
         } else {
             throw $e;
         }
@@ -159,6 +177,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
             db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
             flash('error', 'Image must be a PNG or JPEG file.');
+            redirect('pages/new_post.php');
+        }
+        $ext = $mime === 'image/png' ? 'png' : 'jpg';
+        $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+        if (!is_dir($destDir)) {
+            mkdir($destDir, 0755, true);
+        }
+        $filename = 'image_01.' . $ext;
+        $destPath = $destDir . '/' . $filename;
+        file_put_contents($destPath, $contents);
+        db()->prepare('INSERT INTO post_slides (post_id, slide_order, filename, filepath) VALUES (?, 1, ?, ?)')
+            ->execute([$postId, $filename, $destPath]);
+    }
+
+    if ($aiCreative === null && $usingStockOrAiPhoto) {
+        try {
+            if ($stockAiDataUrl !== '') {
+                if (!preg_match('#^data:image/(?:png|jpeg);base64,(.+)$#', $stockAiDataUrl, $m)) {
+                    throw new RuntimeException('Invalid generated image data.');
+                }
+                $contents = base64_decode($m[1]);
+            } else {
+                $fetched = unsplash_fetch_image($stockImageUrl);
+                $contents = $fetched['bytes'];
+                if ($stockDownloadLocation !== '') {
+                    $unsplashKey = get_unsplash_access_key($userId);
+                    if ($unsplashKey) {
+                        unsplash_track_download($stockDownloadLocation, $unsplashKey);
+                    }
+                }
+            }
+            // Never trust the client's claimed source/mime — re-sniff the
+            // actual decoded/downloaded bytes, same as every other upload
+            // path in this file.
+            $mime = zip_sniff_image_mime((string) $contents);
+            if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
+                throw new RuntimeException('That image could not be used — not a valid PNG/JPEG.');
+            }
+        } catch (Throwable $e) {
+            db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
+            flash('error', 'Could not attach the selected photo: ' . $e->getMessage());
             redirect('pages/new_post.php');
         }
         $ext = $mime === 'image/png' ? 'png' : 'jpg';
@@ -231,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $pageTitle  = 'New Post';
 $activePage = 'new_post';
-$pageScripts = ['formatter.js', 'app.js', 'new_post_ai.js'];
+$pageScripts = ['formatter.js', 'app.js', 'new_post_ai.js', 'stock_photo.js'];
 $token = csrf_token();
 require __DIR__ . '/../includes/layout_top.php';
 ?>
@@ -279,6 +338,50 @@ require __DIR__ . '/../includes/layout_top.php';
           <input type="checkbox" id="manualCreativeToggle">
           Write content directly (no AI) — auto-generate the image from text you type in
         </label>
+        <?php
+          $stockSearchUsable = unsplash_configured(get_unsplash_access_key($userId));
+          $stockAiUsable = ai_configured($aiConfig) && !$aiModuleOff;
+        ?>
+        <label class="checkbox-row" id="stockPhotoToggleLabel">
+          <input type="checkbox" id="stockPhotoToggle" <?= ($stockSearchUsable || $stockAiUsable) ? '' : 'disabled' ?>>
+          Stock/AI Photo — use a real photo instead of a branded slide
+        </label>
+        <?php if (!$stockSearchUsable && !$stockAiUsable): ?>
+          <p class="muted">Add an Unsplash Access Key or an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to use this.</p>
+        <?php endif; ?>
+      </div>
+
+      <div id="stockPhotoPanel" style="width:100%; margin-top:12px; display:none;">
+        <div style="display:flex; gap:6px;">
+          <button type="button" class="btn-secondary" id="stockSearchTabBtn">Search Stock Photos</button>
+          <button type="button" class="btn-tiny" id="stockAiTabBtn">Generate with AI</button>
+        </div>
+        <div id="stockSearchTab" style="margin-top:8px;">
+          <?php if ($stockSearchUsable): ?>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="stockSearchQuery" placeholder="e.g. team meeting, factory floor, city skyline" style="flex:1;">
+              <button type="button" class="btn-secondary" id="stockSearchBtn">Search</button>
+            </div>
+            <p id="stockSearchStatus" class="muted"></p>
+            <div id="stockSearchResults" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(90px, 1fr)); gap:6px; margin-top:8px;"></div>
+          <?php else: ?>
+            <p class="muted">Add an Unsplash Access Key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to search stock photos.</p>
+          <?php endif; ?>
+        </div>
+        <div id="stockAiTab" style="margin-top:8px; display:none;">
+          <?php if ($stockAiUsable): ?>
+            <textarea id="stockAiPrompt" rows="3" style="width:100%;" placeholder="Describe the photo/graphic you want — e.g. &quot;A warm, editorial-style photo of a small team collaborating around a laptop, natural light&quot;"></textarea>
+            <button type="button" class="btn-secondary" id="stockAiGenBtn" style="margin-top:6px;">Generate</button>
+            <p id="stockAiStatus" class="muted"></p>
+            <div id="stockAiResult" style="margin-top:8px;"></div>
+          <?php else: ?>
+            <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to generate a photo.</p>
+          <?php endif; ?>
+        </div>
+        <div id="stockSelectedPreview" style="margin-top:8px; display:none;"></div>
+        <input type="hidden" name="stock_image_url" id="stockImageUrlField" form="newPostForm">
+        <input type="hidden" name="stock_download_location" id="stockDownloadLocationField" form="newPostForm">
+        <input type="hidden" name="stock_ai_image_b64" id="stockAiB64Field" form="newPostForm">
       </div>
 
       <div id="ctaFieldsPanel" style="width:100%; margin-top:12px; display:none;">
@@ -448,6 +551,17 @@ require __DIR__ . '/../includes/layout_top.php';
           <input type="text" name="campaign_id" placeholder="e.g. LAUNCH-01">
         </label>
 
+        <?php if ($contentCollections): ?>
+        <label>Collection <span class="muted">(optional — groups this with related posts, see Knowledge Hub)</span>
+          <select name="collection_id">
+            <option value="">— None —</option>
+            <?php foreach ($contentCollections as $cc): ?>
+              <option value="<?= (int) $cc['id'] ?>"><?= h($cc['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <?php endif; ?>
+
         <label>LinkedIn Account
           <select name="linkedin_account_id">
             <option value="">— Unassigned —</option>
@@ -479,15 +593,18 @@ require __DIR__ . '/../includes/layout_top.php';
   window.IMAGE_PREVIEW_URL = <?= json_encode(app_path('api/new_post_preview_image.php')) ?>;
   window.NEW_POST_CSRF = <?= json_encode($token) ?>;
   window.MAX_SLIDES_PER_CAMPAIGN = <?= (int) MAX_SLIDES_PER_CAMPAIGN ?>;
+  window.STOCK_IMAGE_SEARCH_URL = <?= json_encode(app_path('api/stock_image_search.php')) ?>;
+  window.AI_IMAGE_GENERATE_URL = <?= json_encode(app_path('api/ai_image_generate.php')) ?>;
   (function () {
     var select = document.getElementById('formatSelect');
     var imageField = document.getElementById('imageUploadField');
     var carouselField = document.getElementById('carouselUploadField');
     var aiToggle = document.getElementById('aiGenerateToggle');
     var manualToggle = document.getElementById('manualCreativeToggle');
+    var stockPhotoToggle = document.getElementById('stockPhotoToggle');
     if (!select || !imageField || !carouselField) return;
     var toggle = function () {
-      var usingCreativeJson = (aiToggle && aiToggle.checked) || (manualToggle && manualToggle.checked);
+      var usingCreativeJson = (aiToggle && aiToggle.checked) || (manualToggle && manualToggle.checked) || (stockPhotoToggle && stockPhotoToggle.checked);
       imageField.style.display = (!usingCreativeJson && select.value === 'Single Image') ? 'flex' : 'none';
       carouselField.style.display = (!usingCreativeJson && select.value === 'Carousel') ? 'flex' : 'none';
     };

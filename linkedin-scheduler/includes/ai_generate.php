@@ -537,6 +537,82 @@ function ai_call_openai(string $prompt, string $apiKey, string $model): string
     return trim($text);
 }
 
+// ── Raw (non-branded) image generation ──────────────────────────────
+// New Post's "Stock/AI Photo" panel — a plain generated photo/graphic
+// used directly as a Single Image post's image, distinct from
+// generate_creative_via_ai() above (which produces branded slide JSON
+// rendered by includes/image_renderer.php). Reuses whichever
+// Gemini/OpenAI key the user already has configured for text
+// generation — no separate credential needed. Claude has no image
+// generation API, so it isn't offered here.
+
+function ai_call_gemini_image(string $prompt, string $apiKey): array
+{
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . GEMINI_IMAGE_MODEL . ':generateContent?key=' . urlencode($apiKey);
+    $body = ['contents' => [['parts' => [['text' => $prompt]]]]];
+    [$status, $response, $curlErr] = ai_http_post_json($url, $body, ['Content-Type: application/json']);
+
+    if ($response === false) {
+        throw new RuntimeException("Gemini image request failed: {$curlErr}");
+    }
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("Gemini image request failed ({$status}): " . substr($response, 0, 300));
+    }
+
+    $data = json_decode($response, true);
+    foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
+        if (!empty($part['inlineData']['data'])) {
+            return [
+                'bytes' => base64_decode($part['inlineData']['data']),
+                'mime'  => $part['inlineData']['mimeType'] ?? 'image/png',
+            ];
+        }
+    }
+    $blockReason = $data['promptFeedback']['blockReason'] ?? null;
+    throw new RuntimeException($blockReason
+        ? "Gemini declined to generate this image: {$blockReason}"
+        : 'Gemini did not return an image for this prompt.');
+}
+
+function ai_call_openai_image(string $prompt, string $apiKey): array
+{
+    $body = [
+        'model'           => OPENAI_IMAGE_MODEL,
+        'prompt'          => $prompt,
+        'size'            => '1024x1024',
+        'response_format' => 'b64_json',
+    ];
+    $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $apiKey];
+    [$status, $response, $curlErr] = ai_http_post_json('https://api.openai.com/v1/images/generations', $body, $headers);
+
+    if ($response === false) {
+        throw new RuntimeException("OpenAI image request failed: {$curlErr}");
+    }
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("OpenAI image request failed ({$status}): " . substr($response, 0, 300));
+    }
+
+    $data = json_decode($response, true);
+    $b64 = $data['data'][0]['b64_json'] ?? null;
+    if ($b64 === null) {
+        throw new RuntimeException('OpenAI did not return image data for this prompt.');
+    }
+    return ['bytes' => base64_decode($b64), 'mime' => 'image/png'];
+}
+
+// $aiConfig is resolve_ai_config()'s shape. Returns ['bytes' => string, 'mime' => string].
+function ai_generate_image(string $prompt, array $aiConfig): array
+{
+    if (!ai_configured($aiConfig)) {
+        throw new RuntimeException('Add an AI provider key in Settings first.');
+    }
+    return match ($aiConfig['provider']) {
+        'openai' => ai_call_openai_image($prompt, $aiConfig['api_key']),
+        'claude' => throw new RuntimeException('Claude has no image generation — switch to Gemini or OpenAI in Settings, or use Stock Photo search instead.'),
+        default  => ai_call_gemini_image($prompt, $aiConfig['api_key']),
+    };
+}
+
 // ── Shared entry point ───────────────────────────────────────────────
 
 // $aiConfig is resolve_ai_config()'s shape: ['provider','api_key','model'].
