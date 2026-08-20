@@ -247,6 +247,25 @@ if ($postId) {
     </div>
     <a href="<?= h(app_path('pages/blog_studio.php')) ?>">&larr; Back to Blog Studio</a>
 
+    <?php $seo = blog_post_seo_score($post); ?>
+    <section class="card">
+      <details class="kb-details">
+        <summary>
+          SEO Score: <strong><?= (int) $seo['score'] ?>/100</strong>
+          <span class="badge <?= $seo['score'] >= 80 ? 'badge-active' : ($seo['score'] >= 50 ? 'badge-scheduled' : 'badge-warning') ?>"><?= $seo['score'] >= 80 ? 'Good' : ($seo['score'] >= 50 ? 'Needs work' : 'Weak') ?></span>
+        </summary>
+        <p class="muted" style="margin-top:var(--space-2);">A plain rules checklist (not an AI judgment) — every item here is something you could verify by eye, this just saves counting characters by hand.</p>
+        <ul style="margin:var(--space-2) 0 0; padding-left:20px; list-style:none;">
+          <?php foreach ($seo['checks'] as $check): ?>
+            <li style="margin-bottom:4px;">
+              <span class="badge <?= $check['pass'] ? 'badge-active' : 'badge-warning' ?>"><?= $check['pass'] ? 'Pass' : 'Fix' ?></span>
+              <?= h($check['label']) ?> — <span class="muted"><?= h($check['detail']) ?></span>
+            </li>
+          <?php endforeach; ?>
+        </ul>
+      </details>
+    </section>
+
     <?php if ($post['status'] === 'failed' && $post['error_message']): ?>
       <section class="card"><p class="badge badge-warning">Last publish attempt failed: <?= h($post['error_message']) ?></p></section>
     <?php endif; ?>
@@ -405,7 +424,7 @@ if ($postId) {
               <span>/<?= h($gap['category']) ?></span>
               <span class="badge badge-warning"><?= (int) $gap['page_count'] ?> pages</span>
             </div>
-            <a href="<?= h(app_path('pages/knowledge.php#pillars')) ?>" class="btn-tiny">+ Add Pillar</a>
+            <a href="<?= h(app_path('pages/knowledge.php?pillar_name=' . rawurlencode(ucwords(str_replace(['-', '_'], ' ', $gap['category']))) . '#pillars')) ?>" class="btn-tiny">+ Add Pillar</a>
           </div>
         <?php endforeach; ?>
       </div>

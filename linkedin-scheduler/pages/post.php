@@ -5,6 +5,9 @@ require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
 require_once __DIR__ . '/../includes/collections.php';
+require_once __DIR__ . '/../includes/zip_import.php';
+require_once __DIR__ . '/../includes/stock_images.php';
+require_once __DIR__ . '/../includes/ai_generate.php';
 
 require_login();
 require_module('post_scheduling');
@@ -128,6 +131,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Swapping in a Stock/AI Photo (New Post's panel, reused here) — only
+    // meaningful for a plain Single Image post (not one generated from
+    // creative_json, which has its own re-render pipeline via
+    // api/post_rerender.php). Fields are simply absent from every other
+    // form, so this is a no-op unless the Stock/AI Photo panel was
+    // actually used.
+    $stockImageUrl = $existing['format'] === 'Single Image' ? trim($_POST['stock_image_url'] ?? '') : '';
+    $stockDownloadLocation = trim($_POST['stock_download_location'] ?? '');
+    $stockAiDataUrl = $existing['format'] === 'Single Image' ? trim($_POST['stock_ai_image_b64'] ?? '') : '';
+    if ($stockImageUrl !== '' || $stockAiDataUrl !== '') {
+        try {
+            if ($stockAiDataUrl !== '') {
+                if (!preg_match('#^data:image/(?:png|jpeg);base64,(.+)$#', $stockAiDataUrl, $m)) {
+                    throw new RuntimeException('Invalid generated image data.');
+                }
+                $contents = base64_decode($m[1]);
+            } else {
+                $fetched = unsplash_fetch_image($stockImageUrl);
+                $contents = $fetched['bytes'];
+                if ($stockDownloadLocation !== '') {
+                    $unsplashKey = get_unsplash_access_key($userId);
+                    if ($unsplashKey) {
+                        unsplash_track_download($stockDownloadLocation, $unsplashKey);
+                    }
+                }
+            }
+            $mime = zip_sniff_image_mime((string) $contents);
+            if (!in_array($mime, ALLOWED_SLIDE_MIME, true)) {
+                throw new RuntimeException('That image could not be used — not a valid PNG/JPEG.');
+            }
+            $ext = $mime === 'image/png' ? 'png' : 'jpg';
+            $oldPathsStmt = db()->prepare('SELECT filepath FROM post_slides WHERE post_id = ?');
+            $oldPathsStmt->execute([$postId]);
+            $oldPaths = array_column($oldPathsStmt->fetchAll(), 'filepath');
+            $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+            if (!is_dir($destDir)) {
+                mkdir($destDir, 0755, true);
+            }
+            $filename = 'image_01.' . $ext;
+            $destPath = $destDir . '/' . $filename;
+            file_put_contents($destPath, $contents);
+            foreach ($oldPaths as $oldPath) {
+                if ($oldPath !== $destPath) {
+                    @unlink($oldPath);
+                }
+            }
+            db()->prepare('DELETE FROM post_slides WHERE post_id = ?')->execute([$postId]);
+            db()->prepare('INSERT INTO post_slides (post_id, slide_order, filename, filepath) VALUES (?, 1, ?, ?)')
+                ->execute([$postId, $filename, $destPath]);
+        } catch (Throwable $e) {
+            flash('error', 'Saved, but the new photo could not be attached: ' . $e->getMessage());
+            redirect('pages/post.php?id=' . $postId);
+        }
+    }
+
     $renameNotice = $campaignIdRenamed
         ? "Campaign ID \"{$originalCampaignId}\" was already in use — saved as \"{$campaignId}\" instead. "
         : '';
@@ -143,6 +201,9 @@ if (!$post) {
 $postWorkspaceId = $post['workspace_id'] ? (int) $post['workspace_id'] : null;
 $accounts = fetch_user_accounts($userId, $postWorkspaceId);
 $contentCollections = fetch_content_collections($userId, $postWorkspaceId);
+$aiConfig = resolve_ai_config($userId);
+$stockSearchUsable = unsplash_configured(get_unsplash_access_key($userId));
+$stockAiUsable = ai_configured($aiConfig) && module_enabled('ai_generation');
 $formatDisabled = !in_array($post['format'], get_enabled_formats($userId), true);
 
 // Posts whose image was generated from creative JSON (AI or "write
@@ -157,7 +218,7 @@ $brandPalettes = $canReedit ? fetch_brand_palettes(workspace_brand_user_id($user
 
 $pageTitle   = $post['campaign_id'] ?: 'Edit Post';
 $activePage  = 'calendar';
-$pageScripts = $canReedit ? ['formatter.js', 'app.js', 'post_reedit.js'] : ['formatter.js', 'app.js'];
+$pageScripts = $canReedit ? ['formatter.js', 'app.js', 'post_reedit.js'] : ['formatter.js', 'app.js', 'stock_photo.js'];
 $token = csrf_token();
 require __DIR__ . '/../includes/layout_top.php';
 
@@ -393,6 +454,45 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
           </label>
           <?php endif; ?>
 
+          <?php if ($post['format'] === 'Single Image' && ($stockSearchUsable || $stockAiUsable)): ?>
+          <label class="checkbox-row" id="stockPhotoToggleLabel">
+            <input type="checkbox" id="stockPhotoToggle">
+            Replace image with a Stock/AI Photo
+          </label>
+          <div id="stockPhotoPanel" style="width:100%; margin-top:8px; display:none;">
+            <div style="display:flex; gap:6px;">
+              <button type="button" class="btn-secondary" id="stockSearchTabBtn">Search Stock Photos</button>
+              <button type="button" class="btn-tiny" id="stockAiTabBtn">Generate with AI</button>
+            </div>
+            <div id="stockSearchTab" style="margin-top:8px;">
+              <?php if ($stockSearchUsable): ?>
+                <div style="display:flex; gap:6px;">
+                  <input type="text" id="stockSearchQuery" placeholder="e.g. team meeting, factory floor, city skyline" style="flex:1;">
+                  <button type="button" class="btn-secondary" id="stockSearchBtn">Search</button>
+                </div>
+                <p id="stockSearchStatus" class="muted"></p>
+                <div id="stockSearchResults" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(90px, 1fr)); gap:6px; margin-top:8px;"></div>
+              <?php else: ?>
+                <p class="muted">Add an Unsplash Access Key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to search stock photos.</p>
+              <?php endif; ?>
+            </div>
+            <div id="stockAiTab" style="margin-top:8px; display:none;">
+              <?php if ($stockAiUsable): ?>
+                <textarea id="stockAiPrompt" rows="3" style="width:100%;" placeholder="Describe the photo/graphic you want"></textarea>
+                <button type="button" class="btn-secondary" id="stockAiGenBtn" style="margin-top:6px;">Generate</button>
+                <p id="stockAiStatus" class="muted"></p>
+                <div id="stockAiResult" style="margin-top:8px;"></div>
+              <?php else: ?>
+                <p class="muted">Add an AI provider key in <a href="<?= h(app_path('pages/settings.php')) ?>#integrations">Settings</a> to generate a photo.</p>
+              <?php endif; ?>
+            </div>
+            <div id="stockSelectedPreview" style="margin-top:8px; display:none;"></div>
+            <input type="hidden" name="stock_image_url" id="stockImageUrlField">
+            <input type="hidden" name="stock_download_location" id="stockDownloadLocationField">
+            <input type="hidden" name="stock_ai_image_b64" id="stockAiB64Field">
+          </div>
+          <?php endif; ?>
+
           <label>LinkedIn Account
             <select name="linkedin_account_id">
               <option value="">— Unassigned —</option>
@@ -439,6 +539,11 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
   window.SLIDES = <?= json_encode(array_column($post['slides'], 'url')) ?>;
   window.POST_NOW_URL = <?= json_encode(app_path('api/post_now.php')) ?>;
   window.MENTION_ACCOUNTS = <?= json_encode(fetch_mention_picker_list($userId)) ?>;
+  <?php if (!$canReedit): ?>
+  window.STOCK_IMAGE_SEARCH_URL = <?= json_encode(app_path('api/stock_image_search.php')) ?>;
+  window.AI_IMAGE_GENERATE_URL = <?= json_encode(app_path('api/ai_image_generate.php')) ?>;
+  window.NEW_POST_CSRF = <?= json_encode($token) ?>;
+  <?php endif; ?>
   <?php if ($canReedit): ?>
   window.POST_REEDIT = {
     url: <?= json_encode(app_path('api/post_rerender.php')) ?>,

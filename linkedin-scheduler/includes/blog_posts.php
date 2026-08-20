@@ -119,6 +119,69 @@ function blog_resolve_publish_target(array $workspace, array $post): ?string
     return in_array($stored, $configured, true) ? $stored : $configured[0];
 }
 
+// On-page SEO checklist, computed fresh from the post's own fields on
+// every view rather than stored — cheap enough (a handful of string
+// checks over what's already loaded) that persisting/staleness isn't
+// worth the tradeoff. Deliberately a plain rules checklist (title/meta
+// length, keyword usage, heading/link structure, word count), not an
+// AI judgment call — every check is something a human could verify by
+// eye, this just saves counting characters by hand. Returns
+// ['score' => 0-100, 'checks' => [['label','pass','detail'], ...]].
+function blog_post_seo_score(array $post): array
+{
+    $title = trim((string) ($post['title'] ?? ''));
+    $meta = trim((string) ($post['meta_description'] ?? ''));
+    $keywords = array_values(array_filter(array_map('trim', explode(',', (string) ($post['keywords'] ?? '')))));
+    $html = (string) ($post['content_html'] ?? '');
+    $plainText = trim(preg_replace('/\s+/', ' ', strip_tags($html)) ?? '');
+    $wordCount = $plainText === '' ? 0 : str_word_count($plainText);
+    $titleLen = mb_strlen($title);
+    $metaLen = mb_strlen($meta);
+
+    $checks = [
+        [
+            'label' => 'Title length (30-65 characters)',
+            'pass'  => $titleLen >= 30 && $titleLen <= 65,
+            'detail' => "{$titleLen} characters",
+        ],
+        [
+            'label' => 'Meta description (120-155 characters)',
+            'pass'  => $metaLen >= 120 && $metaLen <= 155,
+            'detail' => $meta === '' ? 'Not set' : "{$metaLen} characters",
+        ],
+        [
+            'label' => 'Target keywords set',
+            'pass'  => count($keywords) > 0,
+            'detail' => $keywords ? implode(', ', $keywords) : 'Not set',
+        ],
+        [
+            'label' => 'Primary keyword appears in the title',
+            'pass'  => $keywords && $title !== '' && mb_stripos($title, $keywords[0]) !== false,
+            'detail' => $keywords ? "Checked against \"{$keywords[0]}\"" : 'No keywords set to check',
+        ],
+        [
+            'label' => 'Has subheadings (at least one <h2>)',
+            'pass'  => (bool) preg_match('/<h2[\s>]/i', $html),
+            'detail' => preg_match_all('/<h2[\s>]/i', $html) . ' found',
+        ],
+        [
+            'label' => 'Has at least one link',
+            'pass'  => (bool) preg_match('/<a\s[^>]*href=/i', $html),
+            'detail' => preg_match_all('/<a\s[^>]*href=/i', $html) . ' found',
+        ],
+        [
+            'label' => 'Word count is at least 300',
+            'pass'  => $wordCount >= 300,
+            'detail' => "{$wordCount} words",
+        ],
+    ];
+
+    $passed = count(array_filter($checks, fn ($c) => $c['pass']));
+    $score = $checks ? (int) round($passed / count($checks) * 100) : 0;
+
+    return ['score' => $score, 'checks' => $checks];
+}
+
 function delete_blog_post(int $userId, int $id): void
 {
     db()->prepare('DELETE FROM blog_posts WHERE id = ? AND user_id = ?')->execute([$id, $userId]);

@@ -1,10 +1,12 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/collections.php';
 
 require_login();
 require_module('post_scheduling');
 $userId = current_user_id();
+$workspaceId = current_workspace_id();
 
 $stmt = db()->prepare(
     'SELECT p.*, la.display_name AS account_name
@@ -14,8 +16,9 @@ $stmt = db()->prepare(
      ORDER BY p.updated_at DESC
      LIMIT 200'
 );
-$stmt->execute([current_workspace_id(), $userId]);
+$stmt->execute([$workspaceId, $userId]);
 $drafts = $stmt->fetchAll();
+$collectionNameById = array_column(fetch_content_collections($userId, $workspaceId), 'name', 'id');
 
 $pageTitle  = 'Drafts';
 $activePage = 'drafts';
@@ -28,13 +31,14 @@ require __DIR__ . '/../includes/layout_top.php';
     <p class="muted">No drafts. Drafts show up here when an imported row has no date, no matched LinkedIn account, or when you click "Save Draft" on a post.</p>
   <?php else: ?>
     <table class="preview-table">
-      <thead><tr><th>Campaign ID</th><th>Format</th><th>Title</th><th>Account</th><th>Last Updated</th><th></th></tr></thead>
+      <thead><tr><th>Campaign ID</th><th>Format</th><th>Title</th><th>Collection</th><th>Account</th><th>Last Updated</th><th></th></tr></thead>
       <tbody>
         <?php foreach ($drafts as $d): ?>
           <tr>
             <td><?= h($d['campaign_id']) ?></td>
             <td><?= h($d['format']) ?></td>
             <td><?= h($d['title']) ?></td>
+            <td><?php if ($d['collection_id'] && isset($collectionNameById[$d['collection_id']])): ?><span class="badge badge-active"><?= h($collectionNameById[$d['collection_id']]) ?></span><?php endif; ?></td>
             <td><?= h($d['account_name'] ?? '— unassigned —') ?></td>
             <td><?= h($d['updated_at']) ?></td>
             <td><a href="<?= h(app_path('pages/post.php?id=' . $d['id'])) ?>" class="btn-tiny">Edit</a></td>

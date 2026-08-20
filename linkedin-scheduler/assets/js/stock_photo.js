@@ -7,7 +7,10 @@
   var aiToggle = document.getElementById('aiGenerateToggle');
   var manualToggle = document.getElementById('manualCreativeToggle');
   var formatSelect = document.getElementById('formatSelect');
-  var form = document.getElementById('newPostForm');
+  // New Post has its own form (id="newPostForm"); Post edit's plain
+  // (non-re-edit) form reuses this same panel/script under id="postForm"
+  // — whichever exists on this page is the one to guard against.
+  var form = document.getElementById('newPostForm') || document.getElementById('postForm');
   if (!toggle || !panel || !form) {
     return;
   }

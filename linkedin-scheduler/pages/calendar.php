@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/collections.php';
 
 require_login();
 require_module('post_scheduling');
@@ -11,7 +12,7 @@ $month = (int) ($_GET['month'] ?? date('n'));
 
 $workspaceId = current_workspace_id();
 $stmt = db()->prepare(
-    "SELECT id, campaign_id, title, format, status, DATE(scheduled_at) AS sched_date
+    "SELECT id, campaign_id, title, format, status, collection_id, DATE(scheduled_at) AS sched_date
      FROM posts
      WHERE (workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)) AND scheduled_at IS NOT NULL
        AND YEAR(scheduled_at) = ? AND MONTH(scheduled_at) = ?"
@@ -21,6 +22,7 @@ $postsByDate = [];
 foreach ($stmt->fetchAll() as $row) {
     $postsByDate[$row['sched_date']][] = $row;
 }
+$collectionNameById = array_column(fetch_content_collections($userId, $workspaceId), 'name', 'id');
 
 $grid = build_calendar_grid($year, $month, $postsByDate);
 $monthName = (new DateTime("{$year}-{$month}-01"))->format('F');
@@ -56,7 +58,8 @@ require __DIR__ . '/../includes/layout_top.php';
         <div class="cal-cell <?= $cell['date'] === $today ? 'is-today' : '' ?> <?= $cell['posts'] ? 'has-post' : '' ?>">
           <span class="cal-day"><?= (int) $cell['day'] ?></span>
           <?php foreach ($cell['posts'] as $post): ?>
-            <a class="cal-post-row" href="<?= h(app_path('pages/post.php?id=' . $post['id'])) ?>">
+            <?php $postCollectionName = ($post['collection_id'] && isset($collectionNameById[$post['collection_id']])) ? $collectionNameById[$post['collection_id']] : null; ?>
+            <a class="cal-post-row" href="<?= h(app_path('pages/post.php?id=' . $post['id'])) ?>" <?= $postCollectionName ? 'title="Collection: ' . h($postCollectionName) . '"' : '' ?>>
               <span class="cal-badges">
                 <span class="cal-fmt cal-fmt-<?= h(strtolower(str_replace(' ', '-', $post['format']))) ?>"><?= h($post['format']) ?></span>
                 <span class="cal-status cal-status-<?= h(strtolower($post['status'])) ?>"><?= h(ucfirst($post['status'])) ?></span>

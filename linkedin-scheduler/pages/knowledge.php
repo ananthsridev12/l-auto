@@ -13,6 +13,7 @@ require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/csv_parser.php';
 require_once __DIR__ . '/../includes/collections.php';
+require_once __DIR__ . '/../includes/link_tracking.php';
 
 require_login();
 $userId = current_user_id();
@@ -781,6 +782,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/knowledge.php#collections');
     }
 
+    if (($_POST['form'] ?? '') === 'link_add') {
+        try {
+            $newLink = create_tracked_link($userId, $workspaceId, $_POST['link_target_url'] ?? '', $_POST['link_label'] ?? '');
+            flash('success', 'Short link created: ' . tracked_link_url($newLink['slug']));
+        } catch (Throwable $e) {
+            flash('error', $e->getMessage());
+        }
+        redirect('pages/knowledge.php#links');
+    }
+
+    if (($_POST['form'] ?? '') === 'link_delete') {
+        delete_tracked_link($userId, (int) ($_POST['link_id'] ?? 0));
+        flash('success', 'Short link deleted — it will no longer redirect.');
+        redirect('pages/knowledge.php#links');
+    }
+
     if (($_POST['form'] ?? '') === 'cta_add') {
         $text = trim($_POST['cta_text'] ?? '');
         $stage = $_POST['cta_funnel_stage'] ?? '';
@@ -861,6 +878,7 @@ $proofPoints = fetch_proof_points($workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
 $contentCollections = fetch_content_collections($userId, $workspaceId);
 $archivedCollections = fetch_content_collections($userId, $workspaceId, 'archived');
+$trackedLinks = fetch_tracked_links($userId, $workspaceId);
 $knowledgeDocuments = fetch_knowledge_documents($workspaceId);
 $ctaLibrary = fetch_cta_library($userId, $workspaceId);
 $funnelStages = ['Awareness', 'Consideration', 'Decision', 'Retention'];
@@ -932,6 +950,7 @@ require __DIR__ . '/../includes/layout_top.php';
   <button type="button" class="settings-tab-btn" data-tab-target="documents">Documents</button>
   <button type="button" class="settings-tab-btn" data-tab-target="pillars">Content Pillars</button>
   <button type="button" class="settings-tab-btn" data-tab-target="collections">Content Collections</button>
+  <button type="button" class="settings-tab-btn" data-tab-target="links">Link Tracking</button>
   <button type="button" class="settings-tab-btn" data-tab-target="cta">CTA Library</button>
   <button type="button" class="settings-tab-btn" data-tab-target="tags">Tag Directory</button>
 </nav>
@@ -1751,7 +1770,7 @@ require __DIR__ . '/../includes/layout_top.php';
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
     <input type="hidden" name="form" value="pillar_add">
     <label>Name
-      <input type="text" name="pillar_name" placeholder="e.g. Case Studies" required>
+      <input type="text" name="pillar_name" value="<?= h($_GET['pillar_name'] ?? '') ?>" placeholder="e.g. Case Studies" required>
     </label>
     <label>Category <span class="muted">(defaults to match this workspace — change it if this particular pillar's voice differs)</span>
       <select name="pillar_category">
@@ -1879,6 +1898,47 @@ require __DIR__ . '/../includes/layout_top.php';
   </form>
 </section>
 
+<section class="card" data-tab="links">
+  <h2>Link Tracking</h2>
+  <p class="muted">Create a short link for any URL, then paste it into a LinkedIn caption or blog post instead of the raw link — every click through it is counted here. LinkedIn's own API has no way to read back who engaged with a post, so this is the one click-through signal this app can measure on its own.</p>
+  <?php if ($trackedLinks): ?>
+    <div class="item-grid">
+      <?php foreach ($trackedLinks as $tl): ?>
+        <div class="item-card">
+          <div class="account-info" style="margin-bottom:var(--space-2);">
+            <strong><?= h($tl['label'] ?: 'Untitled link') ?></strong>
+            <span class="badge badge-active"><?= (int) $tl['click_count'] ?> click<?= (int) $tl['click_count'] === 1 ? '' : 's' ?></span>
+          </div>
+          <input type="text" readonly value="<?= h(tracked_link_url($tl['slug'])) ?>" onclick="this.select()" style="width:100%; margin-bottom:6px;">
+          <p class="muted" style="margin:0 0 var(--space-2); word-break:break-all;">&rarr; <?= h(mb_strimwidth($tl['target_url'], 0, 80, '…')) ?></p>
+          <?php if ($tl['last_clicked_at']): ?>
+            <p class="muted" style="margin:0 0 var(--space-2);">Last click: <?= h(date('j M Y, g:i a', strtotime($tl['last_clicked_at']))) ?></p>
+          <?php endif; ?>
+          <form method="post" onsubmit="return confirm('Delete this short link? It will stop redirecting — anywhere it was already pasted will break.');">
+            <input type="hidden" name="csrf" value="<?= h($token) ?>">
+            <input type="hidden" name="form" value="link_delete">
+            <input type="hidden" name="link_id" value="<?= (int) $tl['id'] ?>">
+            <button type="submit" class="btn-tiny btn-danger">Delete</button>
+          </form>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php else: ?>
+    <p class="muted">No tracked links yet — add one below.</p>
+  <?php endif; ?>
+  <form method="post" class="stacked-form" style="margin-top:16px;">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <input type="hidden" name="form" value="link_add">
+    <label>Destination URL
+      <input type="url" name="link_target_url" placeholder="https://example.com/your-page" required>
+    </label>
+    <label>Label <span class="muted">(optional — just for your own reference)</span>
+      <input type="text" name="link_label" placeholder="e.g. Product launch landing page">
+    </label>
+    <button type="submit" class="btn-secondary">Create Short Link</button>
+  </form>
+</section>
+
 <section class="card" data-tab="cta">
   <h2>CTA Library</h2>
   <p class="muted">Reusable calls-to-action, optionally tagged with a funnel stage. Pick one from New Post's "Generate with AI" panel instead of writing a CTA from scratch each time.</p>
@@ -1959,7 +2019,7 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <script>
   (function () {
-    var VALID_TABS = ['company', 'verticals', 'services', 'icps', 'personas', 'tone', 'senders', 'proof', 'documents', 'pillars', 'collections', 'cta', 'tags'];
+    var VALID_TABS = ['company', 'verticals', 'services', 'icps', 'personas', 'tone', 'senders', 'proof', 'documents', 'pillars', 'collections', 'links', 'cta', 'tags'];
     var tabBtns = document.querySelectorAll('#kbTabs .settings-tab-btn');
     var panels = document.querySelectorAll('[data-tab]');
 
