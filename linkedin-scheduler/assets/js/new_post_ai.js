@@ -382,6 +382,13 @@
     } else {
       delete currentCreative.bg_image_opacity;
     }
+    var imageSideSelect = document.getElementById('aiImageSideSelect');
+    var imageSide = imageSideSelect ? imageSideSelect.value : 'right';
+    if (background === 'side_image' && imageSide === 'left') {
+      currentCreative.image_side = 'left';
+    } else {
+      delete currentCreative.image_side;
+    }
     var textPositionSelect = document.getElementById('aiTextPositionSelect');
     var textPosition = textPositionSelect ? textPositionSelect.value : 'top';
     if (textPosition && textPosition !== 'top') {

@@ -249,13 +249,23 @@
   var bgSourceRow = document.getElementById('aiBgImageSourceRow');
   var bgPickerPanel = document.getElementById('aiBgStockPhotoPicker');
   var bgBackgroundSelect = document.getElementById('aiBackgroundSelect');
+  var bgSideRow = document.getElementById('aiBgSideRow');
+  var bgOpacityRow = document.getElementById('aiBgOpacityRow');
   if (bgSourceRow && bgPickerPanel && bgBackgroundSelect) {
     var embedded = initStockPicker('bgStock');
     var bgSourceRadios = bgSourceRow.querySelectorAll('input[name="ai_bg_image_source"]');
 
     function updateBgPickerVisibility() {
-      var isImage = bgBackgroundSelect.value === 'image';
+      var bg = bgBackgroundSelect.value;
+      // 'side_image' (fading side-photo) reuses the exact same
+      // palette-vs-stock/AI-photo picker as 'image' — only the
+      // renderer's interpretation of the resulting photo differs.
+      var isImage = bg === 'image' || bg === 'side_image';
       bgSourceRow.style.display = isImage ? '' : 'none';
+      if (bgSideRow) bgSideRow.style.display = bg === 'side_image' ? '' : 'none';
+      // The tint slider only applies to the full-bleed 'image' style —
+      // 'side_image' has its own fixed gradient scrim instead.
+      if (bgOpacityRow) bgOpacityRow.style.display = bg === 'side_image' ? 'none' : '';
       var wantsStockAi = isImage && bgSourceRow.querySelector('input[name="ai_bg_image_source"]:checked').value === 'stock_ai';
       bgPickerPanel.style.display = wantsStockAi ? 'block' : 'none';
       if (!wantsStockAi && embedded) {

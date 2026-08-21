@@ -260,10 +260,19 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
           <option value="flat"<?= ($creative['background'] ?? 'flat') === 'flat' ? ' selected' : '' ?>>Flat</option>
           <option value="gradient"<?= ($creative['background'] ?? '') === 'gradient' ? ' selected' : '' ?>>Gradient</option>
           <option value="image"<?= ($creative['background'] ?? '') === 'image' ? ' selected' : '' ?>>Image (needs a palette with a background photo uploaded)</option>
+          <option value="side_image"<?= ($creative['background'] ?? '') === 'side_image' ? ' selected' : '' ?>>Side Photo (fading)</option>
         </select>
       </label>
+      <div id="reeditBgSideRow" style="width:100%; margin-top:6px; display:none;">
+        <label>Photo Side
+          <select id="reeditImageSideSelect">
+            <option value="right"<?= ($creative['image_side'] ?? 'right') === 'right' ? ' selected' : '' ?>>Right (text on left)</option>
+            <option value="left"<?= ($creative['image_side'] ?? '') === 'left' ? ' selected' : '' ?>>Left (text on right)</option>
+          </select>
+        </label>
+      </div>
       <?php $bgOpacityVal = (int) ($creative['bg_image_opacity'] ?? 50); ?>
-      <label class="field-row">Background Image Tint <span class="muted">(only applies when Background is "Image" — 0% shows the full photo, 100% fully hides it)</span> <input type="range" id="reeditBgOpacitySlider" min="0" max="100" value="<?= $bgOpacityVal ?>" oninput="this.nextElementSibling.textContent = this.value + '%'"><span><?= $bgOpacityVal ?>%</span></label>
+      <label class="field-row" id="reeditBgOpacityRow">Background Image Tint <span class="muted">(only applies when Background is "Image" — 0% shows the full photo, 100% fully hides it)</span> <input type="range" id="reeditBgOpacitySlider" min="0" max="100" value="<?= $bgOpacityVal ?>" oninput="this.nextElementSibling.textContent = this.value + '%'"><span><?= $bgOpacityVal ?>%</span></label>
       <label>Size
         <select id="reeditSizeSelect">
           <option value="square"<?= ($creative['size'] ?? 'square') === 'square' ? ' selected' : '' ?>>Square (1:1)</option>

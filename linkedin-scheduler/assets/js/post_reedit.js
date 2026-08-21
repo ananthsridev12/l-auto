@@ -12,6 +12,19 @@
   }
   var statusEl = document.getElementById('reeditStatus');
 
+  var reeditBgSelect = document.getElementById('reeditBackgroundSelect');
+  var reeditBgSideRow = document.getElementById('reeditBgSideRow');
+  var reeditBgOpacityRow = document.getElementById('reeditBgOpacityRow');
+  if (reeditBgSelect) {
+    var updateReeditBgRows = function () {
+      var bg = reeditBgSelect.value;
+      if (reeditBgSideRow) reeditBgSideRow.style.display = bg === 'side_image' ? '' : 'none';
+      if (reeditBgOpacityRow) reeditBgOpacityRow.style.display = bg === 'side_image' ? 'none' : '';
+    };
+    reeditBgSelect.addEventListener('change', updateReeditBgRows);
+    updateReeditBgRows();
+  }
+
   btn.addEventListener('click', function () {
     var slides = [];
     document.querySelectorAll('#reeditCard .slide-fieldset').forEach(function (fs) {
@@ -52,6 +65,10 @@
     var bgOpacity = bgOpacityEl ? parseInt(bgOpacityEl.value, 10) : 50;
     if (bg === 'image' && !isNaN(bgOpacity) && bgOpacity !== 50) {
       creative.bg_image_opacity = bgOpacity;
+    }
+    var imageSideEl = document.getElementById('reeditImageSideSelect');
+    if (bg === 'side_image' && imageSideEl && imageSideEl.value === 'left') {
+      creative.image_side = 'left';
     }
     var size = document.getElementById('reeditSizeSelect').value;
     if (size && size !== 'square') {

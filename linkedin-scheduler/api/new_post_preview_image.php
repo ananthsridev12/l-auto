@@ -59,7 +59,13 @@ try {
     json_response(['success' => false, 'error' => 'Could not use the selected background photo: ' . $e->getMessage()], 422);
 }
 if ($bgPath !== null) {
-    $creative['background'] = 'image';
+    // Mirrors pages/new_post.php's save-path handling — don't stomp
+    // 'side_image' (fading side-photo) if that's what was picked, since
+    // it also consumes background_image_override, just rendered
+    // differently.
+    if (($creative['background'] ?? '') !== 'side_image') {
+        $creative['background'] = 'image';
+    }
     $creative['background_image_override'] = $bgPath;
 }
 

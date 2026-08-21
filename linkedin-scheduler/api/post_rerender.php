@@ -72,7 +72,7 @@ if (!$slides) {
 }
 $creative['slides'] = $slides;
 
-foreach (['template', 'layout', 'background', 'size', 'text_position', 'font_scale', 'cta_style', 'series_label', 'accent_literal', 'bg_image_opacity'] as $key) {
+foreach (['template', 'layout', 'background', 'size', 'text_position', 'font_scale', 'cta_style', 'series_label', 'accent_literal', 'bg_image_opacity', 'image_side'] as $key) {
     if (isset($edited[$key]) && $edited[$key] !== '' && $edited[$key] !== null) {
         $creative[$key] = $edited[$key];
     } else {

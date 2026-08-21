@@ -175,7 +175,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/new_post.php');
         }
         if ($bgPath !== null) {
-            $aiCreative['background'] = 'image';
+            // Only force 'image' when the client didn't already pick the
+            // 'side_image' (fading side-photo) style — that style also
+            // consumes background_image_override, just interpreted
+            // differently by the renderer, so it must survive here.
+            if (($aiCreative['background'] ?? '') !== 'side_image') {
+                $aiCreative['background'] = 'image';
+            }
             $aiCreative['background_image_override'] = $bgPath;
             // Persisted back into the row's stored creative_json (not
             // just used for this render) so a later "Re-render Image"
@@ -519,8 +525,17 @@ require __DIR__ . '/../includes/layout_top.php';
             <option value="flat">Flat</option>
             <option value="gradient">Gradient</option>
             <option value="image">Image</option>
+            <option value="side_image">Side Photo (fading)</option>
           </select>
         </label>
+        <div id="aiBgSideRow" style="width:100%; margin-top:6px; display:none;">
+          <label>Photo Side
+            <select id="aiImageSideSelect">
+              <option value="right">Right (text on left)</option>
+              <option value="left">Left (text on right)</option>
+            </select>
+          </label>
+        </div>
         <div id="aiBgImageSourceRow" style="width:100%; margin-top:6px; display:none;">
           <label class="checkbox-row"><input type="radio" name="ai_bg_image_source" value="palette" checked> Use the palette's saved background photo</label>
           <label class="checkbox-row"><input type="radio" name="ai_bg_image_source" value="stock_ai"> Pick a Stock/AI Photo now</label>
@@ -557,7 +572,7 @@ require __DIR__ . '/../includes/layout_top.php';
           <input type="hidden" name="bg_stock_download_location" id="bgStockDownloadLocationField" form="newPostForm">
           <input type="hidden" name="bg_stock_ai_image_b64" id="bgStockAiB64Field" form="newPostForm">
         </div>
-        <label class="field-row">Background Image Tint <span class="muted">(only applies when Background is "Image" — 0% shows the full photo, 100% fully hides it)</span> <input type="range" id="aiBgOpacitySlider" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>50%</span></label>
+        <label class="field-row" id="aiBgOpacityRow">Background Image Tint <span class="muted">(only applies when Background is "Image" — 0% shows the full photo, 100% fully hides it)</span> <input type="range" id="aiBgOpacitySlider" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent = this.value + '%'"><span>50%</span></label>
         <label>Size <span class="muted">(optional)</span>
           <select id="aiSizeSelect">
             <option value="square">Square (1:1)</option>
