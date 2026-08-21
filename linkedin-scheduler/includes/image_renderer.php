@@ -32,6 +32,14 @@ const RENDER_SIZE = 1350;
 const RENDER_SCALE = RENDER_SIZE / 1080.0;
 const RENDER_PAD  = 100; // rs(80)
 const RENDER_BAR  = 10;  // rs(8)
+// 'side_image' background style — fraction of RENDER_SIZE the photo
+// covers. Shared by render_draw_side_fade_image() (how wide to draw
+// it) and render_creative_to_slides() (how much to shrink the text
+// content box so it doesn't run into the photo) so the two can't drift
+// out of sync. ~0.5 (roughly half the canvas) leaves a genuinely
+// readable text column on the other side — much higher and the text
+// zone gets too narrow to wrap comfortably.
+const RENDER_SIDE_IMAGE_WIDTH_PCT = 0.5;
 
 // Width stays RENDER_SIZE (1350) for every size — only height varies —
 // which is what keeps this a small, additive change rather than a full
@@ -59,8 +67,26 @@ function rs(float $px): int
     return (int) round($px * RENDER_SCALE);
 }
 
-function render_content_edges(): array
+// $override/$set follow the same settable-static-state convention as
+// render_font_override_role()/render_font_scale_role() below — a
+// render-scoped configuration read by ~20 call sites throughout this
+// file with no params, so overriding it once per render (rather than
+// threading a param through every one of them) is the low-risk way to
+// shift where content starts. Used by the 'side_image' background
+// style (render_draw_side_fade_image()) when the photo sits on the
+// left, so text doesn't start underneath it — see
+// render_creative_to_slides(), which always sets this explicitly
+// (override or null) at the top of every render, so it can never leak
+// from one post's render into another's within the same request.
+function render_content_edges(?array $override = null, bool $set = false): array
 {
+    static $stored = null;
+    if ($set) {
+        $stored = $override;
+    }
+    if ($stored !== null) {
+        return $stored;
+    }
     $cx = RENDER_BAR + RENDER_PAD;      // 88 — left content edge
     $rx = RENDER_SIZE - RENDER_PAD;     // 1000 — right content edge
     return [$cx, $rx, $rx - $cx];       // [CX, RX, CW]
@@ -909,8 +935,71 @@ function render_draw_background_image($im, string $path, array $bgRgb, int $canv
     return true;
 }
 
-function render_draw_background($im, array $paletteColors, string $bgStyle, ?string $bgImagePath = null, int $canvasH = RENDER_SIZE, int $bgImageTintPct = 50): void
+// Confines a photo to one side of the canvas (full height, $widthPct of
+// RENDER_SIZE wide) and overlays a horizontal gradient scrim in the
+// palette's own bg color — transparent at the photo's outer edge,
+// fully opaque (blending into the solid bg already filled by the
+// caller) at its inner edge, next to where the slide's text sits. An
+// eased ramp (t^1.4) concentrates most of the fade near that inner
+// edge rather than spreading it evenly, so the photo stays clearly
+// visible through most of its width and only blends away right where
+// text might otherwise run into it. $side is 'left' or 'right'.
+function render_draw_side_fade_image($im, string $path, array $bgRgb, string $side, int $canvasH = RENDER_SIZE, float $widthPct = RENDER_SIDE_IMAGE_WIDTH_PCT): bool
 {
+    $info = @getimagesize($path);
+    if (!$info) {
+        return false;
+    }
+    $src = match ($info['mime']) {
+        'image/png'  => @imagecreatefrompng($path),
+        'image/jpeg' => @imagecreatefromjpeg($path),
+        default      => null,
+    };
+    if (!$src) {
+        return false;
+    }
+
+    $imgW = (int) round(RENDER_SIZE * max(0.3, min(0.9, $widthPct)));
+    $sw = imagesx($src);
+    $sh = imagesy($src);
+    $scale = max($imgW / $sw, $canvasH / $sh);
+    $scaledW = (int) ceil($sw * $scale);
+    $scaledH = (int) ceil($sh * $scale);
+    $scaled = imagecreatetruecolor($scaledW, $scaledH);
+    imagecopyresampled($scaled, $src, 0, 0, 0, 0, $scaledW, $scaledH, $sw, $sh);
+    imagedestroy($src);
+
+    $cropX = intdiv($scaledW - $imgW, 2);
+    $cropY = intdiv($scaledH - $canvasH, 2);
+    $destX = $side === 'left' ? 0 : RENDER_SIZE - $imgW;
+    imagecopy($im, $scaled, $destX, 0, $cropX, $cropY, $imgW, $canvasH);
+    imagedestroy($scaled);
+
+    // Strip-by-strip (not true per-pixel) alpha ramp — plenty smooth at
+    // this canvas size and much cheaper than compositing pixel columns.
+    imagealphablending($im, true);
+    $strip = 4;
+    for ($x = 0; $x < $imgW; $x += $strip) {
+        $w = min($strip, $imgW - $x);
+        // 0 at the photo's outer edge, 1 at its inner (text-side) edge.
+        $t = $side === 'right' ? 1 - ($x + $w / 2) / $imgW : ($x + $w / 2) / $imgW;
+        $t = max(0.0, min(1.0, $t));
+        $opacityPct = ($t ** 1.4) * 100;
+        $gdAlpha = (int) round((100 - $opacityPct) / 100 * 127);
+        $overlay = imagecolorallocatealpha($im, $bgRgb[0], $bgRgb[1], $bgRgb[2], $gdAlpha);
+        imagefilledrectangle($im, $destX + $x, 0, $destX + $x + $w - 1, $canvasH, $overlay);
+    }
+    return true;
+}
+
+function render_draw_background($im, array $paletteColors, string $bgStyle, ?string $bgImagePath = null, int $canvasH = RENDER_SIZE, int $bgImageTintPct = 50, string $imageSide = 'right'): void
+{
+    if ($bgStyle === 'side_image' && $bgImagePath && is_file($bgImagePath)) {
+        [$r, $g, $b] = $paletteColors['bg'];
+        imagefilledrectangle($im, 0, 0, RENDER_SIZE, $canvasH, imagecolorallocate($im, $r, $g, $b));
+        render_draw_side_fade_image($im, $bgImagePath, $paletteColors['bg'], $imageSide, $canvasH);
+        return;
+    }
     if ($bgStyle === 'image' && $bgImagePath && is_file($bgImagePath) && render_draw_background_image($im, $bgImagePath, $paletteColors['bg'], $canvasH, $bgImageTintPct)) {
         return;
     }
@@ -2530,7 +2619,7 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     // clashing with palettes that don't specify one.
     $footerNameColorRgb = $paletteColors['signature'] ?? null;
     $layout = array_key_exists($data['layout'] ?? '', render_design_templates()) ? $data['layout'] : 'classic';
-    $bgStyle = in_array($data['background'] ?? '', ['gradient', 'image'], true) ? $data['background'] : 'flat';
+    $bgStyle = in_array($data['background'] ?? '', ['gradient', 'image', 'side_image'], true) ? $data['background'] : 'flat';
     // An ad-hoc background (New Post's Stock/AI Photo picker, used as a
     // one-off background instead of a saved Brand Palette photo) takes
     // priority over the palette's own background_image_path when
@@ -2541,9 +2630,31 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     // unaffected.
     $bgImageOverride = is_string($data['background_image_override'] ?? null) && is_file($data['background_image_override'])
         ? $data['background_image_override'] : null;
-    $bgImagePath = $bgStyle === 'image'
+    $bgImagePath = in_array($bgStyle, ['image', 'side_image'], true)
         ? ($bgImageOverride ?? ($brandUserId ? render_resolve_palette_background_image($data['template'] ?? null, $brandUserId) : null))
         : null;
+    // 'side_image' only — which half of the canvas the photo sits on,
+    // text on the other. Shrinks the text content box via
+    // render_content_edges()'s settable override (below) so text stays
+    // clear of the photo on whichever side it's on, rather than
+    // wrapping/overlapping into it — RENDER_SIDE_IMAGE_WIDTH_PCT
+    // matches render_draw_side_fade_image()'s own default photo width,
+    // so the boundary lines up with where the photo (and its fade)
+    // actually is.
+    $imageSide = ($data['image_side'] ?? '') === 'left' ? 'left' : 'right';
+    if ($bgStyle === 'side_image') {
+        $photoW = (int) round(RENDER_SIZE * RENDER_SIDE_IMAGE_WIDTH_PCT);
+        if ($imageSide === 'left') {
+            $cx = $photoW + RENDER_PAD;
+            $rx = RENDER_SIZE - RENDER_PAD;
+        } else {
+            $cx = RENDER_BAR + RENDER_PAD;
+            $rx = RENDER_SIZE - $photoW - RENDER_PAD;
+        }
+        render_content_edges([$cx, $rx, $rx - $cx], true);
+    } else {
+        render_content_edges(null, true); // explicit reset — this is process-scoped static state, and a caller (e.g. the daily cron) may render several unrelated posts in one run
+    }
     $logoPath = $brandUserId ? resolve_brand_logo($brandUserId, $workspaceId) : null;
     $size = array_key_exists($data['size'] ?? '', RENDER_SIZES) ? $data['size'] : 'square';
     [$canvasW, $canvasH] = RENDER_SIZES[$size];
@@ -2570,41 +2681,52 @@ function render_creative_to_slides(array $data, string $outDir, string $footerNa
     $isSingle = ($data['format'] ?? '') === 'single';
 
     $result = [];
-    if ($isSingle) {
-        $im = imagecreatetruecolor($canvasW, $canvasH);
-        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH, $bgImageTintPct);
-        $p = render_allocate_palette_colors($im, $paletteColors);
-        $p['_accent_literal'] = $accentLiteral;
-        render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition, $ctaStyle);
-        $filename = 'slide_01.png';
-        $path = $outDir . '/' . $filename;
-        imagepng($im, $path);
-        imagedestroy($im);
-        $result[] = ['filename' => $filename, 'filepath' => $path];
-        return $result;
-    }
-
-    foreach ($slides as $slide) {
-        $n = (int) $slide['slide_number'];
-        $im = imagecreatetruecolor($canvasW, $canvasH);
-        render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH, $bgImageTintPct);
-        $p = render_allocate_palette_colors($im, $paletteColors);
-        $p['_accent_literal'] = $accentLiteral;
-
-        if ($n === 1) {
-            render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
-        } elseif ($n === $total) {
-            render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition, $ctaStyle);
-        } else {
-            render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
+    // render_content_edges()'s override (set above) is process-scoped
+    // static state, not scoped to this one call — a finally block
+    // guarantees it's reset even if rendering throws partway through
+    // (font errors, a bad slide, etc.), so a failure here can never
+    // leak a shifted content box into the next unrelated render this
+    // same PHP process happens to do afterward (e.g. the daily cron
+    // rendering several other users' drafts in one run).
+    try {
+        if ($isSingle) {
+            $im = imagecreatetruecolor($canvasW, $canvasH);
+            render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH, $bgImageTintPct, $imageSide);
+            $p = render_allocate_palette_colors($im, $paletteColors);
+            $p['_accent_literal'] = $accentLiteral;
+            render_slide_single($im, $data, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition, $ctaStyle);
+            $filename = 'slide_01.png';
+            $path = $outDir . '/' . $filename;
+            imagepng($im, $path);
+            imagedestroy($im);
+            $result[] = ['filename' => $filename, 'filepath' => $path];
+            return $result;
         }
 
-        $filename = sprintf('slide_%02d.png', $n);
-        $path = $outDir . '/' . $filename;
-        imagepng($im, $path);
-        imagedestroy($im);
-        $result[] = ['filename' => $filename, 'filepath' => $path];
-    }
+        foreach ($slides as $slide) {
+            $n = (int) $slide['slide_number'];
+            $im = imagecreatetruecolor($canvasW, $canvasH);
+            render_draw_background($im, $paletteColors, $bgStyle, $bgImagePath, $canvasH, $bgImageTintPct, $imageSide);
+            $p = render_allocate_palette_colors($im, $paletteColors);
+            $p['_accent_literal'] = $accentLiteral;
 
-    return $result;
+            if ($n === 1) {
+                render_slide_hook($im, $slide, $total, $p, $footerName, $data['series_label'] ?? '', $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
+            } elseif ($n === $total) {
+                render_slide_cta($im, $slide, $total, $p, $footerName, $photoPath, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition, $ctaStyle);
+            } else {
+                render_slide_content($im, $slide, $total, $p, $footerName, $layout, $footerFontRole, $logoPath, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $textPosition);
+            }
+
+            $filename = sprintf('slide_%02d.png', $n);
+            $path = $outDir . '/' . $filename;
+            imagepng($im, $path);
+            imagedestroy($im);
+            $result[] = ['filename' => $filename, 'filepath' => $path];
+        }
+
+        return $result;
+    } finally {
+        render_content_edges(null, true);
+    }
 }
