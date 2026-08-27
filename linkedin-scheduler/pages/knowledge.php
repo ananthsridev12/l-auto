@@ -1794,11 +1794,11 @@ require __DIR__ . '/../includes/layout_top.php';
         <?= render_palette_select_options('', $brandPalettes, true) ?>
       </select>
     </label>
-    <label>Grav route prefix for this pillar <span class="muted">(optional — overrides this workspace's Grav route prefix in Settings for blog posts tagged with this pillar; e.g. a "Product Updates" pillar could route to /blog/product/ while everything else stays under the workspace default)</span>
-      <input type="text" name="pillar_grav_route_prefix" placeholder="/blog/product">
+    <label>Grav route prefix for this pillar <span class="muted">(optional — the "Parent" section this pillar's posts nest under, e.g. /news or /comparisons; overrides this workspace's Grav route prefix in Settings for blog posts tagged with this pillar)</span>
+      <input type="text" name="pillar_grav_route_prefix" placeholder="/news">
     </label>
-    <label>Grav template for this pillar <span class="muted">(optional — overrides this workspace's Grav template)</span>
-      <input type="text" name="pillar_grav_template" placeholder="item">
+    <label>Grav template for this pillar <span class="muted">(optional — the page template name from your Grav site's theme, e.g. news-item or comparison; sets the page's frontmatter template: value, so it must match a template your theme actually defines. Overrides this workspace's Grav template)</span>
+      <input type="text" name="pillar_grav_template" placeholder="news-item">
     </label>
     <button type="submit" class="btn-secondary">Add Content Pillar</button>
   </form>

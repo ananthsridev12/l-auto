@@ -118,13 +118,24 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
     $isUpdate = !empty($blogPost['external_post_id']);
     $route = $isUpdate ? $blogPost['external_post_id'] : grav_post_route($workspace, $blogPost, $pillar);
 
+    // Grav actually renders a page using its frontmatter's own
+    // template: value (header.template below) — the top-level
+    // `template` field on the create request is accepted by the API
+    // plugin's schema but doesn't reliably end up in the saved page's
+    // frontmatter, so a page created without header.template set
+    // silently falls back to Grav's default template instead of the
+    // pillar's ("news-item", "comparison", etc). Both are set here so
+    // the page is correct regardless of what the top-level field does
+    // internally.
+    $template = grav_template($workspace, $pillar);
     $body = [
         'route'    => $route,
         'title'    => $blogPost['title'],
-        'template' => grav_template($workspace, $pillar),
+        'template' => $template,
         'header'   => [
-            'title' => $blogPost['title'],
-            'date'  => date('c'),
+            'title'    => $blogPost['title'],
+            'date'     => date('c'),
+            'template' => $template,
         ],
         'content'  => (string) $blogPost['content_html'],
     ];
