@@ -14,6 +14,46 @@ function grav_configured(array $workspace): bool
     return !empty($workspace['grav_site_url']) && !empty($workspace['grav_api_key']);
 }
 
+// Applies a workspace's own Grav theme's table styling to every
+// <table> in $html — a bare, unclassed <table> (what
+// includes/blog_generate.php's Comparison-type posts produce) gets no
+// styling from most themes and can overflow on mobile. Runs only on
+// the copy of content sent to Grav in grav_publish_post() below, never
+// on the app's own stored blog_posts.content_html — different
+// workspaces can point at different Grav sites with different (or no)
+// table conventions, so this must never be baked into the
+// theme-agnostic content the app itself edits/displays/exports
+// elsewhere (WordPress, Jekyll).
+// $wrapTemplate, if set, must contain a literal "{{TABLE}}" placeholder
+// — the table markup (with $tableClass already merged in) is
+// substituted there. $tableClass is merged into the table's existing
+// class="..." attribute if it has one, rather than replacing it.
+function grav_apply_table_style(string $html, ?string $wrapTemplate, ?string $tableClass): string
+{
+    $wrapTemplate = trim((string) $wrapTemplate);
+    $tableClass = trim((string) $tableClass);
+    if ($wrapTemplate === '' && $tableClass === '') {
+        return $html;
+    }
+    $result = preg_replace_callback('/<table\b([^>]*)>(.*?)<\/table>/is', function (array $m) use ($wrapTemplate, $tableClass) {
+        $attrs = $m[1];
+        if ($tableClass !== '') {
+            if (preg_match('/\bclass\s*=\s*"([^"]*)"/i', $attrs, $cm)) {
+                $merged = trim($cm[1] . ' ' . $tableClass);
+                $attrs = preg_replace('/\bclass\s*=\s*"[^"]*"/i', 'class="' . htmlspecialchars($merged, ENT_QUOTES) . '"', $attrs, 1);
+            } else {
+                $attrs .= ' class="' . htmlspecialchars($tableClass, ENT_QUOTES) . '"';
+            }
+        }
+        $table = '<table' . $attrs . '>' . $m[2] . '</table>';
+        if ($wrapTemplate !== '' && str_contains($wrapTemplate, '{{TABLE}}')) {
+            return str_replace('{{TABLE}}', $table, $wrapTemplate);
+        }
+        return $table;
+    }, $html);
+    return $result ?? $html;
+}
+
 function grav_site_url(array $workspace): string
 {
     return rtrim((string) $workspace['grav_site_url'], '/');
@@ -137,7 +177,7 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
             'date'     => date('c'),
             'template' => $template,
         ],
-        'content'  => (string) $blogPost['content_html'],
+        'content'  => grav_apply_table_style((string) $blogPost['content_html'], $workspace['grav_table_wrap_html'] ?? null, $workspace['grav_table_class'] ?? null),
     ];
     if (!empty($blogPost['meta_description']) || !empty($blogPost['keywords'])) {
         $body['header']['metadata'] = array_filter([

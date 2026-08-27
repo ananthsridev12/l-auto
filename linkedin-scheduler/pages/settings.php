@@ -107,12 +107,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (($_POST['form'] ?? '') === 'grav_settings') {
-        db()->prepare('UPDATE workspaces SET grav_site_url = ?, grav_api_key = ?, grav_route_prefix = ?, grav_template = ? WHERE id = ?')
+        db()->prepare('UPDATE workspaces SET grav_site_url = ?, grav_api_key = ?, grav_route_prefix = ?, grav_template = ?, grav_table_wrap_html = ?, grav_table_class = ? WHERE id = ?')
             ->execute([
                 rtrim(trim($_POST['grav_site_url'] ?? ''), '/') ?: null,
                 trim($_POST['grav_api_key'] ?? '') ?: null,
                 trim($_POST['grav_route_prefix'] ?? '', '/') ?: null,
                 trim($_POST['grav_template'] ?? '') ?: null,
+                trim($_POST['grav_table_wrap_html'] ?? '') ?: null,
+                trim($_POST['grav_table_class'] ?? '') ?: null,
                 $workspaceId,
             ]);
         flash('success', 'Grav connection saved.');
@@ -975,6 +977,12 @@ require __DIR__ . '/../includes/layout_top.php';
     </div>
     <label>API Key
       <input type="password" name="grav_api_key" value="<?= h($workspace['grav_api_key'] ?? '') ?>" placeholder="grav_..." autocomplete="off">
+    </label>
+    <label>Table wrapper HTML <span class="muted">(optional — for Comparison-type posts, which include a raw &lt;table&gt;. Paste your theme's wrapper markup with a literal <code>{{TABLE}}</code> placeholder where the table itself goes, e.g. <code>&lt;div class="table-wrap"&gt;{{TABLE}}&lt;/div&gt;</code>. Leave blank to publish tables as-is.)</span>
+      <textarea name="grav_table_wrap_html" rows="2" placeholder='<div class="table-wrap">{{TABLE}}</div>'><?= h($workspace['grav_table_wrap_html'] ?? '') ?></textarea>
+    </label>
+    <label>Table CSS class <span class="muted">(optional — added to the &lt;table&gt; tag itself, e.g. "compare")</span>
+      <input type="text" name="grav_table_class" value="<?= h($workspace['grav_table_class'] ?? '') ?>" placeholder="compare">
     </label>
     <button type="submit" class="btn-secondary">Save Grav Connection</button>
   </form>
