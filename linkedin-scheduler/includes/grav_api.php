@@ -95,7 +95,7 @@ function grav_test_connection(array $workspace): array
     return ['success' => true, 'user' => grav_site_url($workspace)];
 }
 
-// POST /api/v1/pages (create) or PUT /api/v1/pages/{route} (update —
+// POST /api/v1/pages (create) or PATCH /api/v1/pages/{route} (update —
 // when external_post_id, which stores the page's route, is already
 // set). Same return contract as wordpress_publish_post()/
 // jekyll_publish_post() so call sites can branch on publish_target
@@ -139,7 +139,10 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CUSTOMREQUEST  => $isUpdate ? 'PUT' : 'POST',
+        // Grav's API plugin only allows GET/DELETE/PATCH on an existing
+        // page's route (PUT gets a 405) — POST is create-only, at the
+        // collection endpoint, not the per-page one.
+        CURLOPT_CUSTOMREQUEST  => $isUpdate ? 'PATCH' : 'POST',
         CURLOPT_HTTPHEADER     => grav_auth_headers($workspace),
         CURLOPT_POSTFIELDS     => json_encode($body),
         CURLOPT_TIMEOUT        => 30,
@@ -219,7 +222,7 @@ function grav_set_published(array $workspace, array $blogPost, bool $published):
     if (empty($blogPost['external_post_id'])) {
         return ['success' => false, 'error' => 'This post has no Grav page to update yet.'];
     }
-    return grav_page_request($workspace, $blogPost['external_post_id'], 'PUT', ['header' => ['published' => $published]]);
+    return grav_page_request($workspace, $blogPost['external_post_id'], 'PATCH', ['header' => ['published' => $published]]);
 }
 
 // A real, permanent delete — unlike grav_set_published(false, ...) the
