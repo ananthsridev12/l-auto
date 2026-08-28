@@ -96,6 +96,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'meta_description' => trim($_POST['meta_description'] ?? '') ?: null,
             'keywords'         => trim($_POST['keywords'] ?? '') ?: null,
             'content_html'     => $_POST['content_html'] ?? $existing['content_html'],
+            // Grav-only taxonomy — see the site's own taxonomy reference
+            // doc: category is News-fixed-enum/Blog-free-label,
+            // service is the exact URL slug of a /services/ page,
+            // industry is a plain (non-taxonomy) header field. All
+            // optional; grav_publish_post() only sends what's set.
+            'grav_category'    => trim($_POST['grav_category'] ?? '') ?: null,
+            'grav_service'     => trim($_POST['grav_service'] ?? '') ?: null,
+            'grav_industry'    => trim($_POST['grav_industry'] ?? '') ?: null,
         ];
         if (in_array($_POST['publish_target'] ?? null, ['wordpress', 'jekyll', 'grav'], true)) {
             $fields['publish_target'] = $_POST['publish_target'];
@@ -225,6 +233,11 @@ if ($postId) {
     ]);
     $resolvedTarget = blog_resolve_publish_target($workspace, $post);
     $publishPlatformLabel = $platformLabels[$resolvedTarget] ?? 'WordPress';
+    // Only meaningful for Grav (see includes/grav_api.php's taxonomy
+    // block) — the resolved template decides whether Category is a
+    // fixed News enum or a free Blog label, per the site's own
+    // taxonomy reference doc.
+    $resolvedGravTemplate = $resolvedTarget === 'grav' ? grav_template($workspace, $postPillar) : null;
     // A post stays field-locked while it has a live (or hidden-but-still-
     // there) remote copy — 'unpublished' means the Grav page still
     // exists, just hidden, same reasoning as 'published'.
@@ -320,6 +333,49 @@ if ($postId) {
         <label>Keywords
           <input type="text" name="keywords" value="<?= h($post['keywords'] ?? '') ?>" <?= $locked ? 'disabled' : '' ?>>
         </label>
+        <?php
+          // Maps 1:1 to the site's taxonomy reference doc's "Quick
+          // reference by content type" table for the 5 templates it
+          // names. An unrecognized/unset template (e.g. the workspace
+          // is still on Grav's generic "item" default, never
+          // customized) permissively shows all three rather than
+          // hiding them — an unused field here is simply never sent
+          // (grav_publish_post() only includes what's set), while
+          // hiding a genuinely needed one would be a real gap.
+          $knownGravTemplates = ['news-item', 'blog-item', 'portfolio-detail', 'case-study-detail', 'glossary-term'];
+          $isKnownTemplate = in_array($resolvedGravTemplate, $knownGravTemplates, true);
+          $showGravCategory = !$isKnownTemplate || in_array($resolvedGravTemplate, ['news-item', 'blog-item'], true);
+          $showGravService = !$isKnownTemplate || in_array($resolvedGravTemplate, ['blog-item', 'portfolio-detail', 'case-study-detail'], true);
+          $showGravIndustry = !$isKnownTemplate || in_array($resolvedGravTemplate, ['portfolio-detail', 'case-study-detail'], true);
+        ?>
+        <?php if ($resolvedTarget === 'grav'): ?>
+        <?php if ($showGravCategory): ?>
+          <?php if ($resolvedGravTemplate === 'news-item'): ?>
+            <label>Grav Category <span class="muted">(required by the site's taxonomy — News uses a fixed list)</span>
+              <select name="grav_category" <?= $locked ? 'disabled' : '' ?>>
+                <option value="">— None —</option>
+                <?php foreach (['Company', 'Product', 'Industry'] as $cat): ?>
+                  <option value="<?= h($cat) ?>"<?= $post['grav_category'] === $cat ? ' selected' : '' ?>><?= h($cat) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+          <?php else: ?>
+            <label>Grav Category <span class="muted">(optional — free label, e.g. "Strategy"; check existing Blog posts before introducing a new one)</span>
+              <input type="text" name="grav_category" value="<?= h($post['grav_category'] ?? '') ?>" <?= $locked ? 'disabled' : '' ?>>
+            </label>
+          <?php endif; ?>
+        <?php endif; ?>
+        <?php if ($showGravService): ?>
+          <label>Grav Service <span class="muted">(optional — the exact URL slug of the related /services/ page, e.g. "analytics-tracking"; adds a "See this service" link and pulls this post into that service's Related Work)</span>
+            <input type="text" name="grav_service" value="<?= h($post['grav_service'] ?? '') ?>" <?= $locked ? 'disabled' : '' ?>>
+          </label>
+        <?php endif; ?>
+        <?php if ($showGravIndustry): ?>
+          <label>Grav Industry <span class="muted">(optional — Portfolio/Case Study only, e.g. "Retail / Ecommerce")</span>
+            <input type="text" name="grav_industry" value="<?= h($post['grav_industry'] ?? '') ?>" <?= $locked ? 'disabled' : '' ?>>
+          </label>
+        <?php endif; ?>
+        <?php endif; ?>
         <?php if ($contentPillars): ?>
         <label>Content Pillar <span class="muted">(optional — a pillar with its own Grav route prefix/template routes this post there instead of the workspace default)</span>
           <select name="content_pillar_id" <?= $locked ? 'disabled' : '' ?>>

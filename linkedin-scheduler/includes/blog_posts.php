@@ -70,7 +70,7 @@ function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $
 
 function update_blog_post(int $userId, int $id, array $fields): void
 {
-    $allowed = ['title', 'slug', 'meta_description', 'keywords', 'content_html', 'publish_target', 'content_pillar_id', 'content_type', 'collection_id'];
+    $allowed = ['title', 'slug', 'meta_description', 'keywords', 'content_html', 'publish_target', 'content_pillar_id', 'content_type', 'collection_id', 'grav_category', 'grav_service', 'grav_industry'];
     $sets = [];
     $params = [];
     foreach ($allowed as $col) {

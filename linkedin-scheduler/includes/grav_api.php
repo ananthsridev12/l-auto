@@ -199,7 +199,18 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
         'description' => $blogPost['meta_description'] ?? null,
         'keywords'    => $blogPost['keywords'] ?? null,
     ]);
-    $buildBody = function (string $forRoute) use ($blogPost, $workspace, $template, $metadata): array {
+    // Per the site's own taxonomy reference doc: category/service live
+    // under header.taxonomy as single-value arrays; industry is a
+    // PLAIN header field, deliberately NOT nested under taxonomy (a
+    // taxonomy.industry key is inert — no template reads it). Only
+    // fields that are actually set get sent, so a post with none of
+    // these filled in publishes exactly as it did before this existed.
+    $taxonomy = array_filter([
+        'category' => !empty($blogPost['grav_category']) ? [$blogPost['grav_category']] : null,
+        'service'  => !empty($blogPost['grav_service']) ? [$blogPost['grav_service']] : null,
+    ]);
+    $industry = trim((string) ($blogPost['grav_industry'] ?? ''));
+    $buildBody = function (string $forRoute) use ($blogPost, $workspace, $template, $metadata, $taxonomy, $industry): array {
         $header = [
             'title'    => $blogPost['title'],
             'date'     => date('c'),
@@ -207,6 +218,12 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
         ];
         if ($metadata) {
             $header['metadata'] = $metadata;
+        }
+        if ($taxonomy) {
+            $header['taxonomy'] = $taxonomy;
+        }
+        if ($industry !== '') {
+            $header['industry'] = $industry;
         }
         return [
             'route'    => $forRoute,
