@@ -146,9 +146,12 @@ function grav_test_connection(array $workspace): array
 //
 // $pillar is $blogPost's own content_pillars row (or null if untagged)
 // — only consulted for a brand-new page's route/template (see
-// grav_route_prefix()/grav_template()); an update always PUTs to the
+// grav_route_prefix()/grav_template()); an update normally PATCHes the
 // route the page was first created at, regardless of the pillar it's
-// tagged with now, same as editing a page in place rather than moving it.
+// tagged with now, same as editing a page in place rather than moving
+// it — except when that route 404s (the page was deleted directly on
+// Grav, outside this app), in which case this falls back to creating a
+// fresh page instead of leaving the post stuck (see below).
 function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = null): array
 {
     if (!grav_configured($workspace)) {
@@ -168,51 +171,78 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
     // the page is correct regardless of what the top-level field does
     // internally.
     $template = grav_template($workspace, $pillar);
-    $body = [
-        'route'    => $route,
-        'title'    => $blogPost['title'],
-        'template' => $template,
-        'header'   => [
+    $metadata = array_filter([
+        'description' => $blogPost['meta_description'] ?? null,
+        'keywords'    => $blogPost['keywords'] ?? null,
+    ]);
+    $buildBody = function (string $forRoute) use ($blogPost, $workspace, $template, $metadata): array {
+        $header = [
             'title'    => $blogPost['title'],
             'date'     => date('c'),
             'template' => $template,
-        ],
-        'content'  => grav_apply_table_style((string) $blogPost['content_html'], $workspace['grav_table_wrap_html'] ?? null, $workspace['grav_table_class'] ?? null),
-    ];
-    if (!empty($blogPost['meta_description']) || !empty($blogPost['keywords'])) {
-        $body['header']['metadata'] = array_filter([
-            'description' => $blogPost['meta_description'] ?? null,
-            'keywords'    => $blogPost['keywords'] ?? null,
+        ];
+        if ($metadata) {
+            $header['metadata'] = $metadata;
+        }
+        return [
+            'route'    => $forRoute,
+            'title'    => $blogPost['title'],
+            'template' => $template,
+            'header'   => $header,
+            'content'  => grav_apply_table_style((string) $blogPost['content_html'], $workspace['grav_table_wrap_html'] ?? null, $workspace['grav_table_class'] ?? null),
+        ];
+    };
+
+    $doRequest = function (bool $update, string $forRoute) use ($workspace, $buildBody): array {
+        $url = grav_site_url($workspace) . '/api/v1/pages' . ($update ? '/' . ltrim($forRoute, '/') : '');
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            // Grav's API plugin only allows GET/DELETE/PATCH on an
+            // existing page's route (PUT gets a 405) — POST is
+            // create-only, at the collection endpoint, not the per-page
+            // one.
+            CURLOPT_CUSTOMREQUEST  => $update ? 'PATCH' : 'POST',
+            CURLOPT_HTTPHEADER     => grav_auth_headers($workspace),
+            CURLOPT_POSTFIELDS     => json_encode($buildBody($forRoute)),
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 3,
         ]);
+        $response = curl_exec($ch);
+        if ($response === false) {
+            $err = curl_error($ch);
+            curl_close($ch);
+            return ['status' => 0, 'error' => "Grav publish failed: {$err}"];
+        }
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        return ['status' => $status, 'data' => json_decode((string) $response, true)];
+    };
+
+    $result = $doRequest($isUpdate, $route);
+    // Self-heals a page deleted directly on the Grav site (bypassing
+    // this app entirely) — the app's own stored external_post_id still
+    // points at that now-gone route, so the PATCH above 404s. Since the
+    // whole point of "Publish Now" here is "make this content live",
+    // silently falling back to creating a brand-new page (a fresh
+    // route, since the old slug may already be freed up for a
+    // different page) achieves that goal instead of leaving the post
+    // permanently stuck — see also grav_delete_post()'s matching
+    // idempotent-404 handling, the other way to reach this same
+    // recovered state.
+    if ($isUpdate && $result['status'] === 404) {
+        $route = grav_post_route($workspace, $blogPost, $pillar);
+        $result = $doRequest(false, $route);
     }
 
-    $url = grav_site_url($workspace) . '/api/v1/pages' . ($isUpdate ? '/' . ltrim($route, '/') : '');
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        // Grav's API plugin only allows GET/DELETE/PATCH on an existing
-        // page's route (PUT gets a 405) — POST is create-only, at the
-        // collection endpoint, not the per-page one.
-        CURLOPT_CUSTOMREQUEST  => $isUpdate ? 'PATCH' : 'POST',
-        CURLOPT_HTTPHEADER     => grav_auth_headers($workspace),
-        CURLOPT_POSTFIELDS     => json_encode($body),
-        CURLOPT_TIMEOUT        => 30,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS      => 3,
-    ]);
-    $response = curl_exec($ch);
-    if ($response === false) {
-        $err = curl_error($ch);
-        curl_close($ch);
-        return ['success' => false, 'error' => "Grav publish failed: {$err}"];
+    if (isset($result['error'])) {
+        return ['success' => false, 'error' => $result['error']];
     }
-    $status_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    $data = json_decode((string) $response, true);
-    $page = $data['data'] ?? null;
-    if ($status_code < 200 || $status_code >= 300 || !isset($page['route'])) {
-        $msg = $data['message'] ?? substr((string) $response, 0, 300);
-        return ['success' => false, 'error' => "Grav publish failed (HTTP {$status_code}): {$msg}"];
+    $page = $result['data']['data'] ?? null;
+    if ($result['status'] < 200 || $result['status'] >= 300 || !isset($page['route'])) {
+        $msg = $result['data']['message'] ?? substr(json_encode($result['data']), 0, 300);
+        return ['success' => false, 'error' => "Grav publish failed (HTTP {$result['status']}): {$msg}"];
     }
 
     return [
@@ -226,7 +256,11 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
 // below — both act on an already-published page's route rather than
 // creating one, so both need the same "no page to act on" guard and
 // the same request/response handling grav_publish_post() has inline.
-function grav_page_request(array $workspace, string $route, string $method, ?array $body = null): array
+// $notFoundIsSuccess: for DELETE only — see grav_delete_post(). A 404
+// means Grav has no such page, which for every other method here is a
+// genuine failure (nothing to update), but for a delete it means the
+// goal ("this page shouldn't exist") is already achieved.
+function grav_page_request(array $workspace, string $route, string $method, ?array $body = null, bool $notFoundIsSuccess = false): array
 {
     $opts = [
         CURLOPT_RETURNTRANSFER => true,
@@ -249,6 +283,9 @@ function grav_page_request(array $workspace, string $route, string $method, ?arr
     }
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    if ($status === 404 && $notFoundIsSuccess) {
+        return ['success' => true];
+    }
     if ($status < 200 || $status >= 300) {
         $data = json_decode((string) $response, true);
         $msg = $data['message'] ?? substr((string) $response, 0, 300);
@@ -257,14 +294,20 @@ function grav_page_request(array $workspace, string $route, string $method, ?arr
     return ['success' => true];
 }
 
-// Soft "mark as deleted" — sets header.published = false via PUT rather
-// than removing the page, so it's reversible (grav_set_published(...,
+// Soft "mark as deleted" — sets header.published = false via PATCH
+// rather than removing the page, so it's reversible (grav_set_published(...,
 // true) to bring it back) and every other bit of page content/history
 // stays intact. This is a dedicated action rather than something
-// grav_publish_post() folds into its normal update PUT, specifically so
-// a routine content edit never silently flips this flag back on: only
-// this function (called from an explicit Unpublish/Republish button,
-// see pages/blog_studio.php) ever touches it.
+// grav_publish_post() folds into its normal update PATCH, specifically
+// so a routine content edit never silently flips this flag back on:
+// only this function (called from an explicit Unpublish/Republish
+// button, see pages/blog_studio.php) ever touches it.
+//
+// Unlike grav_delete_post() below, a 404 here is a genuine error, not
+// treated as success — there's no local state change
+// (published/unpublished) that makes sense to record for a page that
+// doesn't exist; the recovery path is grav_delete_post() (or a fresh
+// "Publish Now", which self-heals the same way — see grav_publish_post()).
 function grav_set_published(array $workspace, array $blogPost, bool $published): array
 {
     if (!grav_configured($workspace)) {
@@ -280,8 +323,18 @@ function grav_set_published(array $workspace, array $blogPost, bool $published):
 // page itself is gone from Grav afterward, not just hidden. Callers
 // should clear external_post_id/external_url on success (see
 // mark_blog_post_deleted_from_platform() in includes/blog_posts.php) so
-// a later "Publish Now" creates a fresh page rather than PUTing to a
+// a later "Publish Now" creates a fresh page rather than PATCHing a
 // route that no longer exists.
+//
+// Idempotent by design (notFoundIsSuccess): if the page was already
+// deleted directly on the Grav site (bypassing this app entirely),
+// this app's own bookkeeping is still stuck thinking it's published —
+// a 404 here means the underlying goal (no such page in Grav) is
+// already true, so this still succeeds and lets the caller clear its
+// own tracking. That's the only way to get an already-"published"
+// post (whose Edit/Publish Now UI stays hidden while it's in that
+// status) back to a re-publishable Draft state when Grav's copy is
+// gone — see pages/blog_studio.php's "Delete Permanently from Grav".
 function grav_delete_post(array $workspace, array $blogPost): array
 {
     if (!grav_configured($workspace)) {
@@ -290,5 +343,5 @@ function grav_delete_post(array $workspace, array $blogPost): array
     if (empty($blogPost['external_post_id'])) {
         return ['success' => false, 'error' => 'This post has no Grav page to delete.'];
     }
-    return grav_page_request($workspace, $blogPost['external_post_id'], 'DELETE');
+    return grav_page_request($workspace, $blogPost['external_post_id'], 'DELETE', null, true);
 }

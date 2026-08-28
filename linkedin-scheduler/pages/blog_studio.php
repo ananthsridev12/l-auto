@@ -281,7 +281,7 @@ if ($postId) {
     <?php if ($isGravManaged && $post['status'] !== 'draft'): ?>
     <section class="card">
       <h2>Grav Page Management</h2>
-      <p class="muted">The page still exists on Grav even when unpublished — only "Delete Permanently" actually removes it.</p>
+      <p class="muted">The page still exists on Grav even when unpublished — only "Delete Permanently" actually removes it. If the page was already deleted directly on the Grav site itself (outside this app), use "Delete Permanently" here too — it clears this post back to a Draft you can edit and Publish Now again, which creates a fresh page.</p>
       <?php if ($post['status'] === 'unpublished'): ?>
         <form method="post" style="display:inline-block; margin-right:12px;">
           <input type="hidden" name="csrf" value="<?= h($token) ?>">
