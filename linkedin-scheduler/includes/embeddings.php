@@ -12,7 +12,13 @@
 function ai_generate_embedding(string $text, array $aiConfig): ?array
 {
     $text = trim($text);
-    if ($text === '') {
+    // A workspace with no AI key at all still has provider defaulted to
+    // AI_PROVIDER_DEFAULT (resolve_ai_config()) with api_key left null —
+    // guard here rather than let ai_embed_gemini()/ai_embed_openai()'s
+    // non-nullable string param fatal-error every caller (e.g. Content
+    // Studio's confirm step, which calls this even for 100%
+    // pre-written/no-AI-needed CSV rows).
+    if ($text === '' || empty($aiConfig['api_key'])) {
         return null;
     }
     return match ($aiConfig['provider'] ?? '') {

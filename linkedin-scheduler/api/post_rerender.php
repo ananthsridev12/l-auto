@@ -65,6 +65,11 @@ foreach (array_values($edited['slides']) as $i => $slide) {
         'subheading'   => trim((string) ($slide['subheading'] ?? '')),
         'body'         => trim((string) ($slide['body'] ?? '')),
         'points'       => $points,
+        // Only the reedit UI's last slide actually carries a value
+        // (render_slide_cta()/render_slide_single() only ever read it
+        // off the slide that renders a CTA banner) — empty string on
+        // every other slide is harmless, never read.
+        'cta'          => trim((string) ($slide['cta'] ?? '')),
     ];
 }
 if (!$slides) {

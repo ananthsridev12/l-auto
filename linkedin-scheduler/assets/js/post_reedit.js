@@ -25,6 +25,14 @@
     updateReeditBgRows();
   }
 
+  var reeditCtaEnabled = document.getElementById('reeditCtaEnabled');
+  var reeditCtaFields = document.getElementById('reeditCtaFields');
+  if (reeditCtaEnabled && reeditCtaFields) {
+    reeditCtaEnabled.addEventListener('change', function () {
+      reeditCtaFields.style.display = reeditCtaEnabled.checked ? 'block' : 'none';
+    });
+  }
+
   btn.addEventListener('click', function () {
     var slides = [];
     document.querySelectorAll('#reeditCard .slide-fieldset').forEach(function (fs) {
@@ -37,6 +45,14 @@
           .filter(function (p) { return p !== ''; }),
       });
     });
+    // CTA is a separate field from Points on whichever slide it renders
+    // on (the last one for a Carousel, the only one for Single Image) —
+    // see render_slide_cta()/render_slide_single()'s $slide['cta'].
+    var reeditCtaText = document.getElementById('reeditCtaText');
+    var ctaValue = reeditCtaEnabled && reeditCtaEnabled.checked && reeditCtaText ? reeditCtaText.value.trim() : '';
+    if (slides.length) {
+      slides[slides.length - 1].cta = ctaValue;
+    }
 
     var creative = { slides: slides };
     var seriesLabelEl = document.getElementById('reeditSeriesLabelInput');
@@ -46,6 +62,10 @@
     var accentLiteralEl = document.getElementById('reeditAccentLiteralToggle');
     if (accentLiteralEl && accentLiteralEl.checked) {
       creative.accent_literal = true;
+    }
+    var reeditCtaStyleEl = document.getElementById('reeditCtaStyleSelect');
+    if (ctaValue && reeditCtaStyleEl && reeditCtaStyleEl.value !== 'text') {
+      creative.cta_style = reeditCtaStyleEl.value;
     }
     var tpl = document.getElementById('reeditTemplateSelect').value;
     if (tpl.indexOf('custom:') === 0) {

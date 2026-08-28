@@ -2435,12 +2435,23 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     render_draw_counter($im, (int) $slide['slide_number'], $total, $p);
 
     $topY = render_draw_logo($im, $logoPath, $cx, RENDER_PAD + rs(12), rs(40));
-    // The CTA checkbox's bake-in writes the exact line into this slide's
-    // first point — drawn in the photo footer's defined right-hand slot
-    // (render_footer_with_photo()'s $cta param), same idea as Single
-    // Image's plain footer, not as a content-block banner. The photo +
-    // "Follow for more insights" signature is untouched either way.
-    $cta = trim($slide['points'][0] ?? '');
+    // A dedicated field, same as Single Image's $slide['cta'] — drawn in
+    // the photo footer's defined right-hand slot
+    // (render_footer_with_photo()'s $cta param), not as a content-block
+    // banner. The photo + "Follow for more insights" signature is
+    // untouched either way.
+    $cta = trim($slide['cta'] ?? '');
+    $points = array_slice($slide['points'] ?? [], 0, 6);
+    // Backward compatibility: before this field existed, the CTA
+    // checkbox/AI schema baked the CTA line into this slide's sole
+    // point instead of a dedicated field — old stored creative_json
+    // (re-rendered without being re-edited) still has that shape.
+    // Anything with more than one point is unambiguously real bullet
+    // content, not a legacy CTA-only slide, so it's left alone and
+    // rendered as points below, same as every other content slide.
+    if ($cta === '' && count($points) === 1) {
+        $cta = array_shift($points);
+    }
 
     if ($preset['stat'] ?? false) {
         render_stat_content($im, $slide, $cx, $topY, $cw, $p, $preset, $textPosition, ($canvasH - rs(360)) - rs(50));
@@ -2463,8 +2474,16 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     $subheadingHeight = render_subheading_height($subheading, $cw);
     $ruleGap = render_headline_rule_gap($preset['barStyle']);
     $bodyHeight = $bodyIsBoxed ? render_body_boxed_height($body, $cw) : render_body_freestanding_height($body, $cw);
+    $bodyGap = $body !== '' ? rs(22) : 0;
 
-    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight;
+    // Same fit-to-space points sizing as render_slide_content() — the
+    // CTA slide can carry real bullet points same as any other slide,
+    // independent of whether a footer CTA banner is also shown.
+    $simulatedPointsStartY = $topY + $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap;
+    $cardSize = render_fit_font_size($points, $simulatedPointsStartY, rs(894) - rs(80), [rss('points', 26), rss('points', 23), rss('points', 20), rss('points', 18)], fn ($item, $size) => render_numbered_card_height($item, $size, $preset['listStyle']));
+    $pointsHeight = array_sum(array_map(fn ($item) => render_numbered_card_height($item, $cardSize, $preset['listStyle']), $points));
+
+    $totalContentHeight = $headlineHeight + $subheadingHeight + $ruleGap + $bodyHeight + $bodyGap + $pointsHeight;
     $bottomBound = ($canvasH - rs(360)) - rs(50);
     $y = render_resolve_start_y($textPosition, $totalContentHeight, $topY, $bottomBound);
 
@@ -2477,6 +2496,12 @@ function render_slide_cta($im, array $slide, int $total, array $p, string $name,
     $y = $bodyIsBoxed
         ? render_body_boxed($im, $body, $y, $p, $cx, $cw)
         : render_body_freestanding($im, $body, $y, $p, $cx, $cw);
+    if ($body !== '') {
+        $y += rs(22);
+    }
+    foreach ($points as $i => $point) {
+        $y = render_numbered_card($im, $i + 1, $point, $y, $p, $cardSize, $preset['listStyle']);
+    }
 
     render_footer_with_photo($im, $y, $p, $name, $photoPath, $preset['barStyle'], $footerFontRole, $footerNameColorRgb, $footerNameSizeOverride, $canvasH, $cta, $ctaStyle);
 }

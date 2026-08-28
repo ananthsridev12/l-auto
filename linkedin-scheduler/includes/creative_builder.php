@@ -44,6 +44,11 @@ function build_creative_single(array $row, string $caption): array
             'headline'     => $title,
             'body'         => $body,
             'points'       => $points,
+            // The CSV's own CTA column, drawn as a footer banner — see
+            // render_slide_single()'s $slide['cta']. Independent of
+            // Points above, so a pre-written row can have both real
+            // bullet points and a CTA banner.
+            'cta'          => trim($row['CTA'] ?? ''),
         ]],
     ];
 }
@@ -65,6 +70,15 @@ function build_creative_carousel(array $row, string $caption): array
             'body'         => $body,
             'points'       => $points,
         ];
+    }
+
+    // The CSV's own CTA column, drawn as a footer banner on the LAST
+    // slide only — see render_slide_cta()'s $slide['cta']. Independent
+    // of that slide's Points, so a pre-written row can have real
+    // bullet points AND a CTA banner on the same closing slide.
+    $ctaValue = trim($row['CTA'] ?? '');
+    if ($ctaValue !== '' && $slides) {
+        $slides[count($slides) - 1]['cta'] = $ctaValue;
     }
 
     return [

@@ -240,6 +240,15 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
     <span class="post-title-text"><?= h($post['title']) ?></span>
   </div>
 
+  <?php
+    // The slide a CTA banner actually renders on — the last slide for a
+    // Carousel (render_slide_cta()), the only slide for Single Image
+    // (render_slide_single()). See includes/creative_builder.php for
+    // where this field is first populated (CSV's CTA column / AI
+    // generation) — this is the only place it can be edited afterward.
+    $ctaSlideIdx = $post['format'] === 'Carousel' ? count($creative['slides'] ?? []) - 1 : 0;
+    $existingCta = $ctaSlideIdx >= 0 ? trim((string) ($creative['slides'][$ctaSlideIdx]['cta'] ?? '')) : '';
+  ?>
   <?php if ($canReedit): ?>
   <div class="post-composer">
     <div class="post-col-input">
@@ -247,6 +256,17 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
       <label class="field-row">Eyebrow / Series Label <span class="muted">(optional — small label above the logo on slide 1)</span>
         <input type="text" id="reeditSeriesLabelInput" value="<?= h($creative['series_label'] ?? '') ?>">
       </label>
+      <label class="checkbox-row"><input type="checkbox" id="reeditCtaEnabled"<?= $existingCta !== '' ? ' checked' : '' ?>> Include a CTA <span class="muted">(shown as a banner in the image's footer<?= $post['format'] === 'Carousel' ? ', on the last slide' : '' ?>)</span></label>
+      <div id="reeditCtaFields" style="width:100%; margin-top:6px; display:<?= $existingCta !== '' ? 'block' : 'none' ?>;">
+        <input type="text" id="reeditCtaText" placeholder="e.g. Book a call with our team" style="width:100%;" value="<?= h($existingCta) ?>">
+        <label class="field-row" style="margin-top:6px;">CTA Style
+          <select id="reeditCtaStyleSelect">
+            <option value="text"<?= ($creative['cta_style'] ?? 'text') === 'text' ? ' selected' : '' ?>>Text (default)</option>
+            <option value="button"<?= ($creative['cta_style'] ?? '') === 'button' ? ' selected' : '' ?>>Button</option>
+            <option value="outline"<?= ($creative['cta_style'] ?? '') === 'outline' ? ' selected' : '' ?>>Outline Button</option>
+          </select>
+        </label>
+      </div>
       <label class="checkbox-row"><input type="checkbox" id="reeditAccentLiteralToggle"<?= !empty($creative['accent_literal']) ? ' checked' : '' ?>> Use accent color literally for <code>**bold**</code> text <span class="muted">(skips the safe headline/body swap — only enable if your accent color has good contrast against the background)</span></label>
       <label>Color Palette
         <select id="reeditTemplateSelect">

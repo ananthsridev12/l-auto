@@ -230,7 +230,7 @@ RULES;
         } elseif ($last > 3) {
             $positions[] = "- Slides 2-" . ($last - 1) . " (Content): Headline + Body + EXACTLY 3 points";
         }
-        $positions[] = "- Slide {$last} (CTA): Headline + Body + exactly 1 point, which is the CTA line";
+        $positions[] = "- Slide {$last} (CTA): Headline + Body + a separate \"cta\" field carrying the CTA line — leave \"points\" empty unless there's a genuine short supporting fact to add alongside it";
         $positionRules = implode("\n", $positions);
         return <<<RULES
 SLIDE RULES (strict — the renderer truncates anything over these limits with an ellipsis, so staying within them is what keeps every slide looking clean):
@@ -276,7 +276,7 @@ SCHEMA;
         for ($n = 2; $n < $last; $n++) {
             $slideExamples[] = '{"slide_number": ' . $n . ', "headline": "Slide ' . $n . ' headline", "subheading": "", "body": "Brief explanatory text.", "points": ["Point one", "Point two", "Point three"]}';
         }
-        $slideExamples[] = '{"slide_number": ' . $last . ', "headline": "Closing headline", "subheading": "", "body": "One closing sentence.", "points": ["Exact CTA line here"]}';
+        $slideExamples[] = '{"slide_number": ' . $last . ', "headline": "Closing headline", "subheading": "", "body": "One closing sentence.", "points": [], "cta": "Exact CTA line here"}';
         $slidesJson = "    " . implode(",\n    ", $slideExamples);
         return <<<SCHEMA
 Return ONLY raw JSON — no markdown, no code fences, no explanation:
@@ -415,7 +415,7 @@ EXAMPLE of the right length and style (topic: quoting delays in manufacturing �
   Slide 1 (Hook): "Your Quote Cycle Is Leaking Revenue" / "When quoting takes too long, deals fall through."
   Slide 2: "The Hidden Cost of Manual Quoting" / "Most manufacturers never measure the revenue impact." / "Win rate drops when response exceeds 48 hours" / "Pricing errors create discount conversations that shouldn't happen" / "Sales teams avoid complex configs to reduce rework"
   Slide 3: "What a Fixed Quote Cycle Looks Like" / "CPQ implemented correctly changes the entire sales dynamic." / "Configuration logic in the system not in individuals" / "Pricing rules automated and consistently applied" / "Quotes generated in minutes not days"
-  Slide 4 (CTA): "A Faster Quote Cycle Starts With an Assessment" / "The CPQ Readiness Checklist gives you a clear starting point." / "Comment CPQ and I will send you the checklist free"
+  Slide 4 (CTA): "A Faster Quote Cycle Starts With an Assessment" / "The CPQ Readiness Checklist gives you a clear starting point." / CTA: "Comment CPQ and I will send you the checklist free"
 
 {$styleRules}
 
