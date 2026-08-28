@@ -14,6 +14,31 @@ function grav_configured(array $workspace): bool
     return !empty($workspace['grav_site_url']) && !empty($workspace['grav_api_key']);
 }
 
+// Grav's API plugin's own error responses look like
+// {"status":404,"title":"Not Found","detail":"Page not found at
+// route: ..."} — there is no top-level "message" key, so every call
+// site here that used to look for $data['message'] always missed and
+// fell through to dumping the raw JSON blob at the user instead of a
+// clean sentence. This pulls Grav's actual human-readable field
+// ("detail", falling back to "title"), with the raw-substring fallback
+// kept only for responses that aren't this shape at all (e.g. an HTML
+// error page from a misconfigured URL).
+function grav_error_message(?array $data, string $rawResponse, int $maxLen = 300): string
+{
+    if (is_array($data)) {
+        if (!empty($data['detail'])) {
+            return (string) $data['detail'];
+        }
+        if (!empty($data['message'])) {
+            return (string) $data['message'];
+        }
+        if (!empty($data['title'])) {
+            return (string) $data['title'];
+        }
+    }
+    return substr($rawResponse, 0, $maxLen);
+}
+
 // Applies a workspace's own Grav theme's table styling to every
 // <table> in $html — a bare, unclassed <table> (what
 // includes/blog_generate.php's Comparison-type posts produce) gets no
@@ -128,8 +153,7 @@ function grav_test_connection(array $workspace): array
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     if ($status < 200 || $status >= 300) {
-        $data = json_decode((string) $response, true);
-        $msg = $data['message'] ?? substr((string) $response, 0, 200);
+        $msg = grav_error_message(json_decode((string) $response, true), (string) $response, 200);
         return ['success' => false, 'error' => "Grav rejected the request (HTTP {$status}): {$msg}"];
     }
     return ['success' => true, 'user' => grav_site_url($workspace)];
@@ -241,7 +265,7 @@ function grav_publish_post(array $workspace, array $blogPost, ?array $pillar = n
     }
     $page = $result['data']['data'] ?? null;
     if ($result['status'] < 200 || $result['status'] >= 300 || !isset($page['route'])) {
-        $msg = $result['data']['message'] ?? substr(json_encode($result['data']), 0, 300);
+        $msg = grav_error_message($result['data'], (string) json_encode($result['data']));
         return ['success' => false, 'error' => "Grav publish failed (HTTP {$result['status']}): {$msg}"];
     }
 
@@ -287,9 +311,8 @@ function grav_page_request(array $workspace, string $route, string $method, ?arr
         return ['success' => true];
     }
     if ($status < 200 || $status >= 300) {
-        $data = json_decode((string) $response, true);
-        $msg = $data['message'] ?? substr((string) $response, 0, 300);
-        return ['success' => false, 'error' => "Grav request failed (HTTP {$status}): {$msg}"];
+        $msg = grav_error_message(json_decode((string) $response, true), (string) $response);
+        return ['success' => false, 'error' => "Grav request failed (HTTP {$status}): {$msg}", 'status' => $status];
     }
     return ['success' => true];
 }
@@ -316,7 +339,15 @@ function grav_set_published(array $workspace, array $blogPost, bool $published):
     if (empty($blogPost['external_post_id'])) {
         return ['success' => false, 'error' => 'This post has no Grav page to update yet.'];
     }
-    return grav_page_request($workspace, $blogPost['external_post_id'], 'PATCH', ['header' => ['published' => $published]]);
+    $result = grav_page_request($workspace, $blogPost['external_post_id'], 'PATCH', ['header' => ['published' => $published]]);
+    if (!$result['success'] && ($result['status'] ?? null) === 404) {
+        // Points at the actual recovery path (grav_delete_post()'s
+        // idempotent 404 handling) instead of leaving the user staring
+        // at a raw "page not found" with no next step — this toggle
+        // can't recreate a deleted page, only a fresh Publish Now can.
+        $result['error'] = 'This page no longer exists on Grav (it was likely deleted directly on the Grav site). Click "Delete Permanently from Grav" below to reset this post to a Draft, then Publish Now to recreate it.';
+    }
+    return $result;
 }
 
 // A real, permanent delete — unlike grav_set_published(false, ...) the
