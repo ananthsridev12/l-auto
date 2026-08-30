@@ -50,11 +50,11 @@ function blog_slugify(string $title): string
     return trim($slug, '-') ?: 'post';
 }
 
-function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $newsItemId = null, ?int $contentPillarId = null, ?string $contentType = null, ?int $collectionId = null): int
+function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $newsItemId = null, ?int $contentPillarId = null, ?string $contentType = null, ?int $collectionId = null, ?string $gravCategory = null): int
 {
     $stmt = db()->prepare(
-        'INSERT INTO blog_posts (user_id, workspace_id, news_item_id, content_pillar_id, collection_id, title, slug, meta_description, keywords, content_html, content_type, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft")'
+        'INSERT INTO blog_posts (user_id, workspace_id, news_item_id, content_pillar_id, collection_id, title, slug, meta_description, keywords, content_html, content_type, grav_category, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft")'
     );
     $stmt->execute([
         $userId, $workspaceId, $newsItemId, $contentPillarId, $collectionId,
@@ -64,6 +64,7 @@ function create_blog_post(int $userId, int $workspaceId, array $creative, ?int $
         $creative['keywords'] !== '' ? mb_substr($creative['keywords'], 0, 500) : null,
         $creative['content_html'],
         $contentType,
+        $gravCategory,
     ]);
     return (int) db()->lastInsertId();
 }

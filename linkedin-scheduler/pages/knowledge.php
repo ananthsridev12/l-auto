@@ -14,6 +14,7 @@ require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/csv_parser.php';
 require_once __DIR__ . '/../includes/collections.php';
 require_once __DIR__ . '/../includes/link_tracking.php';
+require_once __DIR__ . '/../includes/blog_generate.php'; // BLOG_CONTENT_TYPES/BLOG_LENGTH_PRESETS/BLOG_MODE_* — Content Pillar's blog auto-generation defaults
 
 require_login();
 $userId = current_user_id();
@@ -738,15 +739,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $palette = validate_palette_select_value($userId, trim($_POST['pillar_palette'] ?? ''));
         $gravRoutePrefix = trim($_POST['pillar_grav_route_prefix'] ?? '', "/ \t\n\r\0\x0B") ?: null;
         $gravTemplate = trim($_POST['pillar_grav_template'] ?? '') ?: null;
+        $gravCategory = trim($_POST['pillar_grav_category'] ?? '') ?: null;
+        // Blog auto-generation defaults (see migrations/0027_pillar_blog_defaults.sql)
+        // — used by the news_auto_blog_enabled cron and, going forward,
+        // as this pillar's baseline for the manual "Write Blog Post"
+        // button too.
+        $blogContentType = $_POST['pillar_blog_content_type'] ?? '';
+        $blogContentType = array_key_exists($blogContentType, BLOG_CONTENT_TYPES) ? $blogContentType : null;
+        $blogLength = $_POST['pillar_blog_length'] ?? '';
+        $blogLength = array_key_exists($blogLength, BLOG_LENGTH_PRESETS) ? $blogLength : null;
+        $blogMode = ($_POST['pillar_blog_mode'] ?? '') === BLOG_MODE_GROUNDED ? BLOG_MODE_GROUNDED : null;
+        $blogCiteSource = !empty($_POST['pillar_blog_cite_source']) ? 1 : 0;
+        $blogFreshContext = !empty($_POST['pillar_blog_fresh_context']) ? 1 : 0;
         if ($name === '') {
             flash('error', 'Enter a content pillar name.');
             redirect('pages/knowledge.php');
         }
         $stmt = db()->prepare(
-            'INSERT INTO content_pillars (user_id, workspace_id, name, description, category, default_layout, default_palette, grav_route_prefix, grav_template) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout), default_palette = VALUES(default_palette), grav_route_prefix = VALUES(grav_route_prefix), grav_template = VALUES(grav_template), workspace_id = VALUES(workspace_id)'
+            'INSERT INTO content_pillars (user_id, workspace_id, name, description, category, default_layout, default_palette, grav_route_prefix, grav_template, grav_category, blog_content_type, blog_length, blog_mode, blog_cite_source, blog_fresh_context)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), category = VALUES(category), default_layout = VALUES(default_layout), default_palette = VALUES(default_palette), grav_route_prefix = VALUES(grav_route_prefix), grav_template = VALUES(grav_template), grav_category = VALUES(grav_category), blog_content_type = VALUES(blog_content_type), blog_length = VALUES(blog_length), blog_mode = VALUES(blog_mode), blog_cite_source = VALUES(blog_cite_source), blog_fresh_context = VALUES(blog_fresh_context), workspace_id = VALUES(workspace_id)'
         );
-        $stmt->execute([$userId, $workspaceId, $name, $desc, $category, $layout, $palette, $gravRoutePrefix, $gravTemplate]);
+        $stmt->execute([
+            $userId, $workspaceId, $name, $desc, $category, $layout, $palette, $gravRoutePrefix, $gravTemplate, $gravCategory,
+            $blogContentType, $blogLength, $blogMode, $blogCiteSource, $blogFreshContext,
+        ]);
         flash('success', "Content pillar \"{$name}\" saved.");
         redirect('pages/knowledge.php');
     }
@@ -1750,6 +1767,10 @@ require __DIR__ . '/../includes/layout_top.php';
           <?php if ($cp['default_layout']): ?><span class="badge badge-campaign"><?= h(render_design_templates()[$cp['default_layout']]['name'] ?? $cp['default_layout']) ?></span><?php endif; ?>
           <?php if ($cp['default_palette']): ?><span class="badge badge-campaign"><?= h(palette_display_name($cp['default_palette'], $brandPalettes)) ?></span><?php endif; ?>
           <?php if (!empty($cp['grav_route_prefix'])): ?><span class="badge badge-campaign">Grav: /<?= h(trim($cp['grav_route_prefix'], '/')) ?><?= !empty($cp['grav_template']) ? ' (' . h($cp['grav_template']) . ')' : '' ?></span><?php endif; ?>
+          <?php if (!empty($cp['grav_category'])): ?><span class="badge badge-campaign">Category: <?= h($cp['grav_category']) ?></span><?php endif; ?>
+          <?php if (!empty($cp['blog_content_type']) || !empty($cp['blog_mode']) || !empty($cp['blog_length'])): ?>
+            <span class="badge badge-campaign">Blog: <?= h(BLOG_CONTENT_TYPES[$cp['blog_content_type']]['label'] ?? 'Default type') ?><?= $cp['blog_mode'] === BLOG_MODE_GROUNDED ? ', Grounded' : '' ?><?= !empty($cp['blog_length']) ? ', ' . h(BLOG_LENGTH_PRESETS[$cp['blog_length']]['label'] ?? $cp['blog_length']) : '' ?></span>
+          <?php endif; ?>
           <span class="muted"><?= h(mb_strimwidth($cp['description'] ?? '', 0, 80, '…')) ?></span>
         </div>
         <div style="display:flex; gap:6px;">
@@ -1799,6 +1820,42 @@ require __DIR__ . '/../includes/layout_top.php';
     </label>
     <label>Grav template for this pillar <span class="muted">(optional — the page template name from your Grav site's theme, e.g. news-item or comparison; sets the page's frontmatter template: value, so it must match a template your theme actually defines. Overrides this workspace's Grav template)</span>
       <input type="text" name="pillar_grav_template" placeholder="news-item">
+    </label>
+    <label>Grav category for this pillar <span class="muted">(optional — the taxonomy.category value for posts tagged with this pillar, e.g. Company/Product/Industry for a News-template pillar, or a free label for Blog. Match your site's exact taxonomy wording.)</span>
+      <input type="text" name="pillar_grav_category" placeholder="Product">
+    </label>
+    <p class="muted" style="margin-top:16px; margin-bottom:4px;"><strong>Blog auto-generation defaults</strong> — used when a headline tagged with this pillar is turned into a blog post, whether by the daily auto-draft cron (Settings &gt; News Auto-Content) or the "Write Blog Post" button in News Studio.</p>
+    <div class="form-grid">
+      <label>Content Type
+        <select name="pillar_blog_content_type">
+          <option value="">Default (<?= h(BLOG_CONTENT_TYPES[BLOG_CONTENT_TYPE_DEFAULT]['label']) ?>)</option>
+          <?php foreach (BLOG_CONTENT_TYPES as $tkey => $type): ?>
+            <option value="<?= h($tkey) ?>"><?= h($type['label']) ?><?= $type['requires_grounded'] ? ' (needs Grounded Rewrite)' : '' ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <label>Blog length
+        <select name="pillar_blog_length">
+          <option value="">Default (<?= h(BLOG_LENGTH_PRESETS[BLOG_LENGTH_DEFAULT]['label']) ?>)</option>
+          <?php foreach (BLOG_LENGTH_PRESETS as $lkey => $lpreset): ?>
+            <option value="<?= h($lkey) ?>"><?= h($lpreset['label']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <label>Mode <span class="muted">(Grounded Rewrite only applies when the headline has a usable source snippet — falls back to Original Take otherwise)</span>
+        <select name="pillar_blog_mode">
+          <option value="<?= BLOG_MODE_ORIGINAL ?>">Original Take (default)</option>
+          <option value="<?= BLOG_MODE_GROUNDED ?>">Grounded Rewrite</option>
+        </select>
+      </label>
+    </div>
+    <label class="checkbox-row" title="Adds a 'Source:' credit line — only relevant with Grounded Rewrite">
+      <input type="checkbox" name="pillar_blog_cite_source" value="1">
+      Cite source
+    </label>
+    <label class="checkbox-row" title="Skips this workspace's Knowledge Hub voice/tone and Memory &amp; Context for posts from this pillar">
+      <input type="checkbox" name="pillar_blog_fresh_context" value="1">
+      Fresh Context
     </label>
     <button type="submit" class="btn-secondary">Add Content Pillar</button>
   </form>

@@ -478,15 +478,16 @@ function kb_completeness(int $userId, array $workspace): array
 // visible everywhere so nothing disappears mid-rollout.
 function fetch_content_pillars(int $userId, ?int $workspaceId = null): array
 {
+    $cols = 'id, name, description, category, default_layout, default_palette, grav_route_prefix, grav_template, grav_category, blog_content_type, blog_length, blog_mode, blog_cite_source, blog_fresh_context';
     if ($workspaceId === null) {
-        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette, grav_route_prefix, grav_template FROM content_pillars WHERE user_id = ? ORDER BY name');
+        $stmt = db()->prepare("SELECT {$cols} FROM content_pillars WHERE user_id = ? ORDER BY name");
         $stmt->execute([$userId]);
     } else {
         // Trusts workspace_id alone (not ANDed with user_id) once a
         // workspace is given — access to it is already gated upstream,
         // and a granted teammate must see the same pillars the owner
         // does. See fetch_personas()'s comment for the full reasoning.
-        $stmt = db()->prepare('SELECT id, name, description, category, default_layout, default_palette, grav_route_prefix, grav_template FROM content_pillars WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY name');
+        $stmt = db()->prepare("SELECT {$cols} FROM content_pillars WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY name");
         $stmt->execute([$workspaceId, $userId]);
     }
     return $stmt->fetchAll();
@@ -497,7 +498,9 @@ function fetch_content_pillars(int $userId, ?int $workspaceId = null): array
 function fetch_content_pillar(int $userId, int $id): ?array
 {
     $stmt = db()->prepare(
-        'SELECT cp.id, cp.name, cp.description, cp.category, cp.default_layout, cp.default_palette, cp.grav_route_prefix, cp.grav_template FROM content_pillars cp
+        'SELECT cp.id, cp.name, cp.description, cp.category, cp.default_layout, cp.default_palette, cp.grav_route_prefix, cp.grav_template,
+                cp.grav_category, cp.blog_content_type, cp.blog_length, cp.blog_mode, cp.blog_cite_source, cp.blog_fresh_context
+         FROM content_pillars cp
          LEFT JOIN workspaces w ON w.id = cp.workspace_id
          LEFT JOIN workspace_members wm ON wm.workspace_id = cp.workspace_id AND wm.user_id = ?
          WHERE cp.id = ? AND (

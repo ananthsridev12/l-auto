@@ -679,6 +679,27 @@ function news_generate_blog_draft(int $userId, array $newsItem, array $aiConfig)
 {
     $wsId = (int) $newsItem['workspace_id'];
     $workspace = fetch_workspace($userId, $wsId);
+    $pillar = $newsItem['content_pillar_id'] ? fetch_content_pillar($userId, (int) $newsItem['content_pillar_id']) : null;
+
+    // Per-pillar defaults (see migrations/0027_pillar_blog_defaults.sql)
+    // — NULL/unset falls back to this app's existing global defaults,
+    // same convention as default_layout/default_palette. This is what
+    // makes an auto-generated post actually match the pillar it came
+    // from (e.g. a "News Roundup" pillar writing news_roundup posts in
+    // Grounded mode with citations, vs a "Hot Takes" pillar writing
+    // short Original Take opinion pieces) instead of one fixed shape
+    // for every pillar.
+    $contentType = ($pillar['blog_content_type'] ?? '') ?: BLOG_CONTENT_TYPE_DEFAULT;
+    if (!array_key_exists($contentType, BLOG_CONTENT_TYPES)) {
+        $contentType = BLOG_CONTENT_TYPE_DEFAULT;
+    }
+    $length = ($pillar['blog_length'] ?? '') ?: BLOG_LENGTH_DEFAULT;
+    if (!array_key_exists($length, BLOG_LENGTH_PRESETS)) {
+        $length = BLOG_LENGTH_DEFAULT;
+    }
+    $mode = ($pillar['blog_mode'] ?? '') === BLOG_MODE_GROUNDED ? BLOG_MODE_GROUNDED : BLOG_MODE_ORIGINAL;
+    $includeReference = !empty($pillar['blog_cite_source']);
+    $freshContext = !empty($pillar['blog_fresh_context']);
 
     $meta = array_filter([
         $newsItem['source'] ? 'reported by ' . $newsItem['source'] : null,
@@ -687,15 +708,51 @@ function news_generate_blog_draft(int $userId, array $newsItem, array $aiConfig)
     $topic = [
         'title'     => $newsItem['title'],
         'news_line' => $meta ? '(' . implode(', ', $meta) . ')' : null,
-        'length'    => BLOG_LENGTH_DEFAULT,
+        'length'    => $length,
     ];
 
-    $relatedMemory = content_memory_related_for_topic($wsId, $newsItem['title'], $aiConfig, 'blog');
-    $existingPosts = blog_internal_link_candidates($userId, $wsId);
-    $creative = generate_blog_post_via_ai($topic, $aiConfig, $workspace, $relatedMemory, null, $existingPosts, BLOG_MODE_ORIGINAL, false, [], BLOG_CONTENT_TYPE_DEFAULT);
+    // Sibling headlines from the same trend — grounds Original Take
+    // without pretending to have crawled the live web, and (Grounded
+    // mode only) supplies the actual source facts to rewrite. Same
+    // query as pages/news_studio.php's write_blog_post handler.
+    $sibStmt = db()->prepare(
+        'SELECT title, source, description, url FROM news_items
+         WHERE user_id = ? AND topic_query = ? AND id != ?
+         ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 5'
+    );
+    $sibStmt->execute([$userId, $newsItem['topic_query'], $newsItem['id']]);
+    $siblings = $sibStmt->fetchAll();
+    $researchLines = array_map(
+        fn ($s) => '- ' . $s['title'] . ($s['source'] ? ' (' . $s['source'] . ')' : ''),
+        $siblings
+    );
+    $researchContext = $researchLines ? implode("\n", $researchLines) : null;
 
-    $blogPostId = create_blog_post($userId, $wsId, $creative, (int) $newsItem['id'], $newsItem['content_pillar_id'] ?: null, BLOG_CONTENT_TYPE_DEFAULT);
-    save_blog_content_memory($wsId, $blogPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
+    $sourceSnippets = [];
+    if ($mode === BLOG_MODE_GROUNDED) {
+        if (!empty($newsItem['description'])) {
+            $sourceSnippets[] = ['text' => $newsItem['description'], 'source' => $newsItem['source'], 'url' => $newsItem['url']];
+        }
+        foreach ($siblings as $s) {
+            if (!empty($s['description'])) {
+                $sourceSnippets[] = ['text' => $s['description'], 'source' => $s['source'], 'url' => $s['url']];
+            }
+        }
+        if (!$sourceSnippets) {
+            $mode = BLOG_MODE_ORIGINAL; // nothing to ground on — same fallback the manual form uses
+        }
+    }
+
+    $genWorkspace = $freshContext ? null : $workspace;
+    $relatedMemory = $freshContext ? [] : content_memory_related_for_topic($wsId, $newsItem['title'], $aiConfig, 'blog');
+    $existingPosts = blog_internal_link_candidates($userId, $wsId);
+    $creative = generate_blog_post_via_ai($topic, $aiConfig, $genWorkspace, $relatedMemory, $researchContext, $existingPosts, $mode, $includeReference, $sourceSnippets, $contentType);
+
+    $gravCategory = ($pillar['grav_category'] ?? '') ?: null;
+    $blogPostId = create_blog_post($userId, $wsId, $creative, (int) $newsItem['id'], $newsItem['content_pillar_id'] ?: null, $contentType, null, $gravCategory);
+    if (!$freshContext) {
+        save_blog_content_memory($wsId, $blogPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
+    }
 
     // Same "only advance once both are done" rule as news_generate_draft().
     db()->prepare('UPDATE news_items SET blog_post_id = ?, status = IF(post_id IS NOT NULL, "used", status) WHERE id = ? AND user_id = ?')
