@@ -193,8 +193,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $perDay = max(1, min(5, (int) ($_POST['news_drafts_per_day'] ?? 2)));
         $region = trim($_POST['news_region'] ?? '');
         $region = array_key_exists($region, NEWS_REGION_PRESETS) ? $region : null;
-        db()->prepare('UPDATE workspaces SET news_auto_enabled = ?, news_drafts_per_day = ?, news_region = ? WHERE id = ?')
-            ->execute([$enabled, $perDay, $region, $workspaceId]);
+        $blogEnabled = !empty($_POST['news_auto_blog_enabled']) ? 1 : 0;
+        $blogPerDay = max(1, min(5, (int) ($_POST['news_blog_drafts_per_day'] ?? 1)));
+        db()->prepare('UPDATE workspaces SET news_auto_enabled = ?, news_drafts_per_day = ?, news_region = ?, news_auto_blog_enabled = ?, news_blog_drafts_per_day = ? WHERE id = ?')
+            ->execute([$enabled, $perDay, $region, $blogEnabled, $blogPerDay, $workspaceId]);
         flash('success', 'News auto-content settings saved.');
         redirect('pages/settings.php');
     }
@@ -697,7 +699,13 @@ $defaultPaletteSingle = $workspace['default_palette_single'] ?? null;
 $defaultPaletteCarousel = $workspace['default_palette_carousel'] ?? null;
 $newsTopics = fetch_news_topics($userId, $workspaceId);
 $newsTrustedSources = fetch_news_trusted_sources($userId, $workspaceId);
-$newsSettings = ['news_auto_enabled' => $workspace['news_auto_enabled'] ?? 0, 'news_drafts_per_day' => $workspace['news_drafts_per_day'] ?? 2, 'news_region' => $workspace['news_region'] ?? null];
+$newsSettings = [
+    'news_auto_enabled'        => $workspace['news_auto_enabled'] ?? 0,
+    'news_drafts_per_day'      => $workspace['news_drafts_per_day'] ?? 2,
+    'news_region'               => $workspace['news_region'] ?? null,
+    'news_auto_blog_enabled'   => $workspace['news_auto_blog_enabled'] ?? 0,
+    'news_blog_drafts_per_day' => $workspace['news_blog_drafts_per_day'] ?? 1,
+];
 $sitemapLinks = fetch_sitemap_links($workspaceId);
 $brandPalettes = fetch_brand_palettes($userId);
 $brandFonts = fetch_brand_fonts($userId);
@@ -1413,6 +1421,19 @@ require __DIR__ . '/../includes/layout_top.php';
         </select>
       </label>
     </div>
+    <?php if (module_enabled('blog_studio')): ?>
+    <label class="checkbox-row" style="margin-top:12px;">
+      <input type="checkbox" name="news_auto_blog_enabled" value="1" <?= !empty($newsSettings['news_auto_blog_enabled']) ? 'checked' : '' ?>>
+      Also auto-draft a <a href="<?= h(app_path('pages/blog_studio.php')) ?>">Blog Studio</a> post daily <span class="muted">(independent of the LinkedIn toggle above — same daily cron, same "review before anything goes out" rule: this only ever creates a Draft, never schedules or publishes it. You still need to open it, add any Grav taxonomy fields, and Publish/Schedule yourself.)</span>
+    </label>
+    <label>Blog drafts per day
+      <select name="news_blog_drafts_per_day">
+        <?php for ($n = 1; $n <= 5; $n++): ?>
+          <option value="<?= $n ?>"<?= (int) $newsSettings['news_blog_drafts_per_day'] === $n ? ' selected' : '' ?>><?= $n ?></option>
+        <?php endfor; ?>
+      </select>
+    </label>
+    <?php endif; ?>
     <button type="submit" class="btn-secondary">Save News Settings</button>
   </form>
   <h3 style="margin-top:20px;">News keywords, RSS feeds &amp; subreddits</h3>

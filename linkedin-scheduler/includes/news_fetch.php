@@ -657,25 +657,77 @@ function news_generate_draft(int $userId, array $newsItem, array $aiConfig, ?str
     return $postId;
 }
 
+// Cron counterpart to pages/news_studio.php's "Write Blog Post" button
+// — same generation call, fixed to sensible unattended defaults
+// (Original Take mode, no source-snippet grounding, the default
+// content type/length, full workspace brand context) rather than the
+// per-click choices that form exposes. Always creates a 'draft'
+// blog_posts row for review — this never schedules or publishes it,
+// unlike news_generate_draft() above which is itself still just a
+// draft too (posting to LinkedIn is always a separate, later, human
+// action for both content types). Requires
+// includes/blog_generate.php, includes/blog_posts.php,
+// includes/content_memory.php to already be loaded (same convention
+// as news_generate_draft() relying on includes/ai_generate.php).
+//
+// Unlike the manual form (which never sets content_pillar_id on the
+// new blog post), this inherits the news item's own pillar so the
+// post picks up that pillar's Grav route/template/taxonomy defaults
+// automatically — the whole point of this auto-pipeline is landing on
+// Grav with the right shape, not just as an untagged draft.
+function news_generate_blog_draft(int $userId, array $newsItem, array $aiConfig): int
+{
+    $wsId = (int) $newsItem['workspace_id'];
+    $workspace = fetch_workspace($userId, $wsId);
+
+    $meta = array_filter([
+        $newsItem['source'] ? 'reported by ' . $newsItem['source'] : null,
+        $newsItem['published_at'] ? date('j M Y', strtotime($newsItem['published_at'])) : null,
+    ]);
+    $topic = [
+        'title'     => $newsItem['title'],
+        'news_line' => $meta ? '(' . implode(', ', $meta) . ')' : null,
+        'length'    => BLOG_LENGTH_DEFAULT,
+    ];
+
+    $relatedMemory = content_memory_related_for_topic($wsId, $newsItem['title'], $aiConfig, 'blog');
+    $existingPosts = blog_internal_link_candidates($userId, $wsId);
+    $creative = generate_blog_post_via_ai($topic, $aiConfig, $workspace, $relatedMemory, null, $existingPosts, BLOG_MODE_ORIGINAL, false, [], BLOG_CONTENT_TYPE_DEFAULT);
+
+    $blogPostId = create_blog_post($userId, $wsId, $creative, (int) $newsItem['id'], $newsItem['content_pillar_id'] ?: null, BLOG_CONTENT_TYPE_DEFAULT);
+    save_blog_content_memory($wsId, $blogPostId, $creative['title'] . ' ' . $creative['meta_description'], $creative['title'], $aiConfig);
+
+    // Same "only advance once both are done" rule as news_generate_draft().
+    db()->prepare('UPDATE news_items SET blog_post_id = ?, status = IF(post_id IS NOT NULL, "used", status) WHERE id = ? AND user_id = ?')
+        ->execute([$blogPostId, (int) $newsItem['id'], $userId]);
+
+    return $blogPostId;
+}
+
 // The freshest unused headlines, spread across queries so one hot topic
 // doesn't take every auto-draft slot: picks at most one item per
 // topic_query first, then fills remaining slots by recency.
-function news_pick_items_for_drafts(int $userId, int $count, ?int $workspaceId = null): array
+// $target picks which action's eligibility to check — 'linkedin'
+// (post_id IS NULL) or 'blog' (blog_post_id IS NULL) — same two
+// independent outcomes news_generate_draft()/news_generate_blog_draft()
+// track (see their own comments). The status condition mirrors each
+// action's own manual-UI eligibility check in pages/news_studio.php:
+// LinkedIn drafting only offers 'new' headlines there, while Write
+// Blog Post allows anything not dismissed (including one that already
+// has a LinkedIn draft).
+function news_pick_items_for_drafts(int $userId, int $count, ?int $workspaceId = null, string $target = 'linkedin'): array
 {
-    // post_id IS NULL is the real "not drafted yet" condition — status
-    // stays 'new' for a headline that already has a blog post but no
-    // draft, which is exactly the case this should still pick up (see
-    // news_generate_draft()'s comment on the two being tracked
-    // independently).
+    $nullColumn = $target === 'blog' ? 'blog_post_id' : 'post_id';
+    $statusCondition = $target === 'blog' ? "status != 'dismissed'" : "status = 'new'";
     if ($workspaceId === null) {
         $stmt = db()->prepare(
-            "SELECT * FROM news_items WHERE user_id = ? AND status = 'new' AND post_id IS NULL
+            "SELECT * FROM news_items WHERE user_id = ? AND {$statusCondition} AND {$nullColumn} IS NULL
              ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 100"
         );
         $stmt->execute([$userId]);
     } else {
         $stmt = db()->prepare(
-            "SELECT * FROM news_items WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND status = 'new' AND post_id IS NULL
+            "SELECT * FROM news_items WHERE user_id = ? AND (workspace_id = ? OR workspace_id IS NULL) AND {$statusCondition} AND {$nullColumn} IS NULL
              ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 100"
         );
         $stmt->execute([$userId, $workspaceId]);
