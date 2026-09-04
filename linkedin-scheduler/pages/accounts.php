@@ -51,6 +51,7 @@ $socialAccounts = $socialStmt->fetchAll();
 $facebookAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'facebook'));
 $instagramAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'instagram'));
 $pinterestAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'pinterest'));
+$gbpAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'google_business'));
 
 $pageTitle  = 'Connected Accounts';
 $activePage = 'accounts';
@@ -124,6 +125,19 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php if (empty($pinterestAccounts)): ?>
     <p class="muted">No Pinterest boards connected yet.</p>
   <?php else: foreach ($pinterestAccounts as $acct): ?>
+    <?php include __DIR__ . '/_social_account_row.php'; ?>
+  <?php endforeach; endif; ?>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <h2>Google Business Profile</h2>
+    <a class="btn-secondary" href="<?= h(app_path('auth/gbp_start.php')) ?>">Connect Google Business Profile</a>
+  </div>
+  <p class="muted">Requires a verified Business Profile active 60+ days and Google's manual API access approval before this works.</p>
+  <?php if (empty($gbpAccounts)): ?>
+    <p class="muted">No locations connected yet.</p>
+  <?php else: foreach ($gbpAccounts as $acct): ?>
     <?php include __DIR__ . '/_social_account_row.php'; ?>
   <?php endforeach; endif; ?>
 </section>

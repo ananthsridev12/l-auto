@@ -8,6 +8,7 @@
 require_once __DIR__ . '/facebook_api.php';
 require_once __DIR__ . '/instagram_api.php';
 require_once __DIR__ . '/pinterest_api.php';
+require_once __DIR__ . '/gbp_api.php';
 
 // Shared by api/post_now.php and cron/auto_post.php for every non-
 // LinkedIn platform. Mirrors publish_post_now()'s validation/record-
@@ -74,6 +75,8 @@ function social_publish_dispatch(array $account, string $format, string $caption
             return ig_publish_post($account, $format, $caption, $slides);
         case 'pinterest':
             return pinterest_publish_pin($account, $format, $caption, $title, $slides);
+        case 'google_business':
+            return gbp_publish_local_post($account, $caption, $slides);
         default:
             throw new RuntimeException("Publishing to \"{$account['platform']}\" isn't supported yet.");
     }

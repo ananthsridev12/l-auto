@@ -17,7 +17,12 @@ function social_api_override(): ?array
         return [400, ['error' => ['message' => 'Simulated API failure (SOCIAL_API_OVERRIDE=fake_fail)'], 'message' => 'Simulated API failure (SOCIAL_API_OVERRIDE=fake_fail)']];
     }
     if (SOCIAL_API_OVERRIDE === 'fake') {
-        return [200, ['id' => 'fake_' . bin2hex(random_bytes(6)), 'status_code' => 'FINISHED']];
+        // 'id' covers Meta/Pinterest response shapes, 'name' covers
+        // Google's resource-name-as-identifier convention (used by
+        // includes/gbp_api.php) — both point at the same fake value so
+        // every platform's own field-name check finds what it expects.
+        $fakeId = 'fake_' . bin2hex(random_bytes(6));
+        return [200, ['id' => $fakeId, 'name' => $fakeId, 'status_code' => 'FINISHED']];
     }
     return null;
 }

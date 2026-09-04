@@ -23,17 +23,21 @@ $accounts = fetch_user_accounts($userId, $workspaceId);
 $facebookAccounts = fetch_user_social_accounts($userId, 'facebook');
 $instagramAccounts = fetch_user_social_accounts($userId, 'instagram');
 $pinterestAccounts = fetch_user_social_accounts($userId, 'pinterest');
+$gbpAccounts = fetch_user_social_accounts($userId, 'google_business');
 // Which of $availableFormats each platform actually supports — used to
 // filter the Format picker client-side (inline script near the bottom
 // of this page) once a non-LinkedIn platform is chosen. Instagram has
 // no true text-only post; Pinterest Pins are always single-image (a
 // Carousel post would just use its first slide, so it isn't offered
-// here to avoid surprise); Facebook matches LinkedIn's own set.
+// here to avoid surprise); Google Business Profile posts are always a
+// single photo update, no true text-only or multi-photo option;
+// Facebook matches LinkedIn's own set.
 $platformFormats = [
-    'linkedin'  => ['Text Post', 'Single Image', 'Carousel'],
-    'facebook'  => ['Text Post', 'Single Image', 'Carousel'],
-    'instagram' => ['Single Image', 'Carousel'],
-    'pinterest' => ['Single Image'],
+    'linkedin'        => ['Text Post', 'Single Image', 'Carousel'],
+    'facebook'        => ['Text Post', 'Single Image', 'Carousel'],
+    'instagram'       => ['Single Image', 'Carousel'],
+    'pinterest'       => ['Single Image'],
+    'google_business' => ['Single Image'],
 ];
 $aiConfig = resolve_ai_config($userId);
 $personas = fetch_personas($userId, $workspaceId);
@@ -48,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/new_post.php');
     }
 
-    $platform = in_array($_POST['platform'] ?? '', ['linkedin', 'facebook', 'instagram', 'pinterest'], true) ? $_POST['platform'] : 'linkedin';
+    $platform = in_array($_POST['platform'] ?? '', ['linkedin', 'facebook', 'instagram', 'pinterest', 'google_business'], true) ? $_POST['platform'] : 'linkedin';
 
     $format = $_POST['format'] ?? '';
     if (!in_array($format, $availableFormats, true) || !in_array($format, $platformFormats[$platform], true)) {
@@ -674,6 +678,7 @@ require __DIR__ . '/../includes/layout_top.php';
             <option value="facebook">Facebook</option>
             <option value="instagram">Instagram</option>
             <option value="pinterest">Pinterest</option>
+            <option value="google_business">Google Business Profile</option>
           </select>
         </label>
 
@@ -730,6 +735,20 @@ require __DIR__ . '/../includes/layout_top.php';
           <?php endif; ?>
         </div>
 
+        <div id="google_businessAccountField" style="display:none;">
+          <label>Business Profile Location
+            <select name="google_business_account_id" class="social-account-select">
+              <option value="">— Unassigned —</option>
+              <?php foreach ($gbpAccounts as $acct): ?>
+                <option value="<?= (int) $acct['id'] ?>"><?= h($acct['display_name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <?php if (empty($gbpAccounts)): ?>
+            <p class="muted">No Business Profile locations connected — <a href="<?= h(app_path('pages/accounts.php')) ?>">connect one</a>.</p>
+          <?php endif; ?>
+        </div>
+
         <div class="schedule-row">
           <label>Date <input type="date" name="scheduled_date"></label>
           <label>Time <input type="time" name="scheduled_time" value="09:00"></label>
@@ -781,6 +800,7 @@ require __DIR__ . '/../includes/layout_top.php';
       facebook: document.getElementById('facebookAccountField'),
       instagram: document.getElementById('instagramAccountField'),
       pinterest: document.getElementById('pinterestAccountField'),
+      google_business: document.getElementById('google_businessAccountField'),
     };
     if (!platformSelect || !formatSelect) return;
     var allFormatOptions = Array.prototype.slice.call(formatSelect.options).map(function (opt) {
