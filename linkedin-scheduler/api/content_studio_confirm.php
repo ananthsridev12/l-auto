@@ -174,5 +174,8 @@ require __DIR__ . '/../includes/layout_top.php';
     </ul>
   <?php endif; ?>
   <a class="btn-primary" href="<?= h(app_path('pages/calendar.php')) ?>" style="text-decoration:none;display:inline-block;margin-top:16px;">View Calendar</a>
+  <?php if ($rendered > 0): ?>
+    <a class="btn-secondary" href="<?= h(app_path('api/download_batch_zip.php?batch_id=' . $batchId)) ?>" style="text-decoration:none;display:inline-block;margin-top:16px;margin-left:8px;">Download All Images (ZIP)</a>
+  <?php endif; ?>
 </section>
 <?php require __DIR__ . '/../includes/layout_bottom.php'; ?>
