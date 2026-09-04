@@ -9,9 +9,10 @@ $userId = current_user_id();
 $workspaceId = current_workspace_id();
 
 $stmt = db()->prepare(
-    'SELECT p.*, la.display_name AS account_name
+    'SELECT p.*, COALESCE(la.display_name, sa.display_name) AS account_name
      FROM posts p
      LEFT JOIN linkedin_accounts la ON la.id = p.linkedin_account_id
+     LEFT JOIN social_accounts sa ON sa.id = p.social_account_id
      WHERE (p.workspace_id = ? OR (p.user_id = ? AND p.workspace_id IS NULL)) AND p.status = "draft"
      ORDER BY p.updated_at DESC
      LIMIT 200'
@@ -28,14 +29,15 @@ require __DIR__ . '/../includes/layout_top.php';
 
 <section class="card">
   <?php if (empty($drafts)): ?>
-    <p class="muted">No drafts. Drafts show up here when an imported row has no date, no matched LinkedIn account, or when you click "Save Draft" on a post.</p>
+    <p class="muted">No drafts. Drafts show up here when an imported row has no date, no matched account, or when you click "Save Draft" on a post.</p>
   <?php else: ?>
     <table class="preview-table">
-      <thead><tr><th>Campaign ID</th><th>Format</th><th>Title</th><th>Collection</th><th>Account</th><th>Last Updated</th><th></th></tr></thead>
+      <thead><tr><th>Campaign ID</th><th>Platform</th><th>Format</th><th>Title</th><th>Collection</th><th>Account</th><th>Last Updated</th><th></th></tr></thead>
       <tbody>
         <?php foreach ($drafts as $d): ?>
           <tr>
             <td><?= h($d['campaign_id']) ?></td>
+            <td><?= h(ucfirst(str_replace('_', ' ', $d['platform'] ?? 'linkedin'))) ?></td>
             <td><?= h($d['format']) ?></td>
             <td><?= h($d['title']) ?></td>
             <td><?php if ($d['collection_id'] && isset($collectionNameById[$d['collection_id']])): ?><span class="badge badge-active"><?= h($collectionNameById[$d['collection_id']]) ?></span><?php endif; ?></td>
