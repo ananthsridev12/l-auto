@@ -3,37 +3,16 @@
 // (includes/facebook_api.php, includes/instagram_api.php) — OAuth/
 // account-connection calls live in includes/meta_oauth.php instead.
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/social_common.php';
 
 function meta_graph_url(string $path): string
 {
     return META_GRAPH_BASE . '/' . META_GRAPH_API_VERSION . '/' . ltrim($path, '/');
 }
 
-// SOCIAL_API_OVERRIDE (define in config.php, never committed) — same
-// seam as LI_ENGAGEMENT_API_OVERRIDE / PDF_ENGINE_OVERRIDE elsewhere.
-// Centralized here (rather than in each publish function) since every
-// Facebook/Instagram publish call ultimately goes through one of these
-// two functions. 'fake' returns a synthetic success payload with an
-// 'id' field (every real Graph API write response has one); 'fake_fail'
-// returns a synthetic error payload in the same shape meta_graph_error()
-// reads from a real failure.
-function meta_graph_override(): ?array
-{
-    if (!defined('SOCIAL_API_OVERRIDE')) {
-        return null;
-    }
-    if (SOCIAL_API_OVERRIDE === 'fake_fail') {
-        return [400, ['error' => ['message' => 'Simulated Graph API failure (SOCIAL_API_OVERRIDE=fake_fail)']]];
-    }
-    if (SOCIAL_API_OVERRIDE === 'fake') {
-        return [200, ['id' => 'fake_' . bin2hex(random_bytes(6)), 'status_code' => 'FINISHED']];
-    }
-    return null;
-}
-
 function meta_graph_get(string $path, array $params, string $accessToken): array
 {
-    $override = meta_graph_override();
+    $override = social_api_override();
     if ($override !== null) {
         return $override;
     }
@@ -48,7 +27,7 @@ function meta_graph_get(string $path, array $params, string $accessToken): array
 
 function meta_graph_post(string $path, array $fields, string $accessToken): array
 {
-    $override = meta_graph_override();
+    $override = social_api_override();
     if ($override !== null) {
         return $override;
     }

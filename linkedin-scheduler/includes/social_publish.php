@@ -7,6 +7,7 @@
 // point — see the multi-platform posting plan in this session for why.
 require_once __DIR__ . '/facebook_api.php';
 require_once __DIR__ . '/instagram_api.php';
+require_once __DIR__ . '/pinterest_api.php';
 
 // Shared by api/post_now.php and cron/auto_post.php for every non-
 // LinkedIn platform. Mirrors publish_post_now()'s validation/record-
@@ -50,7 +51,7 @@ function publish_social_post_now(int $postId, int $userId): array
     $slides = $slideStmt->fetchAll();
 
     try {
-        $externalId = social_publish_dispatch($account, $post['format'], $post['caption'] ?? '', $slides);
+        $externalId = social_publish_dispatch($account, $post['format'], $post['caption'] ?? '', $post['title'] ?? '', $slides);
 
         $upd = db()->prepare('UPDATE posts SET status = "posted", posted_at = NOW(), scheduled_at = COALESCE(scheduled_at, NOW()), external_post_id = ?, error_message = NULL WHERE id = ?');
         $upd->execute([$externalId, $postId]);
@@ -64,13 +65,15 @@ function publish_social_post_now(int $postId, int $userId): array
     }
 }
 
-function social_publish_dispatch(array $account, string $format, string $caption, array $slides): string
+function social_publish_dispatch(array $account, string $format, string $caption, string $title, array $slides): string
 {
     switch ($account['platform']) {
         case 'facebook':
             return fb_publish_post($account, $format, $caption, $slides);
         case 'instagram':
             return ig_publish_post($account, $format, $caption, $slides);
+        case 'pinterest':
+            return pinterest_publish_pin($account, $format, $caption, $title, $slides);
         default:
             throw new RuntimeException("Publishing to \"{$account['platform']}\" isn't supported yet.");
     }

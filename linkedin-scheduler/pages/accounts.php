@@ -50,6 +50,7 @@ $socialStmt->execute([$userId]);
 $socialAccounts = $socialStmt->fetchAll();
 $facebookAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'facebook'));
 $instagramAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'instagram'));
+$pinterestAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'pinterest'));
 
 $pageTitle  = 'Connected Accounts';
 $activePage = 'accounts';
@@ -110,6 +111,19 @@ require __DIR__ . '/../includes/layout_top.php';
   <?php if (empty($instagramAccounts)): ?>
     <p class="muted">No Instagram accounts connected yet.</p>
   <?php else: foreach ($instagramAccounts as $acct): ?>
+    <?php include __DIR__ . '/_social_account_row.php'; ?>
+  <?php endforeach; endif; ?>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <h2>Pinterest</h2>
+    <a class="btn-secondary" href="<?= h(app_path('auth/pinterest_start.php')) ?>">Connect Pinterest</a>
+  </div>
+  <p class="muted">Connects individual boards — pick which ones during setup, and reconnect any time to add more.</p>
+  <?php if (empty($pinterestAccounts)): ?>
+    <p class="muted">No Pinterest boards connected yet.</p>
+  <?php else: foreach ($pinterestAccounts as $acct): ?>
     <?php include __DIR__ . '/_social_account_row.php'; ?>
   <?php endforeach; endif; ?>
 </section>

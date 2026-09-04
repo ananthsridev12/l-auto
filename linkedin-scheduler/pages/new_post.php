@@ -22,14 +22,18 @@ $availableFormats = array_values(array_intersect(['Text Post', 'Single Image', '
 $accounts = fetch_user_accounts($userId, $workspaceId);
 $facebookAccounts = fetch_user_social_accounts($userId, 'facebook');
 $instagramAccounts = fetch_user_social_accounts($userId, 'instagram');
+$pinterestAccounts = fetch_user_social_accounts($userId, 'pinterest');
 // Which of $availableFormats each platform actually supports — used to
-// filter the Format picker client-side (assets/js/new_post_platform.js)
-// once a non-LinkedIn platform is chosen. Instagram has no true
-// text-only post; the others match LinkedIn's own set for now.
+// filter the Format picker client-side (inline script near the bottom
+// of this page) once a non-LinkedIn platform is chosen. Instagram has
+// no true text-only post; Pinterest Pins are always single-image (a
+// Carousel post would just use its first slide, so it isn't offered
+// here to avoid surprise); Facebook matches LinkedIn's own set.
 $platformFormats = [
     'linkedin'  => ['Text Post', 'Single Image', 'Carousel'],
     'facebook'  => ['Text Post', 'Single Image', 'Carousel'],
     'instagram' => ['Single Image', 'Carousel'],
+    'pinterest' => ['Single Image'],
 ];
 $aiConfig = resolve_ai_config($userId);
 $personas = fetch_personas($userId, $workspaceId);
@@ -44,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/new_post.php');
     }
 
-    $platform = in_array($_POST['platform'] ?? '', ['linkedin', 'facebook', 'instagram'], true) ? $_POST['platform'] : 'linkedin';
+    $platform = in_array($_POST['platform'] ?? '', ['linkedin', 'facebook', 'instagram', 'pinterest'], true) ? $_POST['platform'] : 'linkedin';
 
     $format = $_POST['format'] ?? '';
     if (!in_array($format, $availableFormats, true) || !in_array($format, $platformFormats[$platform], true)) {
@@ -106,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $accountId = null;
         }
     } else {
-        $socialAccountField = $platform === 'facebook' ? 'facebook_account_id' : 'instagram_account_id';
+        $socialAccountField = $platform . '_account_id';
         $socialAccountId = ($_POST[$socialAccountField] ?? '') !== '' ? (int) $_POST[$socialAccountField] : null;
         if ($socialAccountId !== null && !social_account_usable($socialAccountId, $userId)) {
             $socialAccountId = null;
@@ -669,6 +673,7 @@ require __DIR__ . '/../includes/layout_top.php';
             <option value="linkedin">LinkedIn</option>
             <option value="facebook">Facebook</option>
             <option value="instagram">Instagram</option>
+            <option value="pinterest">Pinterest</option>
           </select>
         </label>
 
@@ -708,6 +713,20 @@ require __DIR__ . '/../includes/layout_top.php';
           </label>
           <?php if (empty($instagramAccounts)): ?>
             <p class="muted">No Instagram accounts connected — <a href="<?= h(app_path('pages/accounts.php')) ?>">connect one</a>.</p>
+          <?php endif; ?>
+        </div>
+
+        <div id="pinterestAccountField" style="display:none;">
+          <label>Pinterest Board
+            <select name="pinterest_account_id" class="social-account-select">
+              <option value="">— Unassigned —</option>
+              <?php foreach ($pinterestAccounts as $acct): ?>
+                <option value="<?= (int) $acct['id'] ?>"><?= h($acct['display_name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <?php if (empty($pinterestAccounts)): ?>
+            <p class="muted">No Pinterest boards connected — <a href="<?= h(app_path('pages/accounts.php')) ?>">connect one</a>.</p>
           <?php endif; ?>
         </div>
 
@@ -761,6 +780,7 @@ require __DIR__ . '/../includes/layout_top.php';
       linkedin: document.getElementById('linkedinAccountField'),
       facebook: document.getElementById('facebookAccountField'),
       instagram: document.getElementById('instagramAccountField'),
+      pinterest: document.getElementById('pinterestAccountField'),
     };
     if (!platformSelect || !formatSelect) return;
     var allFormatOptions = Array.prototype.slice.call(formatSelect.options).map(function (opt) {
