@@ -42,6 +42,55 @@ define('LI_TOKEN_URL',    'https://www.linkedin.com/oauth/v2/accessToken');
 define('LI_SCOPES_PERSONAL', 'openid profile w_member_social');
 define('LI_SCOPES_COMPANY',  'openid profile w_member_social w_organization_social');
 
+// Facebook Pages + Instagram Business both run through one Meta
+// Developer App and one Facebook Login flow (Instagram's Graph API is
+// authenticated via the linked Page's own access token — see
+// includes/meta_oauth.php). Requires Meta App Review before these
+// scopes work for anyone but the app's own Meta developer/testers —
+// that approval is a manual process only the app owner can complete,
+// same "one app-wide Developer App per platform" model as LinkedIn
+// above. Leave blank to keep "Connect Facebook/Instagram" disabled
+// with a clear "not configured" message instead of a broken redirect.
+define('FB_APP_ID',       '');
+define('FB_APP_SECRET',   '');
+define('META_REDIRECT_URI', APP_URL . '/auth/meta_callback.php');
+define('META_GRAPH_API_VERSION', 'v21.0');
+define('META_GRAPH_BASE', 'https://graph.facebook.com');
+define('META_OAUTH_DIALOG_URL', 'https://www.facebook.com/v21.0/dialog/oauth');
+define('META_TOKEN_URL', 'https://graph.facebook.com/v21.0/oauth/access_token');
+
+// Pinterest API v5 — standard OAuth2 authorization-code flow. Free at
+// the Trial tier; higher per-category rate limits require Pinterest's
+// Trial-to-Standard review, which is again on the app owner to request.
+define('PINTEREST_CLIENT_ID',     '');
+define('PINTEREST_CLIENT_SECRET', '');
+define('PINTEREST_REDIRECT_URI',  APP_URL . '/auth/pinterest_callback.php');
+define('PINTEREST_API_BASE',      'https://api.pinterest.com/v5');
+define('PINTEREST_AUTH_URL',      'https://www.pinterest.com/oauth/');
+define('PINTEREST_TOKEN_URL',     'https://api.pinterest.com/v5/oauth/token');
+
+// Google Business Profile — standard Google OAuth2 (a Google Cloud
+// Console project, not a "Google Business Profile" app per se). Free
+// at the API level but gated behind Google's manual one-time approval,
+// requiring a Business Profile that's been verified and active for
+// 60+ days plus a live business website — again, only the account
+// owner can complete that. See includes/gbp_oauth.php for the account/
+// location discovery calls this feeds.
+define('GOOGLE_CLIENT_ID',     '');
+define('GOOGLE_CLIENT_SECRET', '');
+define('GOOGLE_REDIRECT_URI',  APP_URL . '/auth/gbp_callback.php');
+define('GOOGLE_AUTH_URL',      'https://accounts.google.com/o/oauth2/v2/auth');
+define('GOOGLE_TOKEN_URL',     'https://oauth2.googleapis.com/token');
+
+// SOCIAL_API_OVERRIDE — define this in a LOCAL config.php only (never
+// committed, same seam as LI_ENGAGEMENT_API_OVERRIDE/PDF_ENGINE_OVERRIDE
+// elsewhere) to short-circuit every new-platform publish/OAuth HTTP
+// call during local verification, e.g.
+// define('SOCIAL_API_OVERRIDE', 'fake');       // or 'fake_fail'
+// Real developer-app approval + credentials are required before any of
+// Facebook/Instagram/Pinterest/Google Business Profile can actually
+// post — leave undefined in production.
+
 define('UPLOAD_DIR', __DIR__ . '/uploads');
 
 // AI generation in Content Studio / New Post (see includes/ai_generate.php)
