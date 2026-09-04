@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/post_helpers.php';
 require_once __DIR__ . '/../includes/zip_import.php';
 require_once __DIR__ . '/../includes/linkedin_api.php';
+require_once __DIR__ . '/../includes/social_publish.php';
 require_once __DIR__ . '/../includes/image_renderer.php';
 require_once __DIR__ . '/../includes/ai_generate.php';
 require_once __DIR__ . '/../includes/embeddings.php';
@@ -19,6 +20,17 @@ $workspace = current_workspace();
 
 $availableFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel'], get_enabled_formats($userId)));
 $accounts = fetch_user_accounts($userId, $workspaceId);
+$facebookAccounts = fetch_user_social_accounts($userId, 'facebook');
+$instagramAccounts = fetch_user_social_accounts($userId, 'instagram');
+// Which of $availableFormats each platform actually supports — used to
+// filter the Format picker client-side (assets/js/new_post_platform.js)
+// once a non-LinkedIn platform is chosen. Instagram has no true
+// text-only post; the others match LinkedIn's own set for now.
+$platformFormats = [
+    'linkedin'  => ['Text Post', 'Single Image', 'Carousel'],
+    'facebook'  => ['Text Post', 'Single Image', 'Carousel'],
+    'instagram' => ['Single Image', 'Carousel'],
+];
 $aiConfig = resolve_ai_config($userId);
 $personas = fetch_personas($userId, $workspaceId);
 $contentPillars = fetch_content_pillars($userId, $workspaceId);
@@ -32,9 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('pages/new_post.php');
     }
 
+    $platform = in_array($_POST['platform'] ?? '', ['linkedin', 'facebook', 'instagram'], true) ? $_POST['platform'] : 'linkedin';
+
     $format = $_POST['format'] ?? '';
-    if (!in_array($format, $availableFormats, true)) {
-        flash('error', 'Choose a valid, enabled post format.');
+    if (!in_array($format, $availableFormats, true) || !in_array($format, $platformFormats[$platform], true)) {
+        flash('error', 'Choose a valid, enabled post format for the selected platform.');
         redirect('pages/new_post.php');
     }
 
@@ -84,9 +98,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $caption    = $_POST['caption'] ?? '';
     $title      = trim($_POST['title'] ?? '');
-    $accountId  = $_POST['linkedin_account_id'] !== '' ? (int) $_POST['linkedin_account_id'] : null;
-    if ($accountId !== null && !account_usable_in_workspace($accountId, $userId, $workspaceId)) {
-        $accountId = null;
+    $accountId  = null;
+    $socialAccountId = null;
+    if ($platform === 'linkedin') {
+        $accountId = ($_POST['linkedin_account_id'] ?? '') !== '' ? (int) $_POST['linkedin_account_id'] : null;
+        if ($accountId !== null && !account_usable_in_workspace($accountId, $userId, $workspaceId)) {
+            $accountId = null;
+        }
+    } else {
+        $socialAccountField = $platform === 'facebook' ? 'facebook_account_id' : 'instagram_account_id';
+        $socialAccountId = ($_POST[$socialAccountField] ?? '') !== '' ? (int) $_POST[$socialAccountField] : null;
+        if ($socialAccountId !== null && !social_account_usable($socialAccountId, $userId)) {
+            $socialAccountId = null;
+        }
     }
     $campaignId = trim($_POST['campaign_id'] ?? '');
     // A duplicate campaign_id used to fail the INSERT below and redirect
@@ -129,10 +153,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $storedCreative = ($aiCreative !== null && in_array($format, ['Single Image', 'Carousel'], true))
             ? json_encode($aiCreative) : null;
         $stmt = db()->prepare(
-            'INSERT INTO posts (user_id, workspace_id, linkedin_account_id, campaign_id, collection_id, title, format, caption, status, scheduled_at, creative_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO posts (user_id, workspace_id, linkedin_account_id, platform, social_account_id, campaign_id, collection_id, title, format, caption, status, scheduled_at, creative_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $collectionId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
+        $stmt->execute([$userId, $workspaceId, $accountId, $platform, $socialAccountId, $campaignId, $collectionId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
     } catch (PDOException $e) {
         if ((string) $e->getCode() === '23000') {
             // The pre-check above already handles the common case — this
@@ -141,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // than redirecting away and losing everything the user typed.
             $campaignId .= '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
             $campaignIdRenamed = true;
-            $stmt->execute([$userId, $workspaceId, $accountId, $campaignId, $collectionId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
+            $stmt->execute([$userId, $workspaceId, $accountId, $platform, $socialAccountId, $campaignId, $collectionId, $title, $format, $caption, $status, $scheduledAt, $storedCreative]);
         } else {
             throw $e;
         }
@@ -312,8 +336,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         : '';
 
     if ($action === 'post_now') {
-        $result = publish_post_now($postId, $userId);
-        flash($result['success'] ? 'success' : 'error', $renameNotice . ($result['success'] ? 'Posted to LinkedIn.' : $result['error']));
+        $result = publish_social_post_now($postId, $userId);
+        flash($result['success'] ? 'success' : 'error', $renameNotice . ($result['success'] ? 'Posted.' : $result['error']));
     } else {
         flash('success', $renameNotice . ($action === 'schedule' ? 'Post scheduled.' : 'Draft saved.'));
     }
@@ -640,14 +664,52 @@ require __DIR__ . '/../includes/layout_top.php';
         </label>
         <?php endif; ?>
 
-        <label>LinkedIn Account
-          <select name="linkedin_account_id">
-            <option value="">— Unassigned —</option>
-            <?php foreach ($accounts as $acct): ?>
-              <option value="<?= (int) $acct['id'] ?>"<?= (int) ($workspace['linkedin_account_id'] ?? 0) === (int) $acct['id'] ? ' selected' : '' ?>><?= h($acct['display_name']) ?> (<?= h($acct['account_type']) ?>)</option>
-            <?php endforeach; ?>
+        <label>Platform
+          <select name="platform" id="platformSelect">
+            <option value="linkedin">LinkedIn</option>
+            <option value="facebook">Facebook</option>
+            <option value="instagram">Instagram</option>
           </select>
         </label>
+
+        <div id="linkedinAccountField">
+          <label>LinkedIn Account
+            <select name="linkedin_account_id">
+              <option value="">— Unassigned —</option>
+              <?php foreach ($accounts as $acct): ?>
+                <option value="<?= (int) $acct['id'] ?>"<?= (int) ($workspace['linkedin_account_id'] ?? 0) === (int) $acct['id'] ? ' selected' : '' ?>><?= h($acct['display_name']) ?> (<?= h($acct['account_type']) ?>)</option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+        </div>
+
+        <div id="facebookAccountField" style="display:none;">
+          <label>Facebook Page
+            <select name="facebook_account_id" class="social-account-select">
+              <option value="">— Unassigned —</option>
+              <?php foreach ($facebookAccounts as $acct): ?>
+                <option value="<?= (int) $acct['id'] ?>"><?= h($acct['display_name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <?php if (empty($facebookAccounts)): ?>
+            <p class="muted">No Facebook Pages connected — <a href="<?= h(app_path('pages/accounts.php')) ?>">connect one</a>.</p>
+          <?php endif; ?>
+        </div>
+
+        <div id="instagramAccountField" style="display:none;">
+          <label>Instagram Account
+            <select name="instagram_account_id" class="social-account-select">
+              <option value="">— Unassigned —</option>
+              <?php foreach ($instagramAccounts as $acct): ?>
+                <option value="<?= (int) $acct['id'] ?>"><?= h($acct['display_name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <?php if (empty($instagramAccounts)): ?>
+            <p class="muted">No Instagram accounts connected — <a href="<?= h(app_path('pages/accounts.php')) ?>">connect one</a>.</p>
+          <?php endif; ?>
+        </div>
 
         <div class="schedule-row">
           <label>Date <input type="date" name="scheduled_date"></label>
@@ -689,6 +751,43 @@ require __DIR__ . '/../includes/layout_top.php';
     window.newPostUpdateUploadFields = toggle;
     select.addEventListener('change', toggle);
     toggle();
+  })();
+
+  window.PLATFORM_FORMATS = <?= json_encode($platformFormats) ?>;
+  (function () {
+    var platformSelect = document.getElementById('platformSelect');
+    var formatSelect = document.getElementById('formatSelect');
+    var fieldsByPlatform = {
+      linkedin: document.getElementById('linkedinAccountField'),
+      facebook: document.getElementById('facebookAccountField'),
+      instagram: document.getElementById('instagramAccountField'),
+    };
+    if (!platformSelect || !formatSelect) return;
+    var allFormatOptions = Array.prototype.slice.call(formatSelect.options).map(function (opt) {
+      return { value: opt.value, label: opt.textContent };
+    });
+    var applyPlatform = function () {
+      var platform = platformSelect.value;
+      Object.keys(fieldsByPlatform).forEach(function (key) {
+        if (fieldsByPlatform[key]) {
+          fieldsByPlatform[key].style.display = key === platform ? '' : 'none';
+        }
+      });
+      var allowed = window.PLATFORM_FORMATS[platform] || [];
+      var currentValue = formatSelect.value;
+      formatSelect.innerHTML = '';
+      allFormatOptions.forEach(function (opt) {
+        if (allowed.indexOf(opt.value) === -1) return;
+        var el = document.createElement('option');
+        el.value = opt.value;
+        el.textContent = opt.label;
+        formatSelect.appendChild(el);
+      });
+      formatSelect.value = allowed.indexOf(currentValue) !== -1 ? currentValue : (allowed[0] || '');
+      formatSelect.dispatchEvent(new Event('change'));
+    };
+    platformSelect.addEventListener('change', applyPlatform);
+    applyPlatform();
   })();
 </script>
 

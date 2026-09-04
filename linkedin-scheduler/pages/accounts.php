@@ -24,6 +24,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$name, $id, $userId]);
             flash('success', 'Nickname updated.');
         }
+    } elseif ($action === 'social_revoke') {
+        $stmt = db()->prepare('UPDATE social_accounts SET status = "revoked" WHERE id = ? AND user_id = ?');
+        $stmt->execute([$id, $userId]);
+        flash('success', 'Account removed.');
+    } elseif ($action === 'social_rename') {
+        $name = trim($_POST['display_name'] ?? '');
+        if ($name !== '') {
+            $stmt = db()->prepare('UPDATE social_accounts SET display_name = ? WHERE id = ? AND user_id = ?');
+            $stmt->execute([$name, $id, $userId]);
+            flash('success', 'Nickname updated.');
+        }
     }
     redirect('pages/accounts.php');
 }
@@ -33,6 +44,12 @@ $stmt->execute([$userId]);
 $accounts = $stmt->fetchAll();
 $personal = array_values(array_filter($accounts, fn ($a) => $a['account_type'] === 'personal'));
 $company  = array_values(array_filter($accounts, fn ($a) => $a['account_type'] === 'company'));
+
+$socialStmt = db()->prepare('SELECT * FROM social_accounts WHERE user_id = ? AND status != "revoked" ORDER BY display_name');
+$socialStmt->execute([$userId]);
+$socialAccounts = $socialStmt->fetchAll();
+$facebookAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'facebook'));
+$instagramAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'instagram'));
 
 $pageTitle  = 'Connected Accounts';
 $activePage = 'accounts';
@@ -68,6 +85,32 @@ require __DIR__ . '/../includes/layout_top.php';
     <p class="muted">No Company Pages connected yet.</p>
   <?php else: foreach ($company as $acct): ?>
     <?php include __DIR__ . '/_account_row.php'; ?>
+  <?php endforeach; endif; ?>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <h2>Facebook Pages</h2>
+    <a class="btn-secondary" href="<?= h(app_path('auth/meta_start.php')) ?>">Connect Facebook</a>
+  </div>
+  <p class="muted">Requires Meta App Review before this works for anyone but the app's own developer/testers.</p>
+  <?php if (empty($facebookAccounts)): ?>
+    <p class="muted">No Facebook Pages connected yet.</p>
+  <?php else: foreach ($facebookAccounts as $acct): ?>
+    <?php include __DIR__ . '/_social_account_row.php'; ?>
+  <?php endforeach; endif; ?>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <h2>Instagram</h2>
+    <a class="btn-secondary" href="<?= h(app_path('auth/meta_start.php')) ?>">Connect Instagram</a>
+  </div>
+  <p class="muted">Uses the same Facebook connection above — an Instagram Business account must be linked to a Facebook Page you administer.</p>
+  <?php if (empty($instagramAccounts)): ?>
+    <p class="muted">No Instagram accounts connected yet.</p>
+  <?php else: foreach ($instagramAccounts as $acct): ?>
+    <?php include __DIR__ . '/_social_account_row.php'; ?>
   <?php endforeach; endif; ?>
 </section>
 

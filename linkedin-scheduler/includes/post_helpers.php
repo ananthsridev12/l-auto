@@ -138,6 +138,25 @@ function account_usable_in_workspace(int $accountId, int $userId, ?int $workspac
     return (bool) $wsStmt->fetchColumn();
 }
 
+// Mirrors fetch_user_accounts() for the new platforms — personal
+// ownership only for now (no workspace-designated-account sharing yet;
+// that's a deliberate non-goal for this first build, not an oversight).
+function fetch_user_social_accounts(int $userId, string $platform): array
+{
+    $stmt = db()->prepare('SELECT id, display_name FROM social_accounts WHERE user_id = ? AND platform = ? AND status = "active" ORDER BY display_name');
+    $stmt->execute([$userId, $platform]);
+    return $stmt->fetchAll();
+}
+
+// Mirrors account_usable_in_workspace() for the new platforms —
+// personal ownership only, see fetch_user_social_accounts() above.
+function social_account_usable(int $accountId, int $userId): bool
+{
+    $stmt = db()->prepare('SELECT 1 FROM social_accounts WHERE id = ? AND user_id = ? AND status = "active"');
+    $stmt->execute([$accountId, $userId]);
+    return (bool) $stmt->fetchColumn();
+}
+
 function fetch_tag_directory(int $userId): array
 {
     $stmt = db()->prepare('SELECT id, display_name, target_urn FROM tag_directory WHERE user_id = ? ORDER BY display_name');

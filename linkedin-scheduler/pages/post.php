@@ -205,6 +205,13 @@ $aiConfig = resolve_ai_config($userId);
 $stockSearchUsable = unsplash_configured(get_unsplash_access_key($userId));
 $stockAiUsable = ai_configured($aiConfig) && module_enabled('ai_generation');
 $formatDisabled = !in_array($post['format'], get_enabled_formats($userId), true);
+// A post created for a non-LinkedIn platform (New Post's Platform
+// picker) has no linkedin_account_id at all — its account lives in
+// social_account_id instead. This page's account picker/reassignment
+// UI is still LinkedIn-only (a later pass generalizes it), but "Post
+// Now" itself already works for these via publish_social_post_now(),
+// so its disabled state must not key off linkedin_account_id alone.
+$postHasAssignedAccount = ($post['platform'] ?? 'linkedin') === 'linkedin' ? !empty($post['linkedin_account_id']) : !empty($post['social_account_id']);
 
 // Posts whose image was generated from creative JSON (AI or "write
 // content directly", any of the three generation flows) can have that
@@ -406,7 +413,7 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
         </div>
       </form>
 
-      <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$post['linkedin_account_id'] || $formatDisabled) ? 'disabled' : '' ?>>
+      <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$postHasAssignedAccount || $formatDisabled) ? 'disabled' : '' ?>>
         Post Now
       </button>
       <div id="postStatus" class="post-status" style="display:none"></div>
@@ -544,7 +551,7 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
           </div>
         </form>
 
-        <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$post['linkedin_account_id'] || $formatDisabled) ? 'disabled' : '' ?>>
+        <button id="postBtn" class="post-btn" onclick="postNow(<?= (int) $post['id'] ?>)" <?= (!$postHasAssignedAccount || $formatDisabled) ? 'disabled' : '' ?>>
           Post Now
         </button>
         <div id="postStatus" class="post-status" style="display:none"></div>
