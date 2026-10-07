@@ -6,6 +6,7 @@
 // (turned into an isError result by includes/mcp_server.php, never a
 // JSON-RPC protocol error); let any other exception propagate so the
 // server logs and reports it generically.
+require_once __DIR__ . '/helpers.php'; // ALL_POST_FORMATS
 require_once __DIR__ . '/post_helpers.php';
 require_once __DIR__ . '/social_publish.php';
 require_once __DIR__ . '/zip_import.php'; // MAX_SLIDES_PER_CAMPAIGN
@@ -59,18 +60,18 @@ function mcp_ip_is_public(string $ip): bool
     return (bool) filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
 }
 
-// Fetches an externally-supplied image URL server-side (for create_post's
-// image_urls) with basic SSRF guards: scheme must be http/https, the
-// resolved IP must be public (rules out loopback/private/link-local
-// ranges), redirects are not followed (a public URL could otherwise
-// redirect to an internal one), and the response must actually be a
-// PNG/JPEG under a sane size cap.
-function mcp_fetch_remote_image(string $url): string
+// Fetches an externally-supplied file URL server-side (create_post's
+// image_urls/video_url) with basic SSRF guards: scheme must be
+// http/https, the resolved IP must be public (rules out loopback/
+// private/link-local ranges), redirects are not followed (a public URL
+// could otherwise redirect to an internal one), and the response must
+// actually declare one of $allowedContentTypes under $maxBytes.
+function mcp_fetch_remote_file(string $url, array $allowedContentTypes, int $maxBytes, string $kind, int $timeoutSeconds = 10): string
 {
     $parts = parse_url($url);
     $host = $parts['host'] ?? '';
     if (!$parts || !in_array($parts['scheme'] ?? '', ['http', 'https'], true) || $host === '') {
-        throw new McpToolError("\"{$url}\" is not a valid http(s) image URL.");
+        throw new McpToolError("\"{$url}\" is not a valid http(s) {$kind} URL.");
     }
     $ip = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
     if (!mcp_ip_is_public($ip)) {
@@ -81,7 +82,7 @@ function mcp_fetch_remote_image(string $url): string
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => false,
-        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_TIMEOUT        => $timeoutSeconds,
         CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
     ]);
     $body = curl_exec($ch);
@@ -90,41 +91,65 @@ function mcp_fetch_remote_image(string $url): string
     curl_close($ch);
 
     if ($status !== 200 || !$body) {
-        throw new McpToolError("Could not download the image at \"{$url}\" (HTTP {$status}).");
+        throw new McpToolError("Could not download the {$kind} at \"{$url}\" (HTTP {$status}).");
     }
-    if (strlen($body) > 15 * 1024 * 1024) {
-        throw new McpToolError("The image at \"{$url}\" is too large (max 15MB).");
+    if (strlen($body) > $maxBytes) {
+        throw new McpToolError("The {$kind} at \"{$url}\" is too large (max " . round($maxBytes / 1024 / 1024) . "MB).");
     }
-    if (!in_array($contentType, ['image/png', 'image/jpeg', 'image/jpg'], true)) {
-        throw new McpToolError("\"{$url}\" did not return a PNG/JPEG image (got \"{$contentType}\").");
+    if (!in_array($contentType, $allowedContentTypes, true)) {
+        throw new McpToolError("\"{$url}\" did not return a " . implode('/', $allowedContentTypes) . " {$kind} (got \"{$contentType}\").");
     }
     return $body;
 }
 
-// Decodes an inline image for create_post's image_base64 — for an image
-// the caller already has the bytes for (e.g. a file attached in chat),
-// as opposed to image_urls' "fetch this public URL" path. Expects a
-// data: URI exactly like the ones this app's own UI already sends for
-// AI-generated/pasted images (see pages/new_post.php, pages/post.php),
-// so the same validation shape applies: must declare image/png or
-// image/jpeg, and decode under the same size cap as a fetched URL.
-function mcp_decode_base64_image(string $dataUri): string
+function mcp_fetch_remote_image(string $url): string
 {
-    if (!preg_match('#^data:image/(png|jpeg|jpg);base64,(.+)$#', trim($dataUri), $m)) {
+    return mcp_fetch_remote_file($url, ['image/png', 'image/jpeg', 'image/jpg'], 15 * 1024 * 1024, 'image');
+}
+
+// 200MB practical cap (not a LinkedIn limit) + a longer timeout than an
+// image fetch, since a video this size takes real time to download.
+function mcp_fetch_remote_video(string $url): string
+{
+    return mcp_fetch_remote_file($url, ['video/mp4'], 200 * 1024 * 1024, 'video', 60);
+}
+
+// Decodes an inline file for create_post's image_base64/video_base64 —
+// for a file the caller already has the bytes for (e.g. one attached in
+// chat), as opposed to the "fetch this public URL" path above. Expects
+// a data: URI exactly like the ones this app's own UI already sends for
+// AI-generated/pasted images (see pages/new_post.php, pages/post.php).
+function mcp_decode_base64_file(string $dataUri, array $allowedMimeTypes, int $maxBytes, string $kind): string
+{
+    $pattern = '#^data:(' . implode('|', array_map(fn ($m) => preg_quote($m, '#'), $allowedMimeTypes)) . ');base64,(.+)$#';
+    if (!preg_match($pattern, trim($dataUri), $m)) {
         // Temporary diagnostic (safe to leave: never echoes more than a
         // short prefix) — a client sent something that didn't match the
         // expected data: URI shape; show enough of it to tell why.
         $preview = substr($dataUri, 0, 60);
-        throw new McpToolError("image_base64 entries must be a data URI like \"data:image/png;base64,...\". Got (" . strlen($dataUri) . " chars, starts with): " . var_export($preview, true));
+        throw new McpToolError("{$kind}_base64 entries must be a data URI like \"data:{$allowedMimeTypes[0]};base64,...\". Got (" . strlen($dataUri) . " chars, starts with): " . var_export($preview, true));
     }
     $bytes = base64_decode($m[2], true);
     if ($bytes === false) {
-        throw new McpToolError('image_base64 entry is not valid base64.');
+        throw new McpToolError("{$kind}_base64 entry is not valid base64.");
     }
-    if (strlen($bytes) > 15 * 1024 * 1024) {
-        throw new McpToolError('An image_base64 entry is too large (max 15MB).');
+    if (strlen($bytes) > $maxBytes) {
+        throw new McpToolError("A {$kind}_base64 entry is too large (max " . round($maxBytes / 1024 / 1024) . "MB).");
     }
     return $bytes;
+}
+
+function mcp_decode_base64_image(string $dataUri): string
+{
+    return mcp_decode_base64_file($dataUri, ['image/png', 'image/jpeg', 'image/jpg'], 15 * 1024 * 1024, 'image');
+}
+
+// 50MB practical cap for inline base64 — a JSON-RPC payload much larger
+// than this is impractical regardless of what LinkedIn itself allows;
+// use video_url for a larger file.
+function mcp_decode_base64_video(string $dataUri): string
+{
+    return mcp_decode_base64_file($dataUri, ['video/mp4'], 50 * 1024 * 1024, 'video');
 }
 
 // Resolves which connected account a create_post call should use.
@@ -236,15 +261,37 @@ function mcp_tool_create_post(array $args, int $userId): array
     $imageUrls = array_values(array_filter((array) ($args['image_urls'] ?? []), 'is_string'));
     $imageBase64 = array_values(array_filter((array) ($args['image_base64'] ?? []), 'is_string'));
     $imageCount = count($imageUrls) + count($imageBase64);
+
+    // Video — singular (one video per post, no multi-video concept),
+    // LinkedIn-only. video_url/video_base64 mirror image_urls/
+    // image_base64's two supply paths.
+    $videoUrl = is_string($args['video_url'] ?? null) ? trim($args['video_url']) : '';
+    $videoBase64 = is_string($args['video_base64'] ?? null) ? trim($args['video_base64']) : '';
+    $hasVideo = $videoUrl !== '' || $videoBase64 !== '';
+    if ($videoUrl !== '' && $videoBase64 !== '') {
+        throw new McpToolError('Pass only one of video_url or video_base64, not both.');
+    }
+    if ($hasVideo && $imageCount > 0) {
+        throw new McpToolError('A post can have images or a video, not both.');
+    }
+    if ($hasVideo && $platform !== 'linkedin') {
+        throw new McpToolError('Video posts are only supported on LinkedIn for now.');
+    }
+
     if ($imageCount > MAX_SLIDES_PER_CAMPAIGN) {
         throw new McpToolError('A post can have at most ' . MAX_SLIDES_PER_CAMPAIGN . ' images.');
     }
-    $format = $imageCount === 0 ? 'Text Post' : ($imageCount === 1 ? 'Single Image' : 'Carousel');
+    $format = $hasVideo ? 'Video Post' : ($imageCount === 0 ? 'Text Post' : ($imageCount === 1 ? 'Single Image' : 'Carousel'));
     if ($platform === 'instagram' && $format === 'Text Post') {
         throw new McpToolError('Instagram requires at least one image — pass image_urls or image_base64.');
     }
     if (in_array($platform, ['pinterest', 'google_business'], true) && $imageCount > 1) {
         throw new McpToolError(ucfirst(str_replace('_', ' ', $platform)) . ' only supports a single image per post — pass exactly one image_urls/image_base64 entry.');
+    }
+    if ($format === 'Video Post' && !in_array($format, ALL_POST_FORMATS, true)) {
+        // Unreachable once ALL_POST_FORMATS includes it, but a clear
+        // failure rather than a confusing one if that ever regresses.
+        throw new McpToolError('Video Post support is not available on this server.');
     }
 
     $workspaceId = mcp_resolve_workspace_id($userId);
@@ -285,8 +332,31 @@ function mcp_tool_create_post(array $args, int $userId): array
         }
     }
 
+    $videoPreviewUrl = null;
+    if ($hasVideo) {
+        try {
+            $bytes = $videoUrl !== '' ? mcp_fetch_remote_video($videoUrl) : mcp_decode_base64_video($videoBase64);
+        } catch (McpToolError $e) {
+            db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
+            throw $e;
+        }
+        $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+        if (!is_dir($destDir)) {
+            mkdir($destDir, 0775, true);
+        }
+        $filename = 'video.mp4';
+        $filepath = $destDir . '/' . $filename;
+        file_put_contents($filepath, $bytes);
+        db()->prepare('UPDATE posts SET video_filename = ?, video_filepath = ? WHERE id = ?')->execute([$filename, $filepath, $postId]);
+        $videoPreviewUrl = slide_public_url($filepath);
+    }
+
     $detectedLink = mcp_detect_link($caption);
-    $needsConfirmation = $imageCount > 0 || $detectedLink !== null;
+    // A video ALWAYS requires confirmation, regardless of caption
+    // content — unlike images/links, this isn't conditional. Per the
+    // user's explicit requirement: approval/preview for video is
+    // mandatory, monitored through this MCP connection itself.
+    $needsConfirmation = $imageCount > 0 || $hasVideo || $detectedLink !== null;
 
     if (!$needsConfirmation) {
         $result = publish_social_post_now($postId, $userId);
@@ -299,13 +369,14 @@ function mcp_tool_create_post(array $args, int $userId): array
     }
 
     return [
-        'post_id'             => $postId,
-        'status'              => 'draft',
-        'posted'              => false,
-        'preview_urls'        => $previewUrls,
-        'detected_link'       => $detectedLink,
+        'post_id'               => $postId,
+        'status'                => 'draft',
+        'posted'                => false,
+        'preview_urls'          => $previewUrls,
+        'video_preview_url'     => $videoPreviewUrl,
+        'detected_link'         => $detectedLink,
         'confirmation_required' => true,
-        'message'             => 'Saved as a draft, not posted yet. Show the preview_urls/detected_link to the user, and only call post_now with this post_id once they confirm it looks right.',
+        'message'               => 'Saved as a draft, not posted yet. Show the preview_urls/video_preview_url/detected_link to the user, and only call post_now with this post_id once they confirm it looks right.',
     ];
 }
 
@@ -451,14 +522,16 @@ function mcp_tool_registry(): array
         'create_post' => [
             'definition' => [
                 'name' => 'create_post', 'title' => 'Create a post',
-                'description' => 'Creates a post. A plain text post with no images and no link in the caption is published immediately. A post with image_urls/image_base64 and/or a link in the caption is saved as a draft and returns preview_urls/detected_link for the user to review before calling post_now.',
+                'description' => 'Creates a post. A plain text post with no images, video, or link in the caption is published immediately. A post with image_urls/image_base64, video_url/video_base64, and/or a link in the caption is saved as a draft and returns preview_urls/video_preview_url/detected_link for the user to review before calling post_now. A video post always requires that confirmation, even with a plain caption.',
                 'inputSchema' => ['type' => 'object', 'properties' => [
                     'caption'      => ['type' => 'string', 'description' => 'The post text.'],
                     'title'        => ['type' => 'string', 'description' => 'Internal title, optional.'],
-                    'platform'     => ['type' => 'string', 'enum' => MCP_PLATFORMS, 'description' => 'Defaults to linkedin.'],
+                    'platform'     => ['type' => 'string', 'enum' => MCP_PLATFORMS, 'description' => 'Defaults to linkedin. Required to be linkedin if video_url/video_base64 is set.'],
                     'account_id'   => ['type' => 'integer', 'description' => 'Which connected account/page/board to use. Omit if only one is connected for the platform.'],
-                    'image_urls'   => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Public http(s) PNG/JPEG URLs to fetch and attach. Combined with image_base64 — total count: 0 = Text Post, 1 = Single Image, 2+ = Carousel.'],
+                    'image_urls'   => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Public http(s) PNG/JPEG URLs to fetch and attach. Combined with image_base64 — total count: 0 = Text Post, 1 = Single Image, 2+ = Carousel. Mutually exclusive with video_url/video_base64.'],
                     'image_base64' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'For an image you already have the bytes for (e.g. one attached in this chat) rather than a public URL. Each entry a data URI: "data:image/png;base64,..." or "data:image/jpeg;base64,...". Combined with image_urls for the total image count.'],
+                    'video_url'    => ['type' => 'string', 'description' => 'LinkedIn only. A public http(s) MP4 URL to fetch and attach (max 200MB). Mutually exclusive with image_urls/image_base64 and with video_base64.'],
+                    'video_base64' => ['type' => 'string', 'description' => 'LinkedIn only. For a video you already have the bytes for (e.g. one generated or attached in this chat) rather than a public URL — a data URI: "data:video/mp4;base64,..." (max 50MB). Mutually exclusive with image_urls/image_base64 and with video_url.'],
                 ], 'required' => ['caption']],
                 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => false, 'openWorldHint' => false],
             ],

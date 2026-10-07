@@ -65,9 +65,13 @@ foreach ($due as $post) {
         continue;
     }
 
-    $slideStmt = $pdo->prepare('SELECT filepath FROM post_slides WHERE post_id = ? ORDER BY slide_order ASC');
-    $slideStmt->execute([$post['id']]);
-    $slidePaths = array_column($slideStmt->fetchAll(), 'filepath');
+    if ($post['format'] === 'Video Post') {
+        $slidePaths = $post['video_filepath'] ? [$post['video_filepath']] : [];
+    } else {
+        $slideStmt = $pdo->prepare('SELECT filepath FROM post_slides WHERE post_id = ? ORDER BY slide_order ASC');
+        $slideStmt->execute([$post['id']]);
+        $slidePaths = array_column($slideStmt->fetchAll(), 'filepath');
+    }
 
     try {
         $postUrn = li_publish_post(

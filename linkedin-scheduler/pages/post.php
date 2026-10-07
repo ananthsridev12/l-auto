@@ -432,7 +432,13 @@ $schedTimeVal = $post['scheduled_at'] ? substr($post['scheduled_at'], 11, 5) : '
   <?php else: ?>
   <div class="post-layout">
     <div class="slides-panel">
-      <?php if ($post['slides']): ?>
+      <?php if ($post['format'] === 'Video Post'): ?>
+        <?php if ($post['video_filepath']): ?>
+          <div class="slide-frame"><video controls style="max-width:100%;" src="<?= h(slide_public_url($post['video_filepath'])) ?>"></video></div>
+        <?php else: ?>
+          <div class="no-slides"><p>No video uploaded.</p></div>
+        <?php endif; ?>
+      <?php elseif ($post['slides']): ?>
         <div class="slide-frame"><img id="slideImg" src="<?= h($post['slides'][0]['url']) ?>" alt="Slide preview"></div>
         <?php if (count($post['slides']) > 1): ?>
         <div class="slide-nav">

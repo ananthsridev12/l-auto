@@ -1,12 +1,17 @@
 <?php
 
-const ALL_POST_FORMATS = ['Single Image', 'Carousel', 'Text Post', 'Poll'];
+const ALL_POST_FORMATS = ['Single Image', 'Carousel', 'Text Post', 'Poll', 'Video Post'];
 
 // Poll is excluded from the default set — LinkedIn's Posts API (what
 // this app uses to publish) has no endpoint for creating a real,
 // votable poll, so "posting" a Poll-format row would only ever publish
 // plain text under a misleading label. Users can still turn it on
 // explicitly in Settings if they just want the text content out.
+//
+// Video Post is excluded too, for a different reason: it's a brand-new
+// capability (LinkedIn only) that depends on LinkedIn's Video API
+// working as documented — opt-in via Settings rather than silently on
+// for everyone, same as Poll.
 const DEFAULT_ENABLED_FORMATS = ['Single Image', 'Carousel', 'Text Post'];
 
 const AI_PROVIDERS = ['gemini', 'claude', 'openai'];

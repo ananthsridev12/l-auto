@@ -112,12 +112,161 @@ function li_upload_document(string $accessToken, string $actingUrn, string $pdfP
     return $value['document'];
 }
 
+// LinkedIn's Video API is chunked/multi-part (unlike the single-PUT
+// image/document uploads above) — initializeUpload returns one or more
+// byte-range upload instructions, each PUT separately with its ETag
+// response header collected, then finalizeUpload assembles them from
+// those ETags. Finally polls the video's own processing status, since
+// (unlike documents, which just need a fixed sleep()) video processing
+// is asynchronous and can take meaningfully longer.
+//
+// LI_VIDEO_API_OVERRIDE (define in config.php, never committed) — same
+// seam as LI_ENGAGEMENT_API_OVERRIDE: 'fake' returns a synthetic video
+// URN with no network call at all; 'fake_fail' throws the same
+// exception shape a real failure would.
+//
+// Flagged for implementation-time verification: this follows LinkedIn's
+// best-documented Video API shape as of this writing, but has not been
+// exercised against a real LinkedIn Developer App — the exact field
+// names/response shape should be confirmed against LinkedIn's live docs
+// once real video-upload access is available.
+function li_upload_video(string $accessToken, string $actingUrn, string $videoPath): string
+{
+    if (defined('LI_VIDEO_API_OVERRIDE')) {
+        if (LI_VIDEO_API_OVERRIDE === 'fake_fail') {
+            throw new RuntimeException('Video upload failed 500: simulated failure (LI_VIDEO_API_OVERRIDE=fake_fail)');
+        }
+        if (LI_VIDEO_API_OVERRIDE === 'fake') {
+            return 'urn:li:video:fake' . bin2hex(random_bytes(6));
+        }
+    }
+
+    $fileSize = filesize($videoPath);
+    if ($fileSize === false || $fileSize === 0) {
+        throw new RuntimeException("Could not read video file at {$videoPath}");
+    }
+
+    $ch = curl_init(LI_API_BASE . '/rest/videos?action=initializeUpload');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => li_json_headers($accessToken),
+        CURLOPT_POSTFIELDS     => json_encode(['initializeUploadRequest' => ['owner' => $actingUrn, 'fileSizeBytes' => $fileSize]]),
+    ]);
+    $body = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $data = json_decode($body ?: '', true) ?? [];
+    if ($status < 200 || $status >= 300 || empty($data['value']['uploadInstructions'])) {
+        throw new RuntimeException("Video init failed {$status}: {$body}");
+    }
+    $value = $data['value'];
+    $videoUrn = $value['video'];
+    $uploadToken = $value['uploadToken'] ?? '';
+
+    $bytes = file_get_contents($videoPath);
+    $partIds = [];
+    foreach ($value['uploadInstructions'] as $instruction) {
+        $firstByte = (int) $instruction['firstByte'];
+        $lastByte = (int) $instruction['lastByte'];
+        $chunk = substr($bytes, $firstByte, $lastByte - $firstByte + 1);
+
+        $etag = null;
+        $ch = curl_init($instruction['uploadUrl']);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST  => 'PUT',
+            CURLOPT_POSTFIELDS     => $chunk,
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/octet-stream'],
+            CURLOPT_HEADERFUNCTION => function ($curlHandle, $header) use (&$etag) {
+                if (stripos($header, 'etag:') === 0) {
+                    $etag = trim(substr($header, 5), " \t\r\n\"");
+                }
+                return strlen($header);
+            },
+        ]);
+        curl_exec($ch);
+        $putStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($putStatus < 200 || $putStatus >= 300) {
+            throw new RuntimeException("Video chunk upload PUT failed with status {$putStatus}");
+        }
+        $partIds[] = $etag ?? '';
+    }
+
+    $ch = curl_init(LI_API_BASE . '/rest/videos?action=finalizeUpload');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => li_json_headers($accessToken),
+        CURLOPT_POSTFIELDS     => json_encode(['finalizeUploadRequest' => [
+            'video' => $videoUrn, 'uploadToken' => $uploadToken, 'uploadedPartIds' => $partIds,
+        ]]),
+    ]);
+    $body = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("Video finalize failed {$status}: {$body}");
+    }
+
+    li_wait_for_video_ready($accessToken, $videoUrn);
+
+    return $videoUrn;
+}
+
+// Bounded polling rather than a fixed sleep() — video processing
+// reliably takes longer than a document's "give it a moment" wait, and
+// a fixed delay would either be too short (post creation then fails)
+// or wastefully long for a short clip.
+function li_wait_for_video_ready(string $accessToken, string $videoUrn, int $maxAttempts = 10, int $delaySeconds = 3): void
+{
+    for ($i = 0; $i < $maxAttempts; $i++) {
+        $ch = curl_init(LI_API_BASE . '/rest/videos/' . rawurlencode($videoUrn));
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => li_json_headers($accessToken),
+        ]);
+        $body = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $data = json_decode($body ?: '', true) ?? [];
+        if ($status >= 200 && $status < 300) {
+            if (($data['status'] ?? '') === 'AVAILABLE') {
+                return;
+            }
+            if (($data['status'] ?? '') === 'FAILED') {
+                throw new RuntimeException("LinkedIn reported the uploaded video failed processing.");
+            }
+        }
+        sleep($delaySeconds);
+    }
+    throw new RuntimeException("Video is still processing on LinkedIn's side — try posting again in a minute.");
+}
+
 // $mentionCandidates maps connected-account display name => URN, so any
 // "@[Name]" the user inserted via the "Tag a Page" toolbar button
 // becomes a real LinkedIn mention. Every other reserved character in
 // the commentary is escaped here too — see includes/linkedin_text.php.
+//
+// LI_POST_API_OVERRIDE (define in config.php, never committed) — same
+// seam as LI_ENGAGEMENT_API_OVERRIDE/LI_VIDEO_API_OVERRIDE: 'fake'
+// returns a synthetic post URN with no network call; 'fake_fail' throws
+// the same exception shape a real failure would. Every post format
+// (text/image/carousel/video) ultimately calls this function, so this
+// one seam is what makes a full local post_now round-trip testable for
+// all of them.
 function li_create_post(string $accessToken, string $actingUrn, string $commentary, ?array $content = null, array $mentionCandidates = []): string
 {
+    if (defined('LI_POST_API_OVERRIDE')) {
+        if (LI_POST_API_OVERRIDE === 'fake_fail') {
+            throw new RuntimeException('Post failed 422: simulated failure (LI_POST_API_OVERRIDE=fake_fail)');
+        }
+        if (LI_POST_API_OVERRIDE === 'fake') {
+            return 'urn:li:share:(fake,' . bin2hex(random_bytes(4)) . ')';
+        }
+    }
+
     $body = [
         'author'         => $actingUrn,
         'commentary'     => li_build_commentary($commentary, $mentionCandidates),
@@ -366,6 +515,16 @@ function li_publish_post(string $accessToken, string $actingUrn, string $format,
 {
     $mediaTitle = $title !== '' ? $title : $campaignId;
 
+    if ($format === 'Video Post') {
+        if (empty($slidePaths[0])) {
+            throw new RuntimeException('Video Post has no video file to upload.');
+        }
+        $videoUrn = li_upload_video($accessToken, $actingUrn, $slidePaths[0]);
+        return li_create_post($accessToken, $actingUrn, $caption, [
+            'media' => ['title' => $mediaTitle, 'id' => $videoUrn],
+        ], $mentionCandidates);
+    }
+
     if (in_array($format, ['Text Post', 'Poll'], true) || empty($slidePaths)) {
         return li_create_post($accessToken, $actingUrn, $caption, null, $mentionCandidates);
     }
@@ -435,9 +594,13 @@ function publish_post_now(int $postId, int $userId): array
         return ['success' => false, 'error' => "Your organization's plan has reached its monthly post limit.", 'status_code' => 422];
     }
 
-    $slideStmt = db()->prepare('SELECT filepath FROM post_slides WHERE post_id = ? ORDER BY slide_order ASC');
-    $slideStmt->execute([$postId]);
-    $slidePaths = array_column($slideStmt->fetchAll(), 'filepath');
+    if ($post['format'] === 'Video Post') {
+        $slidePaths = $post['video_filepath'] ? [$post['video_filepath']] : [];
+    } else {
+        $slideStmt = db()->prepare('SELECT filepath FROM post_slides WHERE post_id = ? ORDER BY slide_order ASC');
+        $slideStmt->execute([$postId]);
+        $slidePaths = array_column($slideStmt->fetchAll(), 'filepath');
+    }
 
     try {
         $postUrn = li_publish_post(

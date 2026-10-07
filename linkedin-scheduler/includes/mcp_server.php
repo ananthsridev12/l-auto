@@ -46,7 +46,17 @@ function mcp_instructions(): string
         . "`scheduled_date` (YYYY-MM-DD) and, for a specific time, `scheduled_time` (24-hour HH:MM, "
         . "e.g. \"18:30\" for 6:30pm) — omitting scheduled_time defaults to 9am. Never tell the user a "
         . "post was scheduled or published unless the tool result actually confirms it — report the "
-        . "real status back, including any error.";
+        . "real status back, including any error.\n\n"
+        . "Video is supported on LinkedIn only (`video_url`/`video_base64` on `create_post`, same two "
+        . "supply paths as images — `video_base64` for a video you already have the bytes for, e.g. "
+        . "one generated or attached in this chat). A video post ALWAYS requires confirmation before "
+        . "`post_now`, even with a plain caption and no link — this is a hard rule, not conditional "
+        . "like images/links. Show the user `video_preview_url` and wait for explicit confirmation "
+        . "every time. Video processing on LinkedIn's side can take a little while and can fail after "
+        . "upload succeeds — if `post_now` reports a processing/failure error, tell the user plainly "
+        . "and suggest trying again shortly rather than assuming it will resolve itself. GIFs and "
+        . "other video formats besides MP4, and video on any platform besides LinkedIn, are not "
+        . "supported — say so rather than attempting a workaround.";
 }
 
 function mcp_handle_initialize(array $params): array

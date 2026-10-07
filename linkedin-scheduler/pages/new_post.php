@@ -18,7 +18,7 @@ $userId = current_user_id();
 $workspaceId = current_workspace_id();
 $workspace = current_workspace();
 
-$availableFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel'], get_enabled_formats($userId)));
+$availableFormats = array_values(array_intersect(['Text Post', 'Single Image', 'Carousel', 'Video Post'], get_enabled_formats($userId)));
 $accounts = fetch_user_accounts($userId, $workspaceId);
 $facebookAccounts = fetch_user_social_accounts($userId, 'facebook');
 $instagramAccounts = fetch_user_social_accounts($userId, 'instagram');
@@ -26,14 +26,15 @@ $pinterestAccounts = fetch_user_social_accounts($userId, 'pinterest');
 $gbpAccounts = fetch_user_social_accounts($userId, 'google_business');
 // Which of $availableFormats each platform actually supports — used to
 // filter the Format picker client-side (inline script near the bottom
-// of this page) once a non-LinkedIn platform is chosen. Instagram has
-// no true text-only post; Pinterest Pins are always single-image (a
-// Carousel post would just use its first slide, so it isn't offered
-// here to avoid surprise); Google Business Profile posts are always a
-// single photo update, no true text-only or multi-photo option;
-// Facebook matches LinkedIn's own set.
+// of this page) once a platform is chosen. Instagram has no true
+// text-only post; Pinterest Pins are always single-image (a Carousel
+// post would just use its first slide, so it isn't offered here to
+// avoid surprise); Google Business Profile posts are always a single
+// photo update, no true text-only or multi-photo option; Facebook
+// matches LinkedIn's own image/text set. Video Post is LinkedIn-only
+// for now — see includes/linkedin_api.php li_upload_video().
 $platformFormats = [
-    'linkedin'        => ['Text Post', 'Single Image', 'Carousel'],
+    'linkedin'        => ['Text Post', 'Single Image', 'Carousel', 'Video Post'],
     'facebook'        => ['Text Post', 'Single Image', 'Carousel'],
     'instagram'       => ['Single Image', 'Carousel'],
     'pinterest'       => ['Single Image'],
@@ -102,6 +103,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect('pages/new_post.php');
             }
         }
+    }
+    if ($format === 'Video Post' && empty($_FILES['video']['tmp_name'])) {
+        flash('error', 'Upload an MP4 video for a Video Post.');
+        redirect('pages/new_post.php');
     }
 
     $caption    = $_POST['caption'] ?? '';
@@ -256,6 +261,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ->execute([$postId, $filename, $destPath]);
     }
 
+    if ($format === 'Video Post' && !empty($_FILES['video']['tmp_name'])) {
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = $finfo->file($_FILES['video']['tmp_name']);
+        if ($mime !== 'video/mp4') {
+            db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
+            flash('error', 'Video must be an MP4 file (got "' . $mime . '").');
+            redirect('pages/new_post.php');
+        }
+        $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
+        if (!is_dir($destDir)) {
+            mkdir($destDir, 0755, true);
+        }
+        $filename = 'video.mp4';
+        $destPath = $destDir . '/' . $filename;
+        move_uploaded_file($_FILES['video']['tmp_name'], $destPath);
+        db()->prepare('UPDATE posts SET video_filename = ?, video_filepath = ? WHERE id = ?')
+            ->execute([$filename, $destPath, $postId]);
+    }
+
     if ($aiCreative === null && $usingStockOrAiPhoto) {
         try {
             if ($stockAiDataUrl !== '') {
@@ -385,6 +409,11 @@ require __DIR__ . '/../includes/layout_top.php';
       <div id="carouselUploadField" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
         <label>Slides (PNG or JPEG, select multiple — combined into a PDF carousel, in the order selected)
           <input type="file" name="images[]" accept="image/png,image/jpeg" multiple form="newPostForm">
+        </label>
+      </div>
+      <div id="videoUploadField" class="stacked-form" style="width:100%; margin-top:12px; display:none;">
+        <label>Video (MP4)
+          <input type="file" name="video" accept="video/mp4" form="newPostForm">
         </label>
       </div>
 
@@ -777,6 +806,7 @@ require __DIR__ . '/../includes/layout_top.php';
     var select = document.getElementById('formatSelect');
     var imageField = document.getElementById('imageUploadField');
     var carouselField = document.getElementById('carouselUploadField');
+    var videoField = document.getElementById('videoUploadField');
     var aiToggle = document.getElementById('aiGenerateToggle');
     var manualToggle = document.getElementById('manualCreativeToggle');
     var stockPhotoToggle = document.getElementById('stockPhotoToggle');
@@ -785,6 +815,9 @@ require __DIR__ . '/../includes/layout_top.php';
       var usingCreativeJson = (aiToggle && aiToggle.checked) || (manualToggle && manualToggle.checked) || (stockPhotoToggle && stockPhotoToggle.checked);
       imageField.style.display = (!usingCreativeJson && select.value === 'Single Image') ? 'flex' : 'none';
       carouselField.style.display = (!usingCreativeJson && select.value === 'Carousel') ? 'flex' : 'none';
+      if (videoField) {
+        videoField.style.display = (select.value === 'Video Post') ? 'flex' : 'none';
+      }
     };
     window.newPostUpdateUploadFields = toggle;
     select.addEventListener('change', toggle);
