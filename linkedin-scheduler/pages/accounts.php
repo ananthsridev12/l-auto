@@ -35,6 +35,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$name, $id, $userId]);
             flash('success', 'Nickname updated.');
         }
+    } elseif ($action === 'mcp_revoke') {
+        $stmt = db()->prepare('DELETE FROM mcp_tokens WHERE id = ? AND user_id = ?');
+        $stmt->execute([$id, $userId]);
+        flash('success', 'Disconnected.');
     }
     redirect('pages/accounts.php');
 }
@@ -52,6 +56,10 @@ $facebookAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['pl
 $instagramAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'instagram'));
 $pinterestAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'pinterest'));
 $gbpAccounts = array_values(array_filter($socialAccounts, fn ($a) => $a['platform'] === 'google_business'));
+
+$mcpStmt = db()->prepare('SELECT * FROM mcp_tokens WHERE user_id = ? ORDER BY created_at DESC');
+$mcpStmt->execute([$userId]);
+$mcpTokens = $mcpStmt->fetchAll();
 
 $pageTitle  = 'Connected Accounts';
 $activePage = 'accounts';
@@ -139,6 +147,30 @@ require __DIR__ . '/../includes/layout_top.php';
     <p class="muted">No locations connected yet.</p>
   <?php else: foreach ($gbpAccounts as $acct): ?>
     <?php include __DIR__ . '/_social_account_row.php'; ?>
+  <?php endforeach; endif; ?>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <h2>Claude / ChatGPT (MCP)</h2>
+    <a class="btn-secondary" href="<?= h(app_path('mcp.php')) ?>">Connection info</a>
+  </div>
+  <p class="muted">Connect Claude or ChatGPT to <code><?= h(app_path('mcp.php')) ?></code> to manage your posts and schedule by chat. Requires signing in and allowing the connection there — nothing to set up here beyond revoking access below.</p>
+  <?php if (empty($mcpTokens)): ?>
+    <p class="muted">No chat assistants connected yet.</p>
+  <?php else: foreach ($mcpTokens as $t): ?>
+    <div class="account-row">
+      <div class="account-info">
+        <span><?= h($t['client_name'] ?: 'Unnamed connection') ?></span>
+        <span class="muted">Connected <?= h($t['created_at']) ?><?= $t['last_used_at'] ? ', last used ' . h($t['last_used_at']) : '' ?></span>
+      </div>
+      <form method="post" class="inline-form" onsubmit="return confirm('Disconnect this assistant? It will no longer be able to access your posts.');">
+        <input type="hidden" name="csrf" value="<?= h($token) ?>">
+        <input type="hidden" name="action" value="mcp_revoke">
+        <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+        <button type="submit" class="btn-tiny btn-danger">Disconnect</button>
+      </form>
+    </div>
   <?php endforeach; endif; ?>
 </section>
 

@@ -8,6 +8,14 @@
 
 Options -Indexes
 
+# Apache/PHP-FPM can otherwise strip the Authorization header before PHP
+# ever sees it — the MCP endpoint (mcp.php) and OAuth token exchange
+# (oauth/token.php) both need it to survive. See
+# includes/oauth_server.php's bearer-token resolution, which also falls
+# back to REDIRECT_HTTP_AUTHORIZATION / getallheaders() in case this
+# directive isn't honored on a given host.
+CGIPassAuth On
+
 # Clean URLs: the app always links to itself without ".php" (see
 # includes/auth.php app_path()) — these two rules make that work.
 <IfModule mod_rewrite.c>

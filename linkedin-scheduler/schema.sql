@@ -184,13 +184,12 @@ ALTER TABLE users
 ALTER TABLE users
   ADD COLUMN footer_name_size INT DEFAULT NULL;
 
--- Earlier revision of this feature added a global footer_name_color on
--- users — dropped in favor of a per-palette signature_color below, since
--- a single flat color doesn't harmonize across different palettes the
--- way each palette's own derived color does. No data migration: this
--- column was added and dropped within the same development pass, before
--- any real user data depended on it.
-ALTER TABLE users DROP COLUMN footer_name_color;
+-- (An earlier revision of this feature briefly added a global
+-- footer_name_color on users, then dropped it in favor of the
+-- per-palette signature_color below — removed from here entirely
+-- rather than left as an ADD-then-DROP pair, since this file is the
+-- fresh-install path and a DROP COLUMN with no preceding ADD in the
+-- same file fails outright on a brand new database.)
 
 -- Optional per-palette override for the footer signature's color — same
 -- optional/auto-generate pattern as accent_color/cta_color above. NULL
@@ -290,7 +289,10 @@ CREATE TABLE IF NOT EXISTS news_items (
   post_id           INT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (content_pillar_id) REFERENCES content_pillars(id) ON DELETE SET NULL,
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE SET NULL,
+  -- post_id's FK is added later, once posts exists (same deferred
+  -- pattern as blog_post_id's own FK further down this file) — posts
+  -- is defined after news_items in this fresh-install file, so an
+  -- inline constraint here would fail on a truly new database.
   UNIQUE KEY uniq_user_url (user_id, url_hash),
   INDEX idx_user_status (user_id, status, published_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -386,6 +388,10 @@ CREATE TABLE IF NOT EXISTS posts (
   UNIQUE KEY uniq_user_campaign (user_id, campaign_id),
   INDEX idx_scheduled (status, scheduled_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- news_items.post_id's FK, deferred from its own CREATE TABLE above
+-- since posts didn't exist yet at that point in this file.
+ALTER TABLE news_items ADD CONSTRAINT fk_news_items_post FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS post_slides (
   id          INT AUTO_INCREMENT PRIMARY KEY,
@@ -794,6 +800,19 @@ CREATE TABLE IF NOT EXISTS `plans` (
   `created_at`          DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- The 3 starter plans — register_user() (includes/auth.php) looks up
+-- the 'free' slug for every new signup's 1-person organization, so a
+-- fresh install has no working signup at all without this. Previously
+-- only seeded by migrations/0013_organizations_seed_and_backfill.sql,
+-- which is meant for upgrading an *existing* deployment (it also
+-- backfills pre-existing users) — a fresh install via this file alone
+-- never ran it. Placeholder limits, no payment gateway wired up yet;
+-- all modules enabled by default, same list migration 0013 seeds.
+INSERT INTO plans (name, slug, max_users, max_workspaces, max_posts_per_month, default_modules) VALUES
+  ('Free', 'free', 1, 2, 30, 'post_scheduling,ai_generation,content_studio,blog_studio,news_studio,engagement,mcp'),
+  ('Pro', 'pro', 10, 10, 200, 'post_scheduling,ai_generation,content_studio,blog_studio,news_studio,engagement,mcp'),
+  ('Agency', 'agency', NULL, NULL, NULL, 'post_scheduling,ai_generation,content_studio,blog_studio,news_studio,engagement,mcp');
+
 -- organizations: the tenant/team unit. enabled_modules NULL = inherit
 -- the assigned plan's default_modules; non-NULL = superadmin override,
 -- same NULL-means-default convention as users.enabled_formats.
@@ -1176,3 +1195,46 @@ ALTER TABLE posts
 -- id, which needs somewhere generic to live rather than overloading a
 -- column named for LinkedIn's URN format. See includes/social_publish.php.
 ALTER TABLE posts ADD COLUMN external_post_id VARCHAR(255) NULL AFTER li_post_urn;
+
+-- Remote MCP server (Claude/ChatGPT connect via OAuth, then call tools
+-- over JSON-RPC at /mcp) — purely additive, no change to any existing
+-- table. See includes/oauth_server.php, includes/mcp_server.php,
+-- includes/mcp_tools.php.
+CREATE TABLE IF NOT EXISTS mcp_oauth_clients (
+  id             INT AUTO_INCREMENT PRIMARY KEY,
+  client_id      CHAR(32) NOT NULL,
+  client_name    VARCHAR(100) NULL,
+  redirect_uris  TEXT NOT NULL,
+  auth_method    VARCHAR(30) NOT NULL DEFAULT 'none',
+  created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_client_id (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- code_hash is single-use: looked up and deleted in the same step when
+-- exchanged for a token (includes/oauth_server.php oauth_issue_token()).
+CREATE TABLE IF NOT EXISTS mcp_oauth_codes (
+  id              INT AUTO_INCREMENT PRIMARY KEY,
+  code_hash       CHAR(64) NOT NULL,
+  client_id       CHAR(32) NOT NULL,
+  user_id         INT NOT NULL,
+  redirect_uri    VARCHAR(500) NOT NULL,
+  code_challenge  VARCHAR(128) NOT NULL,
+  expires_at      DATETIME NOT NULL,
+  created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_code_hash (code_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Bearer tokens handed to Claude/ChatGPT after the OAuth flow. Stored
+-- hashed (sha256) — the raw token is only ever shown once, at issuance,
+-- and compared (never redisplayed) on every /mcp call.
+CREATE TABLE IF NOT EXISTS mcp_tokens (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  user_id       INT NOT NULL,
+  token_hash    CHAR(64) NOT NULL,
+  client_name   VARCHAR(100) NULL,
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  last_used_at  DATETIME NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_token_hash (token_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
