@@ -101,6 +101,28 @@ function mcp_fetch_remote_image(string $url): string
     return $body;
 }
 
+// Decodes an inline image for create_post's image_base64 — for an image
+// the caller already has the bytes for (e.g. a file attached in chat),
+// as opposed to image_urls' "fetch this public URL" path. Expects a
+// data: URI exactly like the ones this app's own UI already sends for
+// AI-generated/pasted images (see pages/new_post.php, pages/post.php),
+// so the same validation shape applies: must declare image/png or
+// image/jpeg, and decode under the same size cap as a fetched URL.
+function mcp_decode_base64_image(string $dataUri): string
+{
+    if (!preg_match('#^data:image/(png|jpeg|jpg);base64,(.+)$#', trim($dataUri), $m)) {
+        throw new McpToolError('image_base64 entries must be a data URI like "data:image/png;base64,...".');
+    }
+    $bytes = base64_decode($m[2], true);
+    if ($bytes === false) {
+        throw new McpToolError('image_base64 entry is not valid base64.');
+    }
+    if (strlen($bytes) > 15 * 1024 * 1024) {
+        throw new McpToolError('An image_base64 entry is too large (max 15MB).');
+    }
+    return $bytes;
+}
+
 // Resolves which connected account a create_post call should use.
 // $accountId omitted + exactly one connected account for the platform ->
 // auto-selected. Zero or ambiguous (and no explicit id given) -> a clear
@@ -201,16 +223,24 @@ function mcp_tool_create_post(array $args, int $userId): array
     if (!in_array($platform, MCP_PLATFORMS, true)) {
         throw new McpToolError('platform must be one of: ' . implode(', ', MCP_PLATFORMS) . '.');
     }
+    // Two ways to supply an image: image_urls (fetch a public URL
+    // server-side) or image_base64 (the caller already has the bytes —
+    // e.g. a file attached in chat — as a data: URI). Combined in the
+    // order given: every image_urls entry, then every image_base64
+    // entry, so slide order is predictable regardless of which path a
+    // given image came through.
     $imageUrls = array_values(array_filter((array) ($args['image_urls'] ?? []), 'is_string'));
-    if (count($imageUrls) > MAX_SLIDES_PER_CAMPAIGN) {
+    $imageBase64 = array_values(array_filter((array) ($args['image_base64'] ?? []), 'is_string'));
+    $imageCount = count($imageUrls) + count($imageBase64);
+    if ($imageCount > MAX_SLIDES_PER_CAMPAIGN) {
         throw new McpToolError('A post can have at most ' . MAX_SLIDES_PER_CAMPAIGN . ' images.');
     }
-    $format = count($imageUrls) === 0 ? 'Text Post' : (count($imageUrls) === 1 ? 'Single Image' : 'Carousel');
+    $format = $imageCount === 0 ? 'Text Post' : ($imageCount === 1 ? 'Single Image' : 'Carousel');
     if ($platform === 'instagram' && $format === 'Text Post') {
-        throw new McpToolError('Instagram requires at least one image — pass image_urls.');
+        throw new McpToolError('Instagram requires at least one image — pass image_urls or image_base64.');
     }
-    if (in_array($platform, ['pinterest', 'google_business'], true) && count($imageUrls) > 1) {
-        throw new McpToolError(ucfirst(str_replace('_', ' ', $platform)) . ' only supports a single image per post — pass exactly one image_urls entry.');
+    if (in_array($platform, ['pinterest', 'google_business'], true) && $imageCount > 1) {
+        throw new McpToolError(ucfirst(str_replace('_', ' ', $platform)) . ' only supports a single image per post — pass exactly one image_urls/image_base64 entry.');
     }
 
     $workspaceId = mcp_resolve_workspace_id($userId);
@@ -228,29 +258,31 @@ function mcp_tool_create_post(array $args, int $userId): array
     $postId = (int) db()->lastInsertId();
 
     $previewUrls = [];
-    if ($imageUrls) {
+    if ($imageCount > 0) {
         $destDir = UPLOAD_DIR . '/' . $userId . '/' . preg_replace('/[^A-Za-z0-9_-]/', '_', $campaignId);
         if (!is_dir($destDir)) {
             mkdir($destDir, 0775, true);
         }
         $insertSlide = db()->prepare('INSERT INTO post_slides (post_id, slide_order, filename, filepath) VALUES (?, ?, ?, ?)');
-        foreach ($imageUrls as $i => $url) {
+        $slideIndex = 0;
+        foreach ([...array_map(fn ($u) => ['type' => 'url', 'value' => $u], $imageUrls), ...array_map(fn ($b) => ['type' => 'base64', 'value' => $b], $imageBase64)] as $source) {
             try {
-                $bytes = mcp_fetch_remote_image($url);
+                $bytes = $source['type'] === 'url' ? mcp_fetch_remote_image($source['value']) : mcp_decode_base64_image($source['value']);
             } catch (McpToolError $e) {
                 db()->prepare('DELETE FROM posts WHERE id = ?')->execute([$postId]);
                 throw $e;
             }
-            $filename = 'slide' . ($i + 1) . '.png';
+            $slideIndex++;
+            $filename = 'slide' . $slideIndex . '.png';
             $filepath = $destDir . '/' . $filename;
             file_put_contents($filepath, $bytes);
-            $insertSlide->execute([$postId, $i + 1, $filename, $filepath]);
+            $insertSlide->execute([$postId, $slideIndex, $filename, $filepath]);
             $previewUrls[] = slide_public_url($filepath);
         }
     }
 
     $detectedLink = mcp_detect_link($caption);
-    $needsConfirmation = !empty($imageUrls) || $detectedLink !== null;
+    $needsConfirmation = $imageCount > 0 || $detectedLink !== null;
 
     if (!$needsConfirmation) {
         $result = publish_social_post_now($postId, $userId);
@@ -295,7 +327,14 @@ function mcp_tool_update_post(array $args, int $userId): array
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $args['scheduled_date'])) {
             throw new McpToolError('scheduled_date must be in YYYY-MM-DD format.');
         }
-        $scheduledAt = $args['scheduled_date'] . ' 09:00:00';
+        $time = '09:00';
+        if (array_key_exists('scheduled_time', $args) && is_string($args['scheduled_time']) && $args['scheduled_time'] !== '') {
+            if (!preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', $args['scheduled_time'])) {
+                throw new McpToolError('scheduled_time must be 24-hour HH:MM, e.g. "18:30".');
+            }
+            $time = $args['scheduled_time'];
+        }
+        $scheduledAt = $args['scheduled_date'] . ' ' . $time . ':00';
         $status = 'scheduled';
     }
     if (array_key_exists('status', $args) && $args['status'] === 'draft') {
@@ -408,13 +447,14 @@ function mcp_tool_registry(): array
         'create_post' => [
             'definition' => [
                 'name' => 'create_post', 'title' => 'Create a post',
-                'description' => 'Creates a post. A plain text post with no images and no link in the caption is published immediately. A post with image_urls and/or a link in the caption is saved as a draft and returns preview_urls/detected_link for the user to review before calling post_now.',
+                'description' => 'Creates a post. A plain text post with no images and no link in the caption is published immediately. A post with image_urls/image_base64 and/or a link in the caption is saved as a draft and returns preview_urls/detected_link for the user to review before calling post_now.',
                 'inputSchema' => ['type' => 'object', 'properties' => [
-                    'caption'    => ['type' => 'string', 'description' => 'The post text.'],
-                    'title'      => ['type' => 'string', 'description' => 'Internal title, optional.'],
-                    'platform'   => ['type' => 'string', 'enum' => MCP_PLATFORMS, 'description' => 'Defaults to linkedin.'],
-                    'account_id' => ['type' => 'integer', 'description' => 'Which connected account/page/board to use. Omit if only one is connected for the platform.'],
-                    'image_urls' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => '0 = Text Post, 1 = Single Image, 2+ = Carousel. Each must be a public http(s) PNG/JPEG URL.'],
+                    'caption'      => ['type' => 'string', 'description' => 'The post text.'],
+                    'title'        => ['type' => 'string', 'description' => 'Internal title, optional.'],
+                    'platform'     => ['type' => 'string', 'enum' => MCP_PLATFORMS, 'description' => 'Defaults to linkedin.'],
+                    'account_id'   => ['type' => 'integer', 'description' => 'Which connected account/page/board to use. Omit if only one is connected for the platform.'],
+                    'image_urls'   => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Public http(s) PNG/JPEG URLs to fetch and attach. Combined with image_base64 — total count: 0 = Text Post, 1 = Single Image, 2+ = Carousel.'],
+                    'image_base64' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'For an image you already have the bytes for (e.g. one attached in this chat) rather than a public URL. Each entry a data URI: "data:image/png;base64,..." or "data:image/jpeg;base64,...". Combined with image_urls for the total image count.'],
                 ], 'required' => ['caption']],
                 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => false, 'openWorldHint' => false],
             ],
@@ -428,7 +468,8 @@ function mcp_tool_registry(): array
                     'post_id'        => ['type' => 'integer'],
                     'caption'        => ['type' => 'string'],
                     'title'          => ['type' => 'string'],
-                    'scheduled_date' => ['type' => 'string', 'description' => 'YYYY-MM-DD. Setting this schedules the post for 9am that day.'],
+                    'scheduled_date' => ['type' => 'string', 'description' => 'YYYY-MM-DD. Setting this schedules the post (defaults to 9am local server time if scheduled_time is omitted).'],
+                    'scheduled_time' => ['type' => 'string', 'description' => '24-hour HH:MM, e.g. "18:30" for 6:30pm. Only used together with scheduled_date; defaults to "09:00".'],
                     'status'         => ['type' => 'string', 'enum' => ['draft'], 'description' => 'Pass "draft" to unschedule back to a draft.'],
                 ], 'required' => ['post_id']],
                 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => false],

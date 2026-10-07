@@ -34,7 +34,19 @@ function mcp_instructions(): string
         . "as a DRAFT ONLY. The response includes `preview_urls` (the rendered image/slide URLs) "
         . "and/or the detected `link`. Show these to the user so they can look at the actual image/"
         . "link, and only call `post_now` with the returned post id after they explicitly confirm it "
-        . "looks right. Never call `post_now` on an image/carousel/link post without that confirmation.";
+        . "looks right. Never call `post_now` on an image/carousel/link post without that confirmation.\n\n"
+        . "For an image: use `image_urls` only when you have a public http(s) URL to it. For an image "
+        . "you already have the bytes for instead (one attached in this conversation, a generated "
+        . "image, anything not already hosted at a public URL), use `image_base64` — a data URI per "
+        . "entry, e.g. \"data:image/png;base64,...\". Never claim you can't attach an image just "
+        . "because it has no public URL; encode it and use image_base64 instead, or tell the user "
+        . "plainly if encoding it isn't possible on your end.\n\n"
+        . "To schedule a post for later rather than posting/drafting it now: create it first (it will "
+        . "either auto-post or sit as a draft per the rules above), then call `update_post` with "
+        . "`scheduled_date` (YYYY-MM-DD) and, for a specific time, `scheduled_time` (24-hour HH:MM, "
+        . "e.g. \"18:30\" for 6:30pm) — omitting scheduled_time defaults to 9am. Never tell the user a "
+        . "post was scheduled or published unless the tool result actually confirms it — report the "
+        . "real status back, including any error.";
 }
 
 function mcp_handle_initialize(array $params): array
