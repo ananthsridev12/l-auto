@@ -379,7 +379,7 @@ function mcp_tool_registry(): array
             'definition' => [
                 'name' => 'today', 'title' => "Today's overview",
                 'description' => "Returns the current server date and today's scheduled posts. Call this first if you need to know what date it is.",
-                'inputSchema' => ['type' => 'object', 'properties' => []],
+                'inputSchema' => ['type' => 'object', 'properties' => (object) []],
                 'annotations' => ['readOnlyHint' => true, 'idempotentHint' => true, 'openWorldHint' => false],
             ],
             'handler' => 'mcp_tool_today',
@@ -457,7 +457,7 @@ function mcp_tool_registry(): array
             'definition' => [
                 'name' => 'list_accounts', 'title' => 'List connected accounts',
                 'description' => 'Lists every connected LinkedIn/Facebook/Instagram/Pinterest/Google Business Profile account for this user. Read-only — connecting a new account requires the Accounts page.',
-                'inputSchema' => ['type' => 'object', 'properties' => []],
+                'inputSchema' => ['type' => 'object', 'properties' => (object) []],
                 'annotations' => ['readOnlyHint' => true, 'idempotentHint' => true, 'openWorldHint' => false],
             ],
             'handler' => 'mcp_tool_list_accounts',
@@ -466,7 +466,7 @@ function mcp_tool_registry(): array
             'definition' => [
                 'name' => 'list_content_pillars', 'title' => 'List content pillars',
                 'description' => 'Lists this user\'s Content Pillars (knowledge-base categories used to guide content).',
-                'inputSchema' => ['type' => 'object', 'properties' => []],
+                'inputSchema' => ['type' => 'object', 'properties' => (object) []],
                 'annotations' => ['readOnlyHint' => true, 'idempotentHint' => true, 'openWorldHint' => false],
             ],
             'handler' => 'mcp_tool_list_content_pillars',
