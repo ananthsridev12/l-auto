@@ -111,7 +111,11 @@ function mcp_fetch_remote_image(string $url): string
 function mcp_decode_base64_image(string $dataUri): string
 {
     if (!preg_match('#^data:image/(png|jpeg|jpg);base64,(.+)$#', trim($dataUri), $m)) {
-        throw new McpToolError('image_base64 entries must be a data URI like "data:image/png;base64,...".');
+        // Temporary diagnostic (safe to leave: never echoes more than a
+        // short prefix) — a client sent something that didn't match the
+        // expected data: URI shape; show enough of it to tell why.
+        $preview = substr($dataUri, 0, 60);
+        throw new McpToolError("image_base64 entries must be a data URI like \"data:image/png;base64,...\". Got (" . strlen($dataUri) . " chars, starts with): " . var_export($preview, true));
     }
     $bytes = base64_decode($m[2], true);
     if ($bytes === false) {
