@@ -156,6 +156,7 @@ require __DIR__ . '/../includes/layout_top.php';
     <a class="btn-secondary" href="<?= h(app_path('mcp.php')) ?>">Connection info</a>
   </div>
   <p class="muted">Connect Claude or ChatGPT to <code><?= h(app_path('mcp.php')) ?></code> to manage your posts and schedule by chat. Requires signing in and allowing the connection there — nothing to set up here beyond revoking access below.</p>
+  <p class="muted">Got an image or video too large to send through the chat itself? <a href="<?= h(app_path('pages/mcp_upload.php')) ?>">Upload it here</a> and give the assistant the link it returns instead.</p>
   <?php if (empty($mcpTokens)): ?>
     <p class="muted">No chat assistants connected yet.</p>
   <?php else: foreach ($mcpTokens as $t): ?>

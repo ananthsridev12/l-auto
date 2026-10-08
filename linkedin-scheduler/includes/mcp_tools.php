@@ -486,6 +486,31 @@ function mcp_tool_list_content_pillars(array $args, int $userId): array
 
 // --- upload_media -----------------------------------------------------
 
+// Shared by mcp_tool_upload_media() (base64 over a JSON-RPC tool call)
+// and pages/mcp_upload.php (a plain multipart web form, for a file too
+// large to practically embed as base64 — a chat client's own attachment
+// handling can cap out well below this app's 50MB base64 limit even for
+// a file under that limit, since base64 inflates size ~33% on top of
+// whatever the client already read into memory). Not tied to any
+// post_id/campaign, so the file is saved under its own per-user folder
+// rather than UPLOAD_DIR/{user}/{campaign}.
+function mcp_store_uploaded_media(int $userId, string $kind, string $bytes, string $ext): array
+{
+    $destDir = UPLOAD_DIR . '/' . $userId . '/mcp-uploads';
+    if (!is_dir($destDir)) {
+        mkdir($destDir, 0775, true);
+    }
+    $filename = strtoupper(bin2hex(random_bytes(8))) . '.' . $ext;
+    $filepath = $destDir . '/' . $filename;
+    file_put_contents($filepath, $bytes);
+
+    return [
+        'media_url'  => slide_public_url($filepath),
+        'kind'       => $kind,
+        'size_bytes' => strlen($bytes),
+    ];
+}
+
 // Decouples "give us the file" from "create a post" — a caller that
 // already has the bytes (e.g. an AI-generated video) can upload once
 // here and reuse the returned media_url across several create_post
@@ -493,9 +518,8 @@ function mcp_tool_list_content_pillars(array $args, int $userId): array
 // instead of resending the same base64 payload every time. Reuses the
 // exact same decode/size-cap helpers create_post's image_base64/
 // video_base64 already use — this isn't a new way to get bytes in, just
-// a way to not have to repeat it. Not tied to any post_id/campaign, so
-// the file is saved under its own per-user folder rather than
-// UPLOAD_DIR/{user}/{campaign}.
+// a way to not have to repeat it. For a file too large to send through
+// a chat client at all, see pages/mcp_upload.php instead.
 function mcp_tool_upload_media(array $args, int $userId): array
 {
     $kind = (string) ($args['kind'] ?? '');
@@ -510,19 +534,10 @@ function mcp_tool_upload_media(array $args, int $userId): array
         $ext = strtolower($m[1]) === 'jpeg' ? 'jpg' : strtolower($m[1]);
     }
 
-    $destDir = UPLOAD_DIR . '/' . $userId . '/mcp-uploads';
-    if (!is_dir($destDir)) {
-        mkdir($destDir, 0775, true);
-    }
-    $filename = strtoupper(bin2hex(random_bytes(8))) . '.' . $ext;
-    $filepath = $destDir . '/' . $filename;
-    file_put_contents($filepath, $bytes);
+    $stored = mcp_store_uploaded_media($userId, $kind, $bytes, $ext);
 
-    return [
-        'media_url'  => slide_public_url($filepath),
-        'kind'       => $kind,
-        'size_bytes' => strlen($bytes),
-        'message'    => 'Pass this media_url as an image_urls entry (image) or as video_url (video) on create_post. It stays available to reuse across multiple create_post calls without resending the file.',
+    return $stored + [
+        'message' => 'Pass this media_url as an image_urls entry (image) or as video_url (video) on create_post. It stays available to reuse across multiple create_post calls without resending the file.',
     ];
 }
 
