@@ -56,7 +56,12 @@ function mcp_instructions(): string
         . "upload succeeds — if `post_now` reports a processing/failure error, tell the user plainly "
         . "and suggest trying again shortly rather than assuming it will resolve itself. GIFs and "
         . "other video formats besides MP4, and video on any platform besides LinkedIn, are not "
-        . "supported — say so rather than attempting a workaround.";
+        . "supported — say so rather than attempting a workaround.\n\n"
+        . "If you'll want to reuse the same image/video across more than one `create_post` call "
+        . "(different captions, a retry, scheduling it twice) rather than resending its bytes each "
+        . "time, call `upload_media` once first — it takes the same kind of data URI as image_base64/"
+        . "video_base64 and returns a `media_url` you can then pass as an image_urls entry or as "
+        . "video_url on any later create_post call.";
 }
 
 function mcp_handle_initialize(array $params): array

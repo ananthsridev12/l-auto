@@ -484,6 +484,48 @@ function mcp_tool_list_content_pillars(array $args, int $userId): array
     return ['content_pillars' => fetch_content_pillars($userId, $workspaceId)];
 }
 
+// --- upload_media -----------------------------------------------------
+
+// Decouples "give us the file" from "create a post" — a caller that
+// already has the bytes (e.g. an AI-generated video) can upload once
+// here and reuse the returned media_url across several create_post
+// calls (different captions, retries, scheduling the same asset twice)
+// instead of resending the same base64 payload every time. Reuses the
+// exact same decode/size-cap helpers create_post's image_base64/
+// video_base64 already use — this isn't a new way to get bytes in, just
+// a way to not have to repeat it. Not tied to any post_id/campaign, so
+// the file is saved under its own per-user folder rather than
+// UPLOAD_DIR/{user}/{campaign}.
+function mcp_tool_upload_media(array $args, int $userId): array
+{
+    $kind = (string) ($args['kind'] ?? '');
+    if (!in_array($kind, ['image', 'video'], true)) {
+        throw new McpToolError('"kind" must be "image" or "video".');
+    }
+    $dataUri = mcp_require_string($args, 'data_base64');
+    $bytes = $kind === 'image' ? mcp_decode_base64_image($dataUri) : mcp_decode_base64_video($dataUri);
+
+    $ext = $kind === 'image' ? 'png' : 'mp4';
+    if (preg_match('#^data:[a-z]+/([a-z0-9.+-]+);base64,#i', trim($dataUri), $m)) {
+        $ext = strtolower($m[1]) === 'jpeg' ? 'jpg' : strtolower($m[1]);
+    }
+
+    $destDir = UPLOAD_DIR . '/' . $userId . '/mcp-uploads';
+    if (!is_dir($destDir)) {
+        mkdir($destDir, 0775, true);
+    }
+    $filename = strtoupper(bin2hex(random_bytes(8))) . '.' . $ext;
+    $filepath = $destDir . '/' . $filename;
+    file_put_contents($filepath, $bytes);
+
+    return [
+        'media_url'  => slide_public_url($filepath),
+        'kind'       => $kind,
+        'size_bytes' => strlen($bytes),
+        'message'    => 'Pass this media_url as an image_urls entry (image) or as video_url (video) on create_post. It stays available to reuse across multiple create_post calls without resending the file.',
+    ];
+}
+
 // --- registry -----------------------------------------------------
 
 function mcp_tool_registry(): array
@@ -588,6 +630,18 @@ function mcp_tool_registry(): array
                 'annotations' => ['readOnlyHint' => true, 'idempotentHint' => true, 'openWorldHint' => false],
             ],
             'handler' => 'mcp_tool_list_content_pillars',
+        ],
+        'upload_media' => [
+            'definition' => [
+                'name' => 'upload_media', 'title' => 'Upload media',
+                'description' => 'Uploads an image or video you already have the bytes for (e.g. one generated or attached in this chat) and returns a public media_url. Use this once, then pass that media_url as an image_urls entry or as video_url on create_post — lets you reuse the same uploaded file across multiple posts/retries without resending its bytes every time.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'kind'        => ['type' => 'string', 'enum' => ['image', 'video'], 'description' => 'What kind of file this is.'],
+                    'data_base64' => ['type' => 'string', 'description' => 'The file as a data URI: "data:image/png;base64,..." or "data:video/mp4;base64,..." (max 15MB for an image, 50MB for a video).'],
+                ], 'required' => ['kind', 'data_base64']],
+                'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => false, 'openWorldHint' => false],
+            ],
+            'handler' => 'mcp_tool_upload_media',
         ],
     ];
 }
