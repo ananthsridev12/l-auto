@@ -107,11 +107,46 @@ function mcp_fetch_remote_image(string $url): string
     return mcp_fetch_remote_file($url, ['image/png', 'image/jpeg', 'image/jpg'], 15 * 1024 * 1024, 'image');
 }
 
+// ISO base media file format (MP4, and its relatives MOV/M4A/...): a
+// 4-byte big-endian box size followed by a 4-byte box type. The first
+// box is almost always 'ftyp' (file type box); walk the first few box
+// headers rather than only checking byte offset 4, since a handful of
+// encoders write a small box before it. Used to verify actual file
+// content rather than trusting a server's declared content-type alone
+// — see mcp_fetch_remote_video() below for why that matters.
+function mcp_looks_like_mp4(string $bytes): bool
+{
+    $offset = 0;
+    for ($i = 0; $i < 3 && $offset + 8 <= strlen($bytes); $i++) {
+        if (substr($bytes, $offset + 4, 4) === 'ftyp') {
+            return true;
+        }
+        $boxSize = unpack('N', substr($bytes, $offset, 4))[1] ?? 0;
+        if ($boxSize < 8) {
+            break;
+        }
+        $offset += $boxSize;
+    }
+    return false;
+}
+
 // 200MB practical cap (not a LinkedIn limit) + a longer timeout than an
 // image fetch, since a video this size takes real time to download.
+// Accepts application/octet-stream alongside video/mp4 — GitHub's raw
+// file server (and plenty of other CDNs/hosts) serve a .mp4 with that
+// generic content-type rather than a real one, which this app's own
+// video upload field (new_post.php) never has to deal with since it
+// sniffs the file directly rather than trusting an HTTP header. Since
+// octet-stream is actually ambiguous, the downloaded bytes are then
+// verified to really be an MP4 container regardless of which
+// content-type came back, rather than trusting either blindly.
 function mcp_fetch_remote_video(string $url): string
 {
-    return mcp_fetch_remote_file($url, ['video/mp4'], 200 * 1024 * 1024, 'video', 60);
+    $body = mcp_fetch_remote_file($url, ['video/mp4', 'application/octet-stream'], 200 * 1024 * 1024, 'video', 60);
+    if (!mcp_looks_like_mp4($body)) {
+        throw new McpToolError("\"{$url}\" does not look like a valid MP4 file.");
+    }
+    return $body;
 }
 
 // Decodes an inline file for create_post's image_base64/video_base64 —
@@ -149,7 +184,11 @@ function mcp_decode_base64_image(string $dataUri): string
 // use video_url for a larger file.
 function mcp_decode_base64_video(string $dataUri): string
 {
-    return mcp_decode_base64_file($dataUri, ['video/mp4'], 50 * 1024 * 1024, 'video');
+    $bytes = mcp_decode_base64_file($dataUri, ['video/mp4'], 50 * 1024 * 1024, 'video');
+    if (!mcp_looks_like_mp4($bytes)) {
+        throw new McpToolError('video_base64 does not look like a valid MP4 file.');
+    }
+    return $bytes;
 }
 
 // Resolves which connected account a create_post call should use.
