@@ -9,6 +9,15 @@
 require_once __DIR__ . '/helpers.php'; // ALL_POST_FORMATS
 require_once __DIR__ . '/post_helpers.php';
 require_once __DIR__ . '/social_publish.php';
+// social_publish.php's publish_social_post_now() calls publish_post_now()
+// for platform='linkedin' but never requires the file that defines it —
+// every page that reaches that function (new_post.php, today.php, etc.)
+// happens to already require linkedin_api.php directly for its own
+// reasons, which masked that social_publish.php can't stand on its own.
+// mcp_tools.php has no such other reason to load it, so it's required
+// here explicitly — without it, the most basic case this tool set
+// handles (an immediate plain-text LinkedIn post) fatals.
+require_once __DIR__ . '/linkedin_api.php';
 require_once __DIR__ . '/zip_import.php'; // MAX_SLIDES_PER_CAMPAIGN
 
 class McpToolError extends RuntimeException
@@ -46,6 +55,27 @@ function mcp_require_post_id(array $args): int
         throw new McpToolError('"post_id" is required.');
     }
     return $postId;
+}
+
+// Shared by create_post and update_post so both validate/default
+// scheduled_time identically. Returns null when no scheduled_date was
+// passed at all (distinct from an invalid one, which throws).
+function mcp_resolve_scheduled_at(array $args): ?string
+{
+    if (!array_key_exists('scheduled_date', $args) || !is_string($args['scheduled_date']) || $args['scheduled_date'] === '') {
+        return null;
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $args['scheduled_date'])) {
+        throw new McpToolError('scheduled_date must be in YYYY-MM-DD format.');
+    }
+    $time = '09:00';
+    if (array_key_exists('scheduled_time', $args) && is_string($args['scheduled_time']) && $args['scheduled_time'] !== '') {
+        if (!preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', $args['scheduled_time'])) {
+            throw new McpToolError('scheduled_time must be 24-hour HH:MM, e.g. "18:30".');
+        }
+        $time = $args['scheduled_time'];
+    }
+    return $args['scheduled_date'] . ' ' . $time . ':00';
 }
 
 // First http(s) URL found in free text, if any — drives create_post's
@@ -397,6 +427,27 @@ function mcp_tool_create_post(array $args, int $userId): array
     // mandatory, monitored through this MCP connection itself.
     $needsConfirmation = $imageCount > 0 || $hasVideo || $detectedLink !== null;
 
+    // scheduled_date only takes effect here for a plain text post (no
+    // image/video/link) — exactly the case that would otherwise publish
+    // immediately. Previously there was no way to schedule that case at
+    // all: by the time it auto-posted, status was already "posted" and
+    // update_post refuses to touch an already-published post. For an
+    // image/video/link post, this is deliberately left alone — it still
+    // needs human confirmation first (see $needsConfirmation above), so
+    // the caller schedules it with a separate update_post call only
+    // after that confirmation, same as today.
+    $scheduledAt = mcp_resolve_scheduled_at($args);
+    if ($scheduledAt !== null && !$needsConfirmation) {
+        db()->prepare('UPDATE posts SET status = "scheduled", scheduled_at = ? WHERE id = ?')->execute([$scheduledAt, $postId]);
+        return [
+            'post_id'      => $postId,
+            'status'       => 'scheduled',
+            'posted'       => false,
+            'scheduled_at' => $scheduledAt,
+            'message'      => "Scheduled for {$scheduledAt} — not posted yet.",
+        ];
+    }
+
     if (!$needsConfirmation) {
         $result = publish_social_post_now($postId, $userId);
         return [
@@ -407,6 +458,11 @@ function mcp_tool_create_post(array $args, int $userId): array
         ];
     }
 
+    $message = 'Saved as a draft, not posted yet. Show the preview_urls/video_preview_url/detected_link to the user, and only call post_now with this post_id once they confirm it looks right.';
+    if ($scheduledAt !== null) {
+        $message .= " A scheduled_date was also given, but this post needs confirmation first — after the user confirms, call update_post with scheduled_date/scheduled_time to schedule it instead of calling post_now directly.";
+    }
+
     return [
         'post_id'               => $postId,
         'status'                => 'draft',
@@ -415,7 +471,7 @@ function mcp_tool_create_post(array $args, int $userId): array
         'video_preview_url'     => $videoPreviewUrl,
         'detected_link'         => $detectedLink,
         'confirmation_required' => true,
-        'message'               => 'Saved as a draft, not posted yet. Show the preview_urls/video_preview_url/detected_link to the user, and only call post_now with this post_id once they confirm it looks right.',
+        'message'               => $message,
     ];
 }
 
@@ -437,18 +493,9 @@ function mcp_tool_update_post(array $args, int $userId): array
     $status = $post['status'];
     $scheduledAt = $post['scheduled_at'];
 
-    if (array_key_exists('scheduled_date', $args) && is_string($args['scheduled_date']) && $args['scheduled_date'] !== '') {
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $args['scheduled_date'])) {
-            throw new McpToolError('scheduled_date must be in YYYY-MM-DD format.');
-        }
-        $time = '09:00';
-        if (array_key_exists('scheduled_time', $args) && is_string($args['scheduled_time']) && $args['scheduled_time'] !== '') {
-            if (!preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', $args['scheduled_time'])) {
-                throw new McpToolError('scheduled_time must be 24-hour HH:MM, e.g. "18:30".');
-            }
-            $time = $args['scheduled_time'];
-        }
-        $scheduledAt = $args['scheduled_date'] . ' ' . $time . ':00';
+    $resolvedScheduledAt = mcp_resolve_scheduled_at($args);
+    if ($resolvedScheduledAt !== null) {
+        $scheduledAt = $resolvedScheduledAt;
         $status = 'scheduled';
     }
     if (array_key_exists('status', $args) && $args['status'] === 'draft') {
@@ -618,16 +665,18 @@ function mcp_tool_registry(): array
         'create_post' => [
             'definition' => [
                 'name' => 'create_post', 'title' => 'Create a post',
-                'description' => 'Creates a post. A plain text post with no images, video, or link in the caption is published immediately. A post with image_urls/image_base64, video_url/video_base64, and/or a link in the caption is saved as a draft and returns preview_urls/video_preview_url/detected_link for the user to review before calling post_now. A video post always requires that confirmation, even with a plain caption. Constraints: images max 15MB each (PNG/JPEG), at most 20 total (1 = Single Image, 2-20 = Carousel); video LinkedIn-only, max 200MB via video_url or 50MB via video_base64, MP4 only; Instagram requires at least 1 image; Pinterest and Google Business Profile allow at most 1 image each. A file too large for any of these, or too large to attach through this chat at all, can be uploaded directly at the app\'s "Upload for AI" page (under Accounts) to get a URL to use with image_urls/video_url instead.',
+                'description' => 'Creates a post. A plain text post with no images, video, or link in the caption is published immediately, unless scheduled_date is set — then it\'s scheduled for that date/time instead of posting right away. A post with image_urls/image_base64, video_url/video_base64, and/or a link in the caption is saved as a draft and returns preview_urls/video_preview_url/detected_link for the user to review before calling post_now; scheduled_date is ignored on that kind of post (it still needs confirmation first — call update_post with scheduled_date after the user confirms). A video post always requires that confirmation, even with a plain caption. Constraints: images max 15MB each (PNG/JPEG), at most 20 total (1 = Single Image, 2-20 = Carousel); video LinkedIn-only, max 200MB via video_url or 50MB via video_base64, MP4 only; Instagram requires at least 1 image; Pinterest and Google Business Profile allow at most 1 image each. A file too large for any of these, or too large to attach through this chat at all, can be uploaded directly at the app\'s "Upload for AI" page (under Accounts) to get a URL to use with image_urls/video_url instead.',
                 'inputSchema' => ['type' => 'object', 'properties' => [
-                    'caption'      => ['type' => 'string', 'description' => 'The post text.'],
-                    'title'        => ['type' => 'string', 'description' => 'Internal title, optional.'],
-                    'platform'     => ['type' => 'string', 'enum' => MCP_PLATFORMS, 'description' => 'Defaults to linkedin. Required to be linkedin if video_url/video_base64 is set. Instagram requires at least 1 image. Pinterest and google_business allow at most 1 image.'],
-                    'account_id'   => ['type' => 'integer', 'description' => 'Which connected account/page/board to use. Omit if only one is connected for the platform.'],
-                    'image_urls'   => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Public http(s) PNG/JPEG URLs to fetch and attach, max 15MB each. Combined with image_base64 — total count across both (max 20): 0 = Text Post, 1 = Single Image, 2-20 = Carousel. Mutually exclusive with video_url/video_base64.'],
-                    'image_base64' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'For an image you already have the bytes for (e.g. one attached in this chat) rather than a public URL, max 15MB each. Each entry a data URI: "data:image/png;base64,..." or "data:image/jpeg;base64,...". Combined with image_urls for the total image count (max 20 across both).'],
-                    'video_url'    => ['type' => 'string', 'description' => 'LinkedIn only. A public http(s) MP4 URL to fetch and attach (max 200MB). Mutually exclusive with image_urls/image_base64 and with video_base64.'],
-                    'video_base64' => ['type' => 'string', 'description' => 'LinkedIn only. For a video you already have the bytes for (e.g. one generated or attached in this chat) rather than a public URL — a data URI: "data:video/mp4;base64,..." (max 50MB — for a larger file, use video_url with a hosted link, or the app\'s "Upload for AI" page). Mutually exclusive with image_urls/image_base64 and with video_url.'],
+                    'caption'        => ['type' => 'string', 'description' => 'The post text.'],
+                    'title'          => ['type' => 'string', 'description' => 'Internal title, optional.'],
+                    'platform'       => ['type' => 'string', 'enum' => MCP_PLATFORMS, 'description' => 'Defaults to linkedin. Required to be linkedin if video_url/video_base64 is set. Instagram requires at least 1 image. Pinterest and google_business allow at most 1 image.'],
+                    'account_id'     => ['type' => 'integer', 'description' => 'Which connected account/page/board to use. Omit if only one is connected for the platform.'],
+                    'image_urls'     => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Public http(s) PNG/JPEG URLs to fetch and attach, max 15MB each. Combined with image_base64 — total count across both (max 20): 0 = Text Post, 1 = Single Image, 2-20 = Carousel. Mutually exclusive with video_url/video_base64.'],
+                    'image_base64'   => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'For an image you already have the bytes for (e.g. one attached in this chat) rather than a public URL, max 15MB each. Each entry a data URI: "data:image/png;base64,..." or "data:image/jpeg;base64,...". Combined with image_urls for the total image count (max 20 across both).'],
+                    'video_url'      => ['type' => 'string', 'description' => 'LinkedIn only. A public http(s) MP4 URL to fetch and attach (max 200MB). Mutually exclusive with image_urls/image_base64 and with video_base64.'],
+                    'video_base64'   => ['type' => 'string', 'description' => 'LinkedIn only. For a video you already have the bytes for (e.g. one generated or attached in this chat) rather than a public URL — a data URI: "data:video/mp4;base64,..." (max 50MB — for a larger file, use video_url with a hosted link, or the app\'s "Upload for AI" page). Mutually exclusive with image_urls/image_base64 and with video_url.'],
+                    'scheduled_date' => ['type' => 'string', 'description' => 'YYYY-MM-DD. Only takes effect for a plain text post (no image/video/link) — schedules it for this date instead of posting immediately. Ignored (with a note in the response) for an image/video/link post, since that needs confirmation first; use update_post with scheduled_date for those once confirmed.'],
+                    'scheduled_time' => ['type' => 'string', 'description' => '24-hour HH:MM, e.g. "18:30" for 6:30pm. Only used together with scheduled_date; defaults to "09:00".'],
                 ], 'required' => ['caption']],
                 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => false, 'openWorldHint' => false],
             ],
